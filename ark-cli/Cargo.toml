@@ -1,0 +1,13 @@
+[package]
+name = "ark-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ark-cli"
+
+[dependencies]
+arklib = { git = "https://github.com/ARK-Builders/arklib", rev = "508526d3" }
+
+clap = { version = "3.0.10", features = ["derive"] }
+home = "0.5.3"
