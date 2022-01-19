@@ -1,4 +1,4 @@
-name: Rust
+name: Verify build
 
 on: [push]
 
@@ -6,17 +6,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Build Debug
-      run: cargo build --verbose
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            override: true
+            components: rustfmt, clippy
+      - name: Check
+        run: cargo check
 
-    - name: Run tests
-      run: cargo test --verbose
+      - name: Format
+        run: cargo fmt --all -- --check
 
-    - name: Build Release
-      run: cargo build --verbose --release
+      - name: Build Debug
+        run: cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Build Release
+        run: cargo build --verbose --release
