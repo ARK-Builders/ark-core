@@ -11,7 +11,7 @@ pub mod resource_id {
     const MEGABYTE: usize = 1024 * KILOBYTE;
     const BUFFER_CAPACITY: usize = 512 * KILOBYTE;
 
-    pub fn compute_id<P: AsRef<Path>>(file_size: usize, file_path: P) -> i64 {
+    pub fn compute_id<P: AsRef<Path>>(file_size: usize, file_path: P) -> u32 {
         trace!(
             "Calculating hash of {} (given size is {} megabytes)",
             file_path.as_ref().display(),
@@ -30,7 +30,7 @@ pub mod resource_id {
         assert!(reader.buffer().is_empty());
 
         let mut hasher = Hasher::new();
-        let mut bytes_read: i64 = 0;
+        let mut bytes_read: u32 = 0;
         loop {
             let bytes_read_iteration: usize = reader
                 .fill_buf()
@@ -44,13 +44,13 @@ pub mod resource_id {
             }
             hasher.update(reader.buffer());
             reader.consume(bytes_read_iteration);
-            bytes_read += i64::try_from(bytes_read_iteration).expect(&format!(
+            bytes_read += u32::try_from(bytes_read_iteration).expect(&format!(
                 "Failed to read from {}",
                 file_path.as_ref().display()
             ))
         }
 
-        let checksum: i64 = hasher.finalize().into();
+        let checksum: u32 = hasher.finalize().into();
         trace!("{} bytes has been read", bytes_read);
         trace!("checksum: {:#02x}", checksum);
         assert!(bytes_read == file_size.try_into().unwrap());
