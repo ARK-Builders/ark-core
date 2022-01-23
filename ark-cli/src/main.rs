@@ -1,4 +1,5 @@
-use std::fs::{canonicalize, copy, create_dir_all, File};
+use std::env::current_dir;
+use std::fs::{canonicalize, copy, create_dir_all, metadata, File};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -6,7 +7,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use home::home_dir;
+use walkdir::WalkDir;
 
+use arklib::resource_id;
 use arklib::TAG_STORAGE_FILENAME;
 
 #[derive(Parser, Debug)]
@@ -22,6 +25,11 @@ enum Command {
     Backup {
         #[clap(parse(from_os_str))]
         roots_cfg: Option<PathBuf>,
+    },
+
+    Collisions {
+        #[clap(parse(from_os_str))]
+        target_dir: Option<PathBuf>,
     },
 }
 
@@ -70,8 +78,10 @@ fn main() {
                     println!("\tRoots config wasn't found.");
 
                     println!("Looking for a folder containing tag storage:");
-                    let path = canonicalize(PathBuf::from("."))
-                        .expect("Couldn't canonicalize working directory!");
+                    let path = canonicalize(
+                        current_dir().expect("Can't open current directory!"),
+                    )
+                    .expect("Couldn't canonicalize working directory!");
 
                     let result = path.ancestors().find(|path| {
                         println!("\t{}", path.display());
@@ -131,6 +141,46 @@ fn main() {
                 });
 
             println!("Backup created:\n\t{}", backup_dir.display());
+        }
+
+        Command::Collisions { target_dir } => {
+            use std::collections::HashMap;
+
+            let dir_path = if let Some(path) = target_dir {
+                path.clone()
+            } else {
+                current_dir()
+                    .expect("Can't open current directory!")
+                    .clone()
+            };
+
+            println!(
+                "Calculating IDs of all files by path:\n\t{}",
+                dir_path.display()
+            );
+
+            let mut index = HashMap::<u32, usize>::new();
+            for entry in WalkDir::new(dir_path).into_iter() {
+                let entry2 = entry.expect("whatever").clone();
+                let path = entry2.path();
+                if !path.is_dir() {
+                    let size = metadata(&path).expect("whatever").len();
+                    let id = resource_id::compute_id(size, path);
+
+                    let count = index.get_mut(&id);
+                    if let Some(nonempty) = count {
+                        *nonempty += 1;
+                    } else {
+                        index.insert(id, 1);
+                    }
+                }
+            }
+
+            for (key, count) in index.into_iter() {
+                if count > 1 {
+                    println!("{}: {} times", key, count);
+                }
+            }
         }
     }
 }

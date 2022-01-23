@@ -18,12 +18,13 @@ dependencies = [
  "arklib",
  "clap",
  "home",
+ "walkdir",
 ]
 
 [[package]]
 name = "arklib"
 version = "0.1.0"
-source = "git+https://github.com/ARK-Builders/arklib?rev=508526d3#508526d3b7e896b52bcb036275afceb7755a871f"
+source = "git+https://github.com/ARK-Builders/arklib?rev=a127c38e#a127c38eef1436a9c385b81a50ebbdfce57597ff"
 dependencies = [
  "crc32fast",
  "env_logger",
@@ -253,6 +254,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f497285884f3fcff424ffc933e56d7cbca511def0c9831a7f9b5f6153e3cc89b"
 
 [[package]]
+name = "same-file"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
+dependencies = [
+ "winapi-util",
+]
+
+[[package]]
 name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -295,6 +305,17 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "walkdir"
+version = "2.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "808cf2735cd4b6866113f648b791c6adc5714537bc222d9347bb203386ffda56"
+dependencies = [
+ "same-file",
+ "winapi",
+ "winapi-util",
+]
 
 [[package]]
 name = "winapi"
