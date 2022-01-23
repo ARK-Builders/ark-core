@@ -7,11 +7,11 @@ pub mod resource_id {
     use std::io::{BufRead, BufReader};
     use std::path::Path;
 
-    const KILOBYTE: usize = 1024;
-    const MEGABYTE: usize = 1024 * KILOBYTE;
-    const BUFFER_CAPACITY: usize = 512 * KILOBYTE;
+    const KILOBYTE: u64 = 1024;
+    const MEGABYTE: u64 = 1024 * KILOBYTE;
+    const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 
-    pub fn compute_id<P: AsRef<Path>>(file_size: usize, file_path: P) -> u32 {
+    pub fn compute_id<P: AsRef<Path>>(file_size: u64, file_path: P) -> u32 {
         trace!(
             "Calculating hash of {} (given size is {} megabytes)",
             file_path.as_ref().display(),
