@@ -1,16 +1,12 @@
 use std::env::current_dir;
-use std::fs::{canonicalize, copy, create_dir_all, metadata, File};
+use std::fs::{canonicalize, copy, create_dir_all, File};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use home::home_dir;
-use walkdir::WalkDir;
-
-use arklib::resource_id;
-use arklib::TAG_STORAGE_FILENAME;
 
 #[derive(Parser, Debug)]
 #[clap(name = "ark-cli")]
@@ -29,7 +25,7 @@ enum Command {
 
     Collisions {
         #[clap(parse(from_os_str))]
-        target_dir: Option<PathBuf>,
+        root_dir: Option<PathBuf>,
     },
 }
 
@@ -133,8 +129,10 @@ fn main() {
                 .for_each(|(i, root)| {
                     println!("\tRoot {}", root.display());
                     let storage_backup = backup_dir.join(&i.to_string());
-                    let result =
-                        copy(root.join(&TAG_STORAGE_FILENAME), storage_backup);
+                    let result = copy(
+                        root.join(&arklib::TAG_STORAGE_FILENAME),
+                        storage_backup,
+                    );
                     if let Err(e) = result {
                         println!("\t\tFailed to copy tag storage!\n\t\t{}", e);
                     }
@@ -143,10 +141,8 @@ fn main() {
             println!("Backup created:\n\t{}", backup_dir.display());
         }
 
-        Command::Collisions { target_dir } => {
-            use std::collections::HashMap;
-
-            let dir_path = if let Some(path) = target_dir {
+        Command::Collisions { root_dir } => {
+            let dir_path = if let Some(path) = root_dir {
                 path.clone()
             } else {
                 current_dir()
@@ -154,32 +150,23 @@ fn main() {
                     .clone()
             };
 
-            println!(
-                "Calculating IDs of all files by path:\n\t{}",
-                dir_path.display()
-            );
+            println!("Building index of folder {}", dir_path.display());
+            let start = Instant::now();
+            let result = arklib::build_index(dir_path);
+            let duration = start.elapsed();
 
-            let mut index = HashMap::<u32, usize>::new();
-            for entry in WalkDir::new(dir_path).into_iter() {
-                let entry2 = entry.expect("whatever").clone();
-                let path = entry2.path();
-                if !path.is_dir() {
-                    let size = metadata(&path).expect("whatever").len();
-                    let id = resource_id::compute_id(size, path);
-
-                    let count = index.get_mut(&id);
-                    if let Some(nonempty) = count {
-                        *nonempty += 1;
-                    } else {
-                        index.insert(id, 1);
-                    }
-                }
+            match result {
+                Ok(()) => println!("Success, took {:?}", duration),
+                Err(err) => println!("Failure: {:?}", err),
             }
+            println!();
 
-            for (key, count) in index.into_iter() {
-                if count > 1 {
-                    println!("{}: {} times", key, count);
-                }
+            let index = arklib::INDEX.read().unwrap();
+            println!("Here are {} entries in the index", index.len());
+
+            let collisions = arklib::COLLISIONS.read().unwrap();
+            for (key, count) in collisions.iter() {
+                println!("Id {} calculated {} times", key, count);
             }
         }
     }
@@ -193,7 +180,7 @@ fn home_roots_cfg() -> PathBuf {
 }
 
 fn tag_storage_exists(path: &Path) -> bool {
-    return File::open(path.join(&TAG_STORAGE_FILENAME)).is_ok();
+    return File::open(path.join(&arklib::TAG_STORAGE_FILENAME)).is_ok();
 }
 
 fn parse_roots(config: File) -> Vec<PathBuf> {

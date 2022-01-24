@@ -4,10 +4,12 @@ on: [push]
 
 env:
   CARGO_TERM_COLOR: always
+
 jobs:
   check:
     name: Build ARK-CLI
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v2
 
