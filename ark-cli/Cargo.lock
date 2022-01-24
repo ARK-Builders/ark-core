@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.53"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94a45b455c14666b85fc40a019e8ab9eb75e3a124e05494f5397122bc9eb06e0"
+
+[[package]]
 name = "ark-cli"
 version = "0.1.0"
 dependencies = [
@@ -24,11 +30,14 @@ dependencies = [
 [[package]]
 name = "arklib"
 version = "0.1.0"
-source = "git+https://github.com/ARK-Builders/arklib?rev=a127c38e#a127c38eef1436a9c385b81a50ebbdfce57597ff"
+source = "git+https://github.com/ARK-Builders/arklib?rev=0de0e27#0de0e272913dee116cb4bb55b736a8a82c0b7bb6"
 dependencies = [
+ "anyhow",
  "crc32fast",
  "env_logger",
+ "lazy_static",
  "log",
+ "walkdir",
 ]
 
 [[package]]
