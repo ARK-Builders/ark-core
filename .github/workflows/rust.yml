@@ -7,6 +7,7 @@ env:
 
 jobs:
   check:
+    name: Build ArkLib
     runs-on: ubuntu-latest
 
     steps:
@@ -18,6 +19,7 @@ jobs:
             toolchain: stable
             override: true
             components: rustfmt, clippy
+
       - name: Check
         run: cargo check
 
