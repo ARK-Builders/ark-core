@@ -22,6 +22,7 @@ name = "arklib"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "canonical-path",
  "crc32fast",
  "env_logger",
  "lazy_static",
@@ -39,6 +40,12 @@ dependencies = [
  "libc",
  "winapi",
 ]
+
+[[package]]
+name = "canonical-path"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6e9e01327e6c86e92ec72b1c798d4a94810f147209bbe3ffab6a86954937a6f"
 
 [[package]]
 name = "cfg-if"
