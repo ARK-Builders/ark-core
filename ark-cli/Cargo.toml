@@ -7,8 +7,9 @@ edition = "2021"
 name = "ark-cli"
 
 [dependencies]
-arklib = { git = "https://github.com/ARK-Builders/arklib", rev = "0de0e27" }
+arklib = { git = "https://github.com/ARK-Builders/arklib", rev = "bdf2377" }
 
 clap = { version = "3.0.10", features = ["derive"] }
+env_logger = "0.8.4"
 walkdir = "2.3.2"
 home = "0.5.3"
