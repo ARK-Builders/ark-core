@@ -35,6 +35,8 @@ const ROOTS_CFG_FILENAME: &str = "roots";
 const HOME_BACKUPS_DIRNAME: &str = "backups";
 
 fn main() {
+    env_logger::init();
+
     let args = Cli::parse();
 
     match &args.command {
@@ -152,21 +154,21 @@ fn main() {
 
             println!("Building index of folder {}", dir_path.display());
             let start = Instant::now();
-            let result = arklib::build_index(dir_path);
+            let result = arklib::provide_index(dir_path);
             let duration = start.elapsed();
 
             match result {
-                Ok(()) => println!("Success, took {:?}", duration),
+                Ok(rwlock) => {
+                    println!("Success, took {:?}\n", duration);
+
+                    let index = rwlock.read().unwrap();
+                    println!("Here are {} entries in the index", index.size());
+
+                    for (key, count) in index.collisions.iter() {
+                        println!("Id {:?} calculated {} times", key, count);
+                    }
+                }
                 Err(err) => println!("Failure: {:?}", err),
-            }
-            println!();
-
-            let index = arklib::INDEX.read().unwrap();
-            println!("Here are {} entries in the index", index.len());
-
-            let collisions = arklib::COLLISIONS.read().unwrap();
-            for (key, count) in collisions.iter() {
-                println!("Id {} calculated {} times", key, count);
             }
         }
     }
