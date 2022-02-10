@@ -27,6 +27,11 @@ enum Command {
         #[clap(parse(from_os_str))]
         root_dir: Option<PathBuf>,
     },
+
+    Monitor {
+        #[clap(parse(from_os_str))]
+        root_dir: Option<PathBuf>,
+    },
 }
 
 const ARK_HOME: &str = ".ark";
@@ -143,34 +148,55 @@ fn main() {
             println!("Backup created:\n\t{}", backup_dir.display());
         }
 
-        Command::Collisions { root_dir } => {
-            let dir_path = if let Some(path) = root_dir {
-                path.clone()
-            } else {
-                current_dir()
-                    .expect("Can't open current directory!")
-                    .clone()
-            };
+        Command::Collisions { root_dir } => build_index(&root_dir, false),
+        Command::Monitor { root_dir } => build_index(&root_dir, true),
+    }
+}
 
-            println!("Building index of folder {}", dir_path.display());
-            let start = Instant::now();
-            let result = arklib::provide_index(dir_path);
-            let duration = start.elapsed();
+fn build_index(root_dir: &Option<PathBuf>, monitor: bool) {
+    let dir_path = if let Some(path) = root_dir {
+        path.clone()
+    } else {
+        current_dir()
+            .expect("Can't open current directory!")
+            .clone()
+    };
 
-            match result {
-                Ok(rwlock) => {
-                    println!("Success, took {:?}\n", duration);
+    println!("Building index of folder {}", dir_path.display());
+    let start = Instant::now();
+    let result = arklib::provide_index(dir_path);
+    let duration = start.elapsed();
 
-                    let index = rwlock.read().unwrap();
-                    println!("Here are {} entries in the index", index.size());
+    match result {
+        Ok(rwlock) => {
+            println!("Success, took {:?}\n", duration);
 
-                    for (key, count) in index.collisions.iter() {
-                        println!("Id {:?} calculated {} times", key, count);
+            if monitor {
+                let mut index = rwlock.write().unwrap();
+                loop {
+                    match index.update() {
+                        Err(msg) => println!("Oops! {}", msg),
+                        Ok(diff) => {
+                            if !diff.deleted.is_empty() {
+                                println!("Deleted: {:?}", diff.deleted);
+                            }
+                            if !diff.added.is_empty() {
+                                println!("Added: {:?}", diff.added);
+                            }
+                        }
                     }
                 }
-                Err(err) => println!("Failure: {:?}", err),
+            } else {
+                let index = rwlock.read().unwrap();
+
+                println!("Here are {} entries in the index", index.size());
+
+                for (key, count) in index.collisions.iter() {
+                    println!("Id {:?} calculated {} times", key, count);
+                }
             }
         }
+        Err(err) => println!("Failure: {:?}", err),
     }
 }
 
