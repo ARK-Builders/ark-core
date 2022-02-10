@@ -3,8 +3,8 @@ extern crate lazy_static;
 extern crate canonical_path;
 
 mod id;
-mod meta;
 mod index;
+mod meta;
 
 use index::ResourceIndex;
 
