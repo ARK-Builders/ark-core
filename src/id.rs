@@ -56,7 +56,7 @@ impl ResourceId {
         log::trace!("checksum: {:#02x}", crc32);
         assert!(bytes_read == file_size.try_into().unwrap());
 
-        return ResourceId { file_size, crc32 };
+        ResourceId { file_size, crc32 }
     }
 }
 
