@@ -31,6 +31,8 @@ impl ResourceIndex {
     }
 
     pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+        log::info!("Creating the index from scratch");
+
         let paths = discover_paths(root_path.as_ref().to_owned());
         let metadata = scan_metadata(paths);
 
@@ -56,6 +58,8 @@ impl ResourceIndex {
     }
 
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
+        log::info!("Updating the index");
+
         let curr_entries = discover_paths(self.root.clone());
 
         //assuming that collections manipulation is
@@ -78,6 +82,7 @@ impl ResourceIndex {
             })
             .collect();
 
+        log::info!("Scanning for updated paths");
         let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
             .into_iter()
             .filter(|(path, entry)| {
@@ -99,7 +104,7 @@ impl ResourceIndex {
                         Ok(metadata) => match metadata.modified() {
                             Err(msg) => {
                                 log::error!(
-                                    "Couldn't retrieve metadata for {}: {}",
+                                    "Couldn't retrieve timestamp for {}: {}",
                                     &path.display(),
                                     msg
                                 );
@@ -178,16 +183,20 @@ fn discover_paths<P: AsRef<Path>>(
         .filter_map(|result| match result {
             Ok(entry) => {
                 let path = entry.path();
-                match CanonicalPathBuf::canonicalize(path) {
-                    Ok(canonical_path) => Some((canonical_path, entry)),
-                    Err(msg) => {
-                        log::error!(
-                            "Couldn't canonicalize {}:\n{}",
-                            path.display(),
-                            msg
-                        );
-                        None
+                if !entry.file_type().is_dir() {
+                    match CanonicalPathBuf::canonicalize(path) {
+                        Ok(canonical_path) => Some((canonical_path, entry)),
+                        Err(msg) => {
+                            log::error!(
+                                "Couldn't canonicalize {}:\n{}",
+                                path.display(),
+                                msg
+                            );
+                            None
+                        }
                     }
+                } else {
+                    None
                 }
             }
             Err(msg) => {
@@ -201,9 +210,13 @@ fn discover_paths<P: AsRef<Path>>(
 fn scan_metadata(
     entries: HashMap<CanonicalPathBuf, DirEntry>,
 ) -> HashMap<CanonicalPathBuf, ResourceMeta> {
+    log::info!("Scanning metadata");
+
     entries
         .into_iter()
         .filter_map(|(path, entry)| {
+            log::trace!("\n\t{:?}\n\t\t{:?}", path, entry);
+
             let result = ResourceMeta::scan(path.clone(), entry);
             match result {
                 Err(msg) => {
