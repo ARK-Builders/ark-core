@@ -59,6 +59,7 @@ impl ResourceIndex {
 
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
         log::info!("Updating the index");
+        log::trace!("Known paths:\n{:?}", self.path2meta.keys());
 
         let curr_entries = discover_paths(self.root.clone());
 
@@ -82,7 +83,7 @@ impl ResourceIndex {
             })
             .collect();
 
-        log::info!("Scanning for updated paths");
+        log::info!("Checking updated paths");
         let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
             .into_iter()
             .filter(|(path, entry)| {
@@ -117,53 +118,57 @@ impl ResourceIndex {
             })
             .collect();
 
-        let deleted: HashSet<ResourceId> = prev_paths
+        let mut deleted: HashSet<ResourceId> = HashSet::new();
+
+        // treating deleted and updated paths as deletions
+        prev_paths
             .difference(&preserved_paths)
             .cloned()
-            .map(|path| self.path2meta[&path].id.clone())
-            .chain(
-                updated_paths
-                    .keys()
-                    .map(|path| self.path2meta[path].id.clone()),
-            )
-            .collect();
+            .chain(updated_paths.keys().cloned())
+            .for_each(|path| {
+                if let Some(meta) = self.path2meta.remove(&path) {
+                    let k = self.collisions.remove(&meta.id).unwrap_or(1);
+                    if k > 1 {
+                        self.collisions.insert(meta.id, k - 1);
+                    } else {
+                        log::debug!("Removing {:?} from index", meta.id);
+                        self.ids.remove(&meta.id);
+                        deleted.insert(meta.id);
+                    }
+                } else {
+                    log::warn!("Path {} was not known", path.display());
+                }
+            });
 
         let added: HashMap<CanonicalPathBuf, ResourceMeta> =
             scan_metadata(updated_paths)
                 .into_iter()
+                .chain({
+                    log::info!("The same for new paths");
+                    scan_metadata(created_paths).into_iter()
+                })
                 .filter(|(_, meta)| !self.ids.contains(&meta.id))
-                .chain(scan_metadata(created_paths).into_iter())
                 .collect();
 
-        let mut path2meta = HashMap::new();
-        let mut collisions: HashMap<ResourceId, usize> = HashMap::new();
-        let mut ids: HashSet<ResourceId> = HashSet::new();
-
-        for (path, meta) in self.path2meta.iter() {
-            if !deleted.contains(&meta.id) {
-                add_meta(
-                    path.clone(),
-                    meta.clone(),
-                    &mut path2meta,
-                    &mut collisions,
-                    &mut ids,
+        for (path, meta) in added.iter() {
+            if deleted.contains(&meta.id) {
+                // emitting the resource as both deleted and added
+                // (renaming a duplicate might remain undetected)
+                log::info!(
+                    "Resource {:?} was moved to {}",
+                    meta.id,
+                    path.display()
                 );
             }
-        }
 
-        for (path, meta) in added.iter() {
             add_meta(
                 path.clone(),
                 meta.clone(),
-                &mut path2meta,
-                &mut collisions,
-                &mut ids,
+                &mut self.path2meta,
+                &mut self.collisions,
+                &mut self.ids,
             );
         }
-
-        self.path2meta = path2meta;
-        self.collisions = collisions;
-        self.ids = ids;
 
         Ok(IndexUpdate { deleted, added })
     }
@@ -241,6 +246,7 @@ fn add_meta(
     ids: &mut HashSet<ResourceId>,
 ) {
     let id = meta.id.clone();
+    path2meta.insert(path, meta);
 
     if ids.contains(&id) {
         if let Some(nonempty) = collisions.get_mut(&id) {
@@ -250,7 +256,6 @@ fn add_meta(
         }
     } else {
         ids.insert(id.clone());
-        path2meta.insert(path, meta);
     }
 }
 
