@@ -31,7 +31,7 @@ dependencies = [
 [[package]]
 name = "arklib"
 version = "0.1.0"
-source = "git+https://github.com/ARK-Builders/arklib?rev=0c3cdd3#0c3cdd3a070a3e50043826b6b3a932421f014d7f"
+source = "git+https://github.com/ARK-Builders/arklib?rev=e834f48#e834f48e88a01562034bca5b83e21dd490586d6d"
 dependencies = [
  "anyhow",
  "canonical-path",
