@@ -3,6 +3,7 @@ use std::fs::{canonicalize, copy, create_dir_all, File};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
@@ -31,6 +32,7 @@ enum Command {
     Monitor {
         #[clap(parse(from_os_str))]
         root_dir: Option<PathBuf>,
+        interval: Option<u64>,
     },
 }
 
@@ -148,12 +150,15 @@ fn main() {
             println!("Backup created:\n\t{}", backup_dir.display());
         }
 
-        Command::Collisions { root_dir } => build_index(&root_dir, false),
-        Command::Monitor { root_dir } => build_index(&root_dir, true),
+        Command::Collisions { root_dir } => build_index(&root_dir, None),
+        Command::Monitor { root_dir, interval } => {
+            let millis = interval.unwrap_or(1000);
+            build_index(&root_dir, Some(millis))
+        }
     }
 }
 
-fn build_index(root_dir: &Option<PathBuf>, monitor: bool) {
+fn build_index(root_dir: &Option<PathBuf>, interval: Option<u64>) {
     let dir_path = if let Some(path) = root_dir {
         path.clone()
     } else {
@@ -171,9 +176,12 @@ fn build_index(root_dir: &Option<PathBuf>, monitor: bool) {
         Ok(rwlock) => {
             println!("Success, took {:?}\n", duration);
 
-            if monitor {
+            if let Some(millis) = interval {
                 let mut index = rwlock.write().unwrap();
                 loop {
+                    let pause = Duration::from_millis(millis);
+                    thread::sleep(pause);
+
                     match index.update() {
                         Err(msg) => println!("Oops! {}", msg),
                         Ok(diff) => {
