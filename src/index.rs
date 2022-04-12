@@ -377,39 +377,6 @@ mod tests {
 
     // resource index update
 
-    /// TODO: this case is probably not working correctly
-    /// When renaming a file that has been identified as a collision during
-    /// build, any updates to it are lost from the UpdateIndex (?)
-    #[test]
-    fn should_update_index_after_renaming_collided_file_correctly() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_2));
-
-            let mut actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
-
-            assert_eq!(actual.collisions.len(), 1);
-            assert_eq!(actual.size(), 2);
-
-            let mut name_from = path.clone();
-            name_from.push(FILE_NAME_2);
-            let mut name_to = path.clone();
-            name_to.push(FILE_NAME_3);
-            std::fs::rename(name_from, name_to)
-                .expect("Should rename file successfully");
-
-            let update = actual
-                .update()
-                .expect("Should update index correctly");
-
-            assert_eq!(actual.collisions.len(), 1);
-            assert_eq!(actual.size(), 1); // TODO This size also changed
-            assert_eq!(update.deleted.len(), 0); // TODO Probably this should be 1
-            assert_eq!(update.added.len(), 0); // TODO also here
-        });
-    }
-
     #[test]
     fn should_update_index_with_renamed_file_correctly() {
         run_test_and_clean_up(|path| {
