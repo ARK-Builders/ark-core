@@ -7,8 +7,8 @@ use log;
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub struct ResourceId {
-    file_size: u64,
-    crc32: u32,
+    pub(crate) file_size: u64,
+    pub(crate) crc32: u32,
 }
 
 impl ResourceId {
@@ -54,7 +54,7 @@ impl ResourceId {
         let crc32: u32 = hasher.finalize().into();
         log::trace!("{} bytes has been read", bytes_read);
         log::trace!("checksum: {:#02x}", crc32);
-        assert!(bytes_read == file_size.try_into().unwrap());
+        assert_eq!(bytes_read, file_size.try_into().unwrap());
 
         ResourceId { file_size, crc32 }
     }
