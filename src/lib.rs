@@ -1,10 +1,10 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate canonical_path;
-
-mod id;
+pub mod id;
 mod index;
 mod meta;
+pub mod pdf;
 
 use index::ResourceIndex;
 

@@ -15,6 +15,18 @@ anyhow = "1.0"
 env_logger = "0.9.0"
 lazy_static = "1.4.0"
 canonical-path = "2.0.2"
+image = "0.24.2"
+pdfium-render = "0.7.1"
+libloading = "0.7.3"
 
 [dev-dependencies]
+tempdir = "0.3.7"
 uuid = { version = "0.8.2", features = ["v4"] }
+
+[build-dependencies]
+flate2 = "1.0.24"
+fs_extra = "1.2.0"
+libloading = "0.7.3"
+tar = "0.4.38"
+target-lexicon = "0.12.4"
+ureq = "2.4.0"
