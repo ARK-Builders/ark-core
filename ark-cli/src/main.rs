@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env::current_dir, fs};
 
-use arklib::pdf::PDFQuailty;
+use arklib::pdf::PDFQuality;
 use clap::{Parser, Subcommand};
 use home::home_dir;
 
@@ -165,9 +165,9 @@ fn main() {
         Command::Render { path, quality } => {
             let filepath = path.to_owned().unwrap();
             let quality = match quality.to_owned().unwrap().as_str() {
-                "high" => PDFQuailty::High,
-                "medium" => PDFQuailty::Medium,
-                "low" => PDFQuailty::Low,
+                "high" => PDFQuality::High,
+                "medium" => PDFQuality::Medium,
+                "low" => PDFQuality::Low,
                 _ => panic!("unknown render option"),
             };
             let buf = fs::read(&filepath).unwrap();
