@@ -11,7 +11,8 @@ fn main() {
     let t = env::var("TARGET").unwrap();
     let target = Triple::from_str(t.as_str()).unwrap();
     let out_dir = env::var_os("OUT_DIR").unwrap();
-    // Avoid dublicate download
+
+    // Avoid duplicate download
     if !fs_extra::dir::ls(&out_dir, &HashSet::new())
         .unwrap()
         .items
@@ -29,6 +30,7 @@ fn main() {
         _ => {}
     }
     dbg!(&name);
+
     match target.operating_system {
         OperatingSystem::Windows => name.push("win"),
         OperatingSystem::Linux => {
@@ -45,6 +47,7 @@ fn main() {
         _ => {}
     }
     dbg!(&name);
+
     match target.architecture {
         Architecture::Arm(_) => name.push("arm"),
         Architecture::Aarch64(_) => name.push("arm64"),
@@ -53,9 +56,8 @@ fn main() {
         _ => {}
     }
     dbg!(&name);
-    let filename = name.join("-").to_string();
 
-    // let dest_path = Path::new(&out_dir).join(&lib_os_name);
+    let filename = name.join("-").to_string();
     let url = format!(
         "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/{}/{}.tgz",
         PDFIUM_VERSION, filename
@@ -68,6 +70,7 @@ fn main() {
     let ar = GzDecoder::new(request);
     let mut ar = Archive::new(ar);
     ar.unpack(&out_dir).unwrap();
+
     match target.operating_system {
         OperatingSystem::Windows => fs_extra::file::move_file(
             PathBuf::from(&out_dir)
