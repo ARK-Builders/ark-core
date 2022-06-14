@@ -1,11 +1,12 @@
-use std::env::current_dir;
 use std::fs::{canonicalize, copy, create_dir_all, File};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{env::current_dir, fs};
 
+use arklib::pdf::PDFQuailty;
 use clap::{Parser, Subcommand};
 use home::home_dir;
 
@@ -33,6 +34,12 @@ enum Command {
         #[clap(parse(from_os_str))]
         root_dir: Option<PathBuf>,
         interval: Option<u64>,
+    },
+
+    Render {
+        #[clap(parse(from_os_str))]
+        path: Option<PathBuf>,
+        quality: Option<String>,
     },
 }
 
@@ -154,6 +161,27 @@ fn main() {
         Command::Monitor { root_dir, interval } => {
             let millis = interval.unwrap_or(1000);
             build_index(&root_dir, Some(millis))
+        }
+        Command::Render { path, quality } => {
+            let filepath = path.to_owned().unwrap();
+            let quality = match quality.to_owned().unwrap().as_str() {
+                "high" => PDFQuailty::High,
+                "medium" => PDFQuailty::Medium,
+                "low" => PDFQuailty::Low,
+                _ => panic!("unknown render option"),
+            };
+            let buf = fs::read(&filepath).unwrap();
+            let dest_path = filepath.with_file_name(
+                filepath
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
+                    + ".png",
+            );
+            let img = arklib::pdf::render_preview_page(buf.as_slice(), quality);
+            img.save(PathBuf::from(dest_path)).unwrap();
         }
     }
 }
