@@ -24,12 +24,12 @@ fn main() {
     let mut name = vec!["pdfium"];
     match target.environment {
         Environment::Android | Environment::Androideabi => {
+            // The prebuilt pdfium library is included in the arklib-android, no more fetching work needed.
             name.push("android");
             return;
         }
         _ => {}
     }
-    dbg!(&name);
 
     match target.operating_system {
         OperatingSystem::Windows => name.push("win"),
@@ -46,7 +46,6 @@ fn main() {
         } => name.push("mac"),
         _ => {}
     }
-    dbg!(&name);
 
     match target.architecture {
         Architecture::Arm(_) => name.push("arm"),
@@ -70,7 +69,6 @@ fn main() {
     let ar = GzDecoder::new(request);
     let mut ar = Archive::new(ar);
     ar.unpack(&out_dir).unwrap();
-
     match target.operating_system {
         OperatingSystem::Windows => fs_extra::file::move_file(
             PathBuf::from(&out_dir)
