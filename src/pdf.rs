@@ -1,4 +1,8 @@
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    io::{Read, Seek},
+    path::PathBuf,
+};
 
 use image::DynamicImage;
 
@@ -28,7 +32,10 @@ fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
         }
     }
 }
-pub fn render_preview_page(data: &[u8], quailty: PDFQuality) -> DynamicImage {
+pub fn render_preview_page<R>(data: R, quailty: PDFQuality) -> DynamicImage
+where
+    R: Read + Seek + 'static,
+{
     let render_cfg = PdfBitmapConfig::new();
     let render_cfg = match quailty {
         PDFQuality::High => render_cfg.set_target_width(2000),
@@ -37,7 +44,7 @@ pub fn render_preview_page(data: &[u8], quailty: PDFQuality) -> DynamicImage {
     }
     .rotate_if_landscape(PdfBitmapRotation::Degrees90, true);
     Pdfium::new(initialize_pdfium())
-        .load_pdf_from_bytes(data, None)
+        .load_pdf_from_reader(data, None)
         .unwrap()
         .pages()
         .get(0)
@@ -54,14 +61,11 @@ fn test_multi_pdf_generate() {
     let tmp_path = dir.path();
     println!("temp path: {}", tmp_path.display());
     for i in 0..2 {
-        use std::{fs::File, io::Read};
-        let mut pdf_reader = File::open("tests/test.pdf").unwrap();
-
-        let mut bytes = Vec::new();
-        pdf_reader.read_to_end(&mut bytes).unwrap();
+        use std::fs::File;
+        let pdf_reader = File::open("tests/test.pdf").unwrap();
 
         println!("Rendering {}", &i);
-        let img = render_preview_page(bytes.as_slice(), PDFQuality::High);
+        let img = render_preview_page(pdf_reader, PDFQuality::High);
 
         img.save(tmp_path.join(format!("test{}.png", &i)))
             .expect("cannot save image");
