@@ -11,9 +11,9 @@ use url::Url;
 /// .link File used in ARK Shelf.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
-    title: String,
-    desc: String,
-    url: Url,
+    pub title: String,
+    pub desc: String,
+    pub url: Url,
 }
 
 impl Link {
