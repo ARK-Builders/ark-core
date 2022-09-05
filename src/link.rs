@@ -5,8 +5,11 @@ use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::{collections::hash_map::DefaultHasher, fmt};
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{fs, fs::File, io::Write, path::PathBuf};
 use url::Url;
+
+use crate::id::ResourceId;
+const PREVIEWS_RELATIVE_PATH: &str = ".ark/previews";
 
 /// .link File used in ARK Shelf.
 #[derive(Debug, Deserialize, Serialize)]
@@ -46,38 +49,18 @@ impl Link {
         Ok(json)
     }
 
-    // Load the image.png file from the .link file if exists.
-    pub fn load_preview<P: AsRef<Path>>(path: P) -> Result<Vec<u8>, Error> {
-        let file = File::open(path.as_ref()).expect("Open link file");
-        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap())
-            .expect("Open zip archive");
-        for i in 0..zip.len() {
-            let mut file = zip.by_index(i).unwrap();
-            let path = file.enclosed_name().unwrap();
-            if path.to_str() == Some("link.png") {
-                let mut dst: Vec<u8> = Vec::new();
-                std::io::copy(&mut file, &mut dst).unwrap();
-                return Ok(dst);
-            }
-        }
-        Err(Error::msg("An image.png file not found in the zip file"))
-    }
-
     /// Write zipped file to path
     pub async fn write_to_path<P: AsRef<Path>>(
         &mut self,
+        root: P,
         path: P,
-        download_preview: bool,
+        save_preview: bool,
     ) {
         let j = serde_json::to_string(self).unwrap();
-        let link_file = File::create(path).unwrap();
-        let mut zip = zip::ZipWriter::new(link_file);
-        let options = zip::write::FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file("link.json", options)
-            .expect("cannot create link.json");
-        zip.write(j.as_bytes()).unwrap();
-        if download_preview {
+        let mut link_file = File::create(path).unwrap();
+        link_file.write(j.as_bytes()).unwrap();
+        if save_preview {
+            let resource_id = ResourceId::compute_bytes(j.as_bytes());
             let preview_data = Link::get_preview(self.url.clone())
                 .await
                 .unwrap_or_default();
@@ -85,21 +68,39 @@ impl Link {
                 .fetch_image()
                 .await
                 .unwrap_or_default();
-            zip.start_file("link.png", options).unwrap();
-            zip.write(&image_data).unwrap();
+            self.save_preview(root, image_data, resource_id)
+                .await;
         }
-        zip.finish().unwrap();
     }
 
     /// Synchronized version of Write zipped file to path
     pub fn write_to_path_sync<P: AsRef<Path>>(
         &mut self,
+        root: P,
         path: P,
-        download_preview: bool,
+        save_preview: bool,
     ) {
         let runtime =
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-        runtime.block_on(self.write_to_path(path, download_preview));
+        runtime.block_on(self.write_to_path(root, path, save_preview));
+    }
+
+    pub async fn save_preview<P: AsRef<Path>>(
+        &mut self,
+        root: P,
+        image_data: Vec<u8>,
+        resource_id: ResourceId,
+    ) {
+        let previews_path = root.as_ref().join(PREVIEWS_RELATIVE_PATH);
+        fs::create_dir_all(previews_path.to_owned())
+            .expect(&format!("Creating {} directory", PREVIEWS_RELATIVE_PATH));
+        let mut preview_file = File::create(
+            previews_path
+                .to_owned()
+                .join(format!("{}.png", resource_id.crc32)),
+        )
+        .unwrap();
+        preview_file.write(image_data.as_slice()).unwrap();
     }
 
     /// Get metadata of the link (synced).
@@ -264,14 +265,9 @@ impl OpenGraphTag {
 
 impl From<PathBuf> for Link {
     fn from(path: PathBuf) -> Self {
-        let file = File::open(path).expect("Open link file");
-        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap())
-            .expect("Open zip archive");
-        let j_raw = zip
-            .by_name("link.json")
-            .expect("Find link.json in the zip archive");
-
-        let j = serde_json::from_reader(j_raw).expect("Parse link.json");
+        let j_raw = std::fs::read(path).expect("Open link file");
+        let j =
+            serde_json::from_slice(j_raw.as_slice()).expect("Parse link.json");
         Self { ..j }
     }
 }
@@ -287,16 +283,28 @@ fn test_create_link_file() {
     let hash = link.format_name();
     assert_eq!(hash, "5257664237369877164");
     let link_file_path = tmp_path.join(format!("{}.link", hash));
-    for download_preview in [true, false] {
-        link.write_to_path_sync(link_file_path.clone(), download_preview);
+    for save_preview in [false, true] {
+        link.write_to_path_sync(
+            tmp_path,
+            link_file_path.as_path(),
+            save_preview,
+        );
+        let link_file_bytes = std::fs::read(link_file_path.to_owned()).unwrap();
+        let resource_id = ResourceId::compute_bytes(link_file_bytes.as_slice());
+        println!("resource: {}, {}", resource_id.crc32, resource_id.data_size);
         let link_json = Link::load_json(link_file_path.clone()).unwrap();
         let j: Link = serde_json::from_str(link_json.as_str()).unwrap();
         assert_eq!(j.title, "title");
         assert_eq!(j.desc, "desc");
         assert_eq!(j.url.as_str(), "https://example.com/");
-        let _ = match Link::load_preview(link_file_path.clone()) {
-            Ok(_) => assert_eq!(download_preview, true),
-            Err(_) => assert_eq!(download_preview, false),
-        };
+        if Path::new(tmp_path)
+            .join(PREVIEWS_RELATIVE_PATH)
+            .join(format!("{}.png", resource_id.crc32))
+            .exists()
+        {
+            assert_eq!(save_preview, true)
+        } else {
+            assert_eq!(save_preview, false)
+        }
     }
 }

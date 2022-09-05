@@ -346,7 +346,7 @@ mod tests {
             assert_eq!(actual.path2meta.len(), 1);
             assert_eq!(actual.ids.len(), 1);
             assert!(actual.ids.contains(&ResourceId {
-                file_size: FILE_SIZE_1,
+                data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
             assert_eq!(actual.collisions.len(), 0);
@@ -367,7 +367,7 @@ mod tests {
             assert_eq!(actual.path2meta.len(), 2);
             assert_eq!(actual.ids.len(), 1);
             assert!(actual.ids.contains(&ResourceId {
-                file_size: FILE_SIZE_1,
+                data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
             assert_eq!(actual.collisions.len(), 1);
@@ -427,11 +427,11 @@ mod tests {
             assert_eq!(actual.path2meta.len(), 2);
             assert_eq!(actual.ids.len(), 2);
             assert!(actual.ids.contains(&ResourceId {
-                file_size: FILE_SIZE_1,
+                data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
             assert!(actual.ids.contains(&ResourceId {
-                file_size: FILE_SIZE_2,
+                data_size: FILE_SIZE_2,
                 crc32: CRC32_2,
             }));
             assert_eq!(actual.collisions.len(), 0);
@@ -449,7 +449,7 @@ mod tests {
                     .expect("Key exists")
                     .id,
                 ResourceId {
-                    file_size: FILE_SIZE_2,
+                    data_size: FILE_SIZE_2,
                     crc32: CRC32_2
                 }
             )
@@ -482,7 +482,7 @@ mod tests {
             assert_eq!(update.added.len(), 0);
 
             assert!(update.deleted.contains(&ResourceId {
-                file_size: FILE_SIZE_1,
+                data_size: FILE_SIZE_1,
                 crc32: CRC32_1
             }))
         })
