@@ -101,6 +101,17 @@ impl Link {
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
         runtime.block_on(self.write_to_path(path, download_preview));
     }
+
+    /// Get metadata of the link (synced).
+    pub fn get_preview_synced<S>(url: S) -> Result<OpenGraph, reqwest::Error>
+    where
+        S: Into<String>,
+    {
+        let runtime =
+            tokio::runtime::Runtime::new().expect("Unable to create a runtime");
+        return runtime.block_on(Link::get_preview(url));
+    }
+
     /// Get metadata of the link.
     pub async fn get_preview<S>(url: S) -> Result<OpenGraph, reqwest::Error>
     where
@@ -176,13 +187,13 @@ pub struct OpenGraph {
     ///
     /// The title of your object as it should appear within
     /// the graph, e.g., "The Rock".
-    title: Option<String>,
+    pub title: Option<String>,
     /// Represents the "og:description" OpenGraph meta tag
-    description: Option<String>,
+    pub description: Option<String>,
     /// Represents the "og:url" OpenGraph meta tag
-    url: Option<String>,
+    pub url: Option<String>,
     /// Represents the "og:image" OpenGraph meta tag
-    image: Option<String>,
+    pub image: Option<String>,
     /// Represents the "og:type" OpenGraph meta tag
     ///
     /// The type of your object, e.g., "video.movie". Depending on the type
