@@ -4,24 +4,33 @@ use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
+use std::str::{self, FromStr};
 use std::{collections::hash_map::DefaultHasher, fmt};
 use std::{fs, fs::File, io::Write, path::PathBuf};
 use url::Url;
 
 use crate::id::ResourceId;
 const PREVIEWS_RELATIVE_PATH: &str = ".ark/previews";
+const METADATA_RELATIVE_PATH: &str = ".ark/meta";
 
-/// .link File used in ARK Shelf.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
+    pub url: Url,
+    pub metadata: Option<Metadata>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Metadata {
     pub title: String,
     pub desc: String,
-    pub url: Url,
 }
 
 impl Link {
     pub fn new(title: String, desc: String, url: Url) -> Self {
-        Self { title, desc, url }
+        Self {
+            url: url,
+            metadata: Some(Metadata { title, desc }),
+        }
     }
     /// Get formatted name for .link
     pub fn format_name(&self) -> String {
@@ -41,10 +50,16 @@ impl Link {
     }
 
     // Load the link json from the .link file.
-    pub fn load_json<P: AsRef<Path>>(path: P) -> Result<String, Error> {
+    pub fn load_json<P: AsRef<Path>>(
+        root: P,
+        path: P,
+    ) -> Result<String, Error> {
         let p = path.as_ref().to_path_buf();
-        let link = Link::from(p);
+        let mut link: Link = Link::from(p);
 
+        let resource_id =
+            ResourceId::compute_bytes(link.url.as_str().as_bytes());
+        link.load_metadata(root, resource_id);
         let json = serde_json::to_string(&link).unwrap();
         Ok(json)
     }
@@ -56,11 +71,14 @@ impl Link {
         path: P,
         save_preview: bool,
     ) {
-        let j = serde_json::to_string(self).unwrap();
+        let resource_id =
+            ResourceId::compute_bytes(self.url.as_str().as_bytes());
+        let metadata_json = serde_json::to_string(&self.metadata).unwrap();
         let mut link_file = File::create(path).unwrap();
-        link_file.write(j.as_bytes()).unwrap();
+        link_file
+            .write(self.url.as_str().as_bytes())
+            .unwrap();
         if save_preview {
-            let resource_id = ResourceId::compute_bytes(j.as_bytes());
             let preview_data = Link::get_preview(self.url.clone())
                 .await
                 .unwrap_or_default();
@@ -68,9 +86,18 @@ impl Link {
                 .fetch_image()
                 .await
                 .unwrap_or_default();
-            self.save_preview(root, image_data, resource_id)
-                .await;
+            self.save_preview(
+                root.as_ref().to_owned(),
+                image_data,
+                resource_id.to_owned(),
+            )
+            .await;
         }
+        self.save_metadata(
+            root.as_ref().to_owned(),
+            metadata_json.into_bytes(),
+            resource_id.to_owned(),
+        );
     }
 
     /// Synchronized version of Write zipped file to path
@@ -111,6 +138,42 @@ impl Link {
         let runtime =
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
         return runtime.block_on(Link::get_preview(url));
+    }
+
+
+    pub fn load_metadata<P: AsRef<Path>>(
+        &mut self,
+        root: P,
+        resource_id: ResourceId,
+    ) {
+        let metadata_home = root.as_ref().join(METADATA_RELATIVE_PATH);
+        let metadata_path =
+            metadata_home.join(format!("{}", resource_id.crc32));
+
+        if metadata_path.exists() {
+            let metadata_bytes =
+                std::fs::read(metadata_path.to_owned()).unwrap();
+            self.metadata =
+                serde_json::from_slice(metadata_bytes.as_slice()).unwrap()
+        }
+    }
+
+    pub fn save_metadata<P: AsRef<Path>>(
+        &mut self,
+        root: P,
+        metadata: Vec<u8>,
+        resource_id: ResourceId,
+    ) {
+        let metadata_path = root.as_ref().join(METADATA_RELATIVE_PATH);
+        fs::create_dir_all(metadata_path.to_owned())
+            .expect(&format!("Creating {} directory", METADATA_RELATIVE_PATH));
+        let mut metadata_file = File::create(
+            metadata_path
+                .to_owned()
+                .join(format!("{}", resource_id.crc32)),
+        )
+        .unwrap();
+        metadata_file.write(metadata.as_slice()).unwrap();
     }
 
     /// Get metadata of the link.
@@ -265,10 +328,13 @@ impl OpenGraphTag {
 
 impl From<PathBuf> for Link {
     fn from(path: PathBuf) -> Self {
-        let j_raw = std::fs::read(path).expect("Open link file");
-        let j =
-            serde_json::from_slice(j_raw.as_slice()).expect("Parse link.json");
-        Self { ..j }
+        let url_raw = std::fs::read(path).expect("Open link file");
+        let url_str = str::from_utf8(url_raw.as_slice()).unwrap();
+        let url: Url = Url::from_str(url_str).unwrap();
+        Self {
+            url: url,
+            metadata: None,
+        }
     }
 }
 
@@ -290,13 +356,20 @@ fn test_create_link_file() {
             save_preview,
         );
         let link_file_bytes = std::fs::read(link_file_path.to_owned()).unwrap();
+        let u: Url =
+            Url::from_str(str::from_utf8(&link_file_bytes).unwrap()).unwrap();
+        assert_eq!(u.as_str(), "https://example.com/");
+        let link = Link::load_json(tmp_path.clone(), link_file_path.as_path())
+            .unwrap();
+        let link_obj: Link = serde_json::from_str(link.as_str()).unwrap();
+        assert_eq!(link_obj.url.as_str(), u.as_str());
+        let meta = link_obj.metadata.unwrap();
+        assert_eq!(meta.desc, "desc");
+        assert_eq!(meta.title, "title");
+
         let resource_id = ResourceId::compute_bytes(link_file_bytes.as_slice());
         println!("resource: {}, {}", resource_id.crc32, resource_id.data_size);
-        let link_json = Link::load_json(link_file_path.clone()).unwrap();
-        let j: Link = serde_json::from_str(link_json.as_str()).unwrap();
-        assert_eq!(j.title, "title");
-        assert_eq!(j.desc, "desc");
-        assert_eq!(j.url.as_str(), "https://example.com/");
+
         if Path::new(tmp_path)
             .join(PREVIEWS_RELATIVE_PATH)
             .join(format!("{}.png", resource_id.crc32))
@@ -306,5 +379,13 @@ fn test_create_link_file() {
         } else {
             assert_eq!(save_preview, false)
         }
+        let metadata_path = Path::new(tmp_path)
+            .join(METADATA_RELATIVE_PATH)
+            .join(format!("{}", resource_id.crc32));
+        let metadata_bytes = std::fs::read(metadata_path.to_owned()).unwrap();
+        let j: Metadata =
+            serde_json::from_slice(metadata_bytes.as_slice()).unwrap();
+        assert_eq!(j.title, meta.title);
+        assert_eq!(j.desc, meta.desc);
     }
 }
