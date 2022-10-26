@@ -19,7 +19,15 @@ use canonical_path::CanonicalPathBuf;
 use anyhow::Error;
 use log;
 
-pub const TAG_STORAGE_FILENAME: &str = ".ark-tags";
+pub const STORAGES_FOLDER: &str = ".ark";
+
+// allowed to be lost (cache)
+pub const INDEX_PATH: &str = "index";
+pub const PREVIEWS_PATH: &str = "previews";
+
+// must not be lost (user data)
+pub const META_PATH: &str = "meta";
+pub const TAGS_PATH: &str = "tags";
 
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 
@@ -43,7 +51,7 @@ pub fn provide_index<P: AsRef<Path>>(
     }
 
     log::info!("Index has not been built before");
-    let index = ResourceIndex::build(&canonical_path).unwrap();
+    let index = ResourceIndex::build2(&canonical_path).unwrap();
 
     let mut registrar = REGISTRAR.write().unwrap();
     let arc = Arc::new(RwLock::new(index));
