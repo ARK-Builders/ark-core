@@ -1,5 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+
+use itertools::Itertools;
 
 use canonical_path::CanonicalPathBuf;
 use walkdir::{DirEntry, WalkDir};
@@ -9,6 +13,7 @@ use log;
 
 use crate::id::ResourceId;
 use crate::meta::ResourceMeta;
+use crate::{INDEX_PATH, STORAGES_FOLDER};
 
 #[derive(Debug)]
 pub struct ResourceIndex {
@@ -24,14 +29,55 @@ pub struct IndexUpdate {
     pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
 }
 
+pub const INDEX_ENTRY_DELIMITER: char = ' ';
+
 impl ResourceIndex {
     pub fn size(&self) -> usize {
         //the actual size is lower in presence of collisions
         self.path2meta.len()
     }
 
+    pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+        log::info!("Loading the index from file");
+
+        let mut index = ResourceIndex {
+            path2meta: HashMap::new(),
+            collisions: HashMap::new(),
+            ids: HashSet::new(),
+            root: root_path.as_ref().to_owned(),
+        };
+
+        let index_path = root_path
+            .as_ref()
+            .to_owned()
+            .join(STORAGES_FOLDER)
+            .join(INDEX_PATH);
+
+        if let Ok(file) = File::open(&index_path) {
+            for line in BufReader::new(file).lines() {
+                if let Ok(entry) = line {
+                    let mut parts = entry.split(INDEX_ENTRY_DELIMITER);
+                    let meta = ResourceMeta::load(parts.next().unwrap());
+
+                    let delimiter = INDEX_ENTRY_DELIMITER.to_string();
+                    let path: String = parts.intersperse(&delimiter).collect();
+                    //todo: the path must relative to the root
+
+                    log::trace!("[index] {:?} -> {}", meta, path);
+                }
+            }
+        } else {
+            log::info!(
+                "No persisted index was found by path {:?}",
+                index_path.clone()
+            );
+        }
+
+        return Ok(index);
+    }
+
     pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
-        log::info!("Creating the index from scratch");
+        log::info!("Building the index from scratch");
 
         let paths = discover_paths(root_path.as_ref().to_owned());
         let metadata = scan_metadata(paths);
@@ -55,6 +101,22 @@ impl ResourceIndex {
 
         log::info!("Index built");
         return Ok(index);
+    }
+
+    //todo: automatic test verifying that forall f, build(f) = build2(f)
+    pub fn build2<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+        log::info!("Building the index using persisted index");
+        //todo: if persisted index was not found, we should call build() since it's faster
+
+        let loaded = ResourceIndex::load(root_path);
+        log::debug!("Index loaded:{:?}", loaded);
+
+        if let Ok(mut index) = loaded {
+            index.update().unwrap(); //todo
+            return Ok(index);
+        } else {
+            return loaded;
+        }
     }
 
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
@@ -192,7 +254,7 @@ fn discover_paths<P: AsRef<Path>>(
                     match CanonicalPathBuf::canonicalize(path) {
                         Ok(canonical_path) => Some((canonical_path, entry)),
                         Err(msg) => {
-                            log::error!(
+                            log::warn!(
                                 "Couldn't canonicalize {}:\n{}",
                                 path.display(),
                                 msg
@@ -245,6 +307,8 @@ fn add_meta(
     collisions: &mut HashMap<ResourceId, usize>,
     ids: &mut HashSet<ResourceId>,
 ) {
+    log::debug!("Adding new entry to index:{:?} -> {:?}", path, meta);
+
     let id = meta.id.clone();
     path2meta.insert(path, meta);
 

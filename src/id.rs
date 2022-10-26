@@ -14,11 +14,32 @@ pub struct ResourceId {
 }
 
 impl ResourceId {
-    pub fn compute<P: AsRef<Path>>(file_size: u64, file_path: P) -> Self {
+    pub fn store(self: Self) -> String {
+        format!("{}-{}", self.data_size, self.crc32)
+    }
+
+    //todo: Option
+    pub fn load(encoded: &str) -> Self {
+        let mut parts = encoded.split('-');
+        let data_size: u64 = parts
+            .next()
+            .unwrap()
+            .parse()
+            .expect("not a u64 number");
+        let crc32: u32 = parts
+            .next()
+            .unwrap()
+            .parse()
+            .expect("not a u32 number");
+
+        ResourceId { data_size, crc32 }
+    }
+
+    pub fn compute<P: AsRef<Path>>(data_size: u64, file_path: P) -> Self {
         log::trace!(
             "Calculating hash of {} (given size is {} megabytes)",
             file_path.as_ref().display(),
-            file_size / MEGABYTE
+            data_size / MEGABYTE
         );
 
         let source = fs::OpenOptions::new()
@@ -31,7 +52,7 @@ impl ResourceId {
 
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, source);
 
-        ResourceId::compute_reader(file_size, &mut reader).expect(&format!(
+        ResourceId::compute_reader(data_size, &mut reader).expect(&format!(
             "Failed to read from {}",
             file_path.as_ref().display()
         ))
@@ -93,14 +114,14 @@ mod tests {
     #[test]
     fn compute_id_test() {
         let file_path = Path::new("./tests/lena.jpg");
-        let file_size = fs::metadata(file_path)
+        let data_size = fs::metadata(file_path)
             .expect(&format!(
                 "Could not open image test file_path.{}",
                 file_path.display()
             ))
             .len();
 
-        let id1 = ResourceId::compute(file_size.try_into().unwrap(), file_path);
+        let id1 = ResourceId::compute(data_size.try_into().unwrap(), file_path);
         assert_eq!(id1.crc32, 0x342a3d4a);
 
         let raw_bytes = fs::read(file_path).unwrap();

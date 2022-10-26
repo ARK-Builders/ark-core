@@ -4,6 +4,8 @@ use anyhow::Error;
 use canonical_path::CanonicalPathBuf;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
+use std::ops::Add;
+use std::time::{Duration, UNIX_EPOCH};
 use walkdir::DirEntry;
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug, Deserialize, Serialize)]
@@ -12,7 +14,35 @@ pub struct ResourceMeta {
     pub modified: SystemTime,
 }
 
+pub const RESOURCE_META_DELIMITER: char = ':';
+
 impl ResourceMeta {
+    pub fn store(self) -> String {
+        format!(
+            "{} {}",
+            self.id.store(),
+            self.modified
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        )
+    }
+
+    //todo: Option
+    pub fn load(encoded: &str) -> Self {
+        let mut parts = encoded.split(RESOURCE_META_DELIMITER);
+
+        let id: ResourceId = ResourceId::load(parts.next().unwrap());
+        let modified: SystemTime = UNIX_EPOCH.add(Duration::from_millis(
+            parts.next().unwrap().parse().unwrap(),
+        ));
+
+        ResourceMeta {
+            id,
+            modified
+        }
+    }
+
     pub fn scan(
         path: CanonicalPathBuf,
         entry: DirEntry,
