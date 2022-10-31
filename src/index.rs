@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
@@ -37,90 +37,139 @@ impl ResourceIndex {
         self.path2meta.len()
     }
 
-    pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
-        log::info!("Loading the index from file");
-
-        let mut index = ResourceIndex {
-            path2meta: HashMap::new(),
-            collisions: HashMap::new(),
-            ids: HashSet::new(),
-            root: root_path.as_ref().to_owned(),
-        };
-
-        let index_path = root_path
-            .as_ref()
-            .to_owned()
-            .join(STORAGES_FOLDER)
-            .join(INDEX_PATH);
-
-        if let Ok(file) = File::open(&index_path) {
-            for line in BufReader::new(file).lines() {
-                if let Ok(entry) = line {
-                    let mut parts = entry.split(INDEX_ENTRY_DELIMITER);
-                    let meta = ResourceMeta::load(parts.next().unwrap());
-
-                    let delimiter = INDEX_ENTRY_DELIMITER.to_string();
-                    let path: String = parts.intersperse(&delimiter).collect();
-                    //todo: the path must relative to the root
-
-                    log::trace!("[index] {:?} -> {}", meta, path);
-                }
-            }
-        } else {
-            log::info!(
-                "No persisted index was found by path {:?}",
-                index_path.clone()
-            );
-        }
-
-        return Ok(index);
-    }
-
     pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
         log::info!("Building the index from scratch");
+        let root_path: PathBuf = root_path.as_ref().to_owned();
 
-        let paths = discover_paths(root_path.as_ref().to_owned());
+        let paths = discover_paths(&root_path);
         let metadata = scan_metadata(paths);
 
         let mut index = ResourceIndex {
             path2meta: HashMap::new(),
             collisions: HashMap::new(),
             ids: HashSet::new(),
-            root: root_path.as_ref().to_owned(),
+            root: root_path,
         };
 
         for (path, meta) in metadata {
-            add_meta(
-                path,
-                meta,
-                &mut index.path2meta,
-                &mut index.collisions,
-                &mut index.ids,
-            );
+            index.add_entry(path, meta);
         }
 
         log::info!("Index built");
         return Ok(index);
     }
 
-    //todo: automatic test verifying that forall f, build(f) = build2(f)
-    pub fn build2<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
-        log::info!("Building the index using persisted index");
-        //todo: if persisted index was not found, we should call build() since it's faster
+    pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+        log::info!("Loading the index from file");
+        let root_path: PathBuf = root_path.as_ref().to_owned();
 
-        let loaded = ResourceIndex::load(root_path);
-        log::debug!("Index loaded:{:?}", loaded);
+        let index_path: PathBuf =
+            root_path.join(STORAGES_FOLDER).join(INDEX_PATH);
 
-        if let Ok(mut index) = loaded {
-            index.update().unwrap(); //todo
-            return Ok(index);
+        if let Ok(file) = File::open(&index_path) {
+            let mut index = ResourceIndex {
+                path2meta: HashMap::new(),
+                collisions: HashMap::new(),
+                ids: HashSet::new(),
+                root: root_path.clone(),
+            };
+
+            for line in BufReader::new(file).lines() {
+                if let Ok(entry) = line {
+                    let mut parts = entry.split(INDEX_ENTRY_DELIMITER);
+                    let meta = ResourceMeta::load(parts.next().unwrap());
+
+                    let delimiter = INDEX_ENTRY_DELIMITER.to_string();
+
+                    let path: String = parts.intersperse(&delimiter).collect();
+                    let path: PathBuf = root_path.join(Path::new(&path));
+                    let path: CanonicalPathBuf =
+                        CanonicalPathBuf::canonicalize(path).unwrap();
+
+                    log::trace!("[index.load] {:?} -> {:?}", meta, path);
+
+                    index.add_entry(path, meta);
+                }
+            }
+
+            Ok(index)
         } else {
-            return loaded;
+            let error = format!(
+                "No persisted index was found by path {:?}",
+                index_path.clone()
+            );
+
+            Err(Error::msg(error))
+        }
+    }
+
+    pub fn store(&self) -> Result<(), Error> {
+        log::info!("Storing the index to file");
+
+        let index_path = self
+            .root
+            .to_owned()
+            .join(STORAGES_FOLDER)
+            .join(INDEX_PATH);
+
+        let mut file = File::create(index_path).unwrap();
+
+        for (path, meta) in self.path2meta.iter() {
+            log::trace!("[index.store] {:?} {:?}", meta, path);
+
+            let value = meta.clone().store();
+            let key =
+                pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
+                    .unwrap();
+
+            write!(file, "{} {}\n", value, key.to_str().unwrap()).unwrap();
+        }
+
+        Ok(())
+    }
+
+    //todo: is `update` slower than `build`?
+
+    pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+        match Self::load(&root_path) {
+            Ok(mut index) => {
+                log::debug!("Index loaded: {:?} entries", index.path2meta.len());
+
+                match index.update() {
+                    Ok(update) => {
+                        log::debug!("Index updated: {:?} added, {:?} deleted",
+                            update.added.len(),
+                            update.deleted.len());
+                    }
+                    Err(e) => {
+                        log::error!("Failed to update index: {}",
+                            e.to_string());
+                    }
+                }
+
+                if let Err(e) = index.store() {
+                    log::error!("{}", e.to_string());
+                }
+                Ok(index)
+            }
+            Err(e) => {
+                log::warn!("{}", e.to_string());
+                match Self::build(root_path) {
+                    Ok(index) => {
+                        if let Err(e) = index.store() {
+                            log::error!("{}", e.to_string());
+                        }
+
+                        Ok(index)
+                    }
+                    error => error,
+                }
+            }
         }
     }
 
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
-        log::info!("Updating the index");
+        log::debug!("Updating the index");
         log::trace!("Known paths:\n{:?}", self.path2meta.keys());
 
         let curr_entries = discover_paths(self.root.clone());
@@ -145,7 +194,7 @@ impl ResourceIndex {
             })
             .collect();
 
-        log::info!("Checking updated paths");
+        log::debug!("Checking updated paths");
         let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
             .into_iter()
             .filter(|(path, entry)| {
@@ -193,7 +242,7 @@ impl ResourceIndex {
                     if k > 1 {
                         self.collisions.insert(meta.id, k - 1);
                     } else {
-                        log::debug!("Removing {:?} from index", meta.id);
+                        log::trace!("Removing {:?} from index", meta.id);
                         self.ids.remove(&meta.id);
                         deleted.insert(meta.id);
                     }
@@ -206,7 +255,7 @@ impl ResourceIndex {
             scan_metadata(updated_paths)
                 .into_iter()
                 .chain({
-                    log::info!("The same for new paths");
+                    log::debug!("Checking added paths");
                     scan_metadata(created_paths).into_iter()
                 })
                 .filter(|(_, meta)| !self.ids.contains(&meta.id))
@@ -216,30 +265,41 @@ impl ResourceIndex {
             if deleted.contains(&meta.id) {
                 // emitting the resource as both deleted and added
                 // (renaming a duplicate might remain undetected)
-                log::info!(
+                log::trace!(
                     "Resource {:?} was moved to {}",
                     meta.id,
                     path.display()
                 );
             }
 
-            add_meta(
-                path.clone(),
-                meta.clone(),
-                &mut self.path2meta,
-                &mut self.collisions,
-                &mut self.ids,
-            );
+            self.add_entry(path.clone(), meta.clone());
         }
 
         Ok(IndexUpdate { deleted, added })
+    }
+
+    fn add_entry(&mut self, path: CanonicalPathBuf, meta: ResourceMeta) {
+        log::trace!("[index.add] {:?} -> {:?}", path, meta);
+
+        let id = meta.id.clone();
+        self.path2meta.insert(path, meta);
+
+        if self.ids.contains(&id) {
+            if let Some(nonempty) = self.collisions.get_mut(&id) {
+                *nonempty += 1;
+            } else {
+                self.collisions.insert(id, 2);
+            }
+        } else {
+            self.ids.insert(id.clone());
+        }
     }
 }
 
 fn discover_paths<P: AsRef<Path>>(
     root_path: P,
 ) -> HashMap<CanonicalPathBuf, DirEntry> {
-    log::info!(
+    log::debug!(
         "Discovering all files under path {}",
         root_path.as_ref().display()
     );
@@ -277,7 +337,7 @@ fn discover_paths<P: AsRef<Path>>(
 fn scan_metadata(
     entries: HashMap<CanonicalPathBuf, DirEntry>,
 ) -> HashMap<CanonicalPathBuf, ResourceMeta> {
-    log::info!("Scanning metadata");
+    log::trace!("Scanning metadata");
 
     entries
         .into_iter()
@@ -298,29 +358,6 @@ fn scan_metadata(
             }
         })
         .collect()
-}
-
-fn add_meta(
-    path: CanonicalPathBuf,
-    meta: ResourceMeta,
-    path2meta: &mut HashMap<CanonicalPathBuf, ResourceMeta>,
-    collisions: &mut HashMap<ResourceId, usize>,
-    ids: &mut HashSet<ResourceId>,
-) {
-    log::debug!("Adding new entry to index:{:?} -> {:?}", path, meta);
-
-    let id = meta.id.clone();
-    path2meta.insert(path, meta);
-
-    if ids.contains(&id) {
-        if let Some(nonempty) = collisions.get_mut(&id) {
-            *nonempty += 1;
-        } else {
-            collisions.insert(id, 2);
-        }
-    } else {
-        ids.insert(id.clone());
-    }
 }
 
 fn is_hidden(entry: &DirEntry) -> bool {

@@ -19,8 +19,9 @@ pub const RESOURCE_META_DELIMITER: char = ':';
 impl ResourceMeta {
     pub fn store(self) -> String {
         format!(
-            "{} {}",
+            "{}{}{}",
             self.id.store(),
+            RESOURCE_META_DELIMITER,
             self.modified
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -33,6 +34,7 @@ impl ResourceMeta {
         let mut parts = encoded.split(RESOURCE_META_DELIMITER);
 
         let id: ResourceId = ResourceId::load(parts.next().unwrap());
+
         let modified: SystemTime = UNIX_EPOCH.add(Duration::from_millis(
             parts.next().unwrap().parse().unwrap(),
         ));

@@ -39,24 +39,27 @@ lazy_static! {
 pub fn provide_index<P: AsRef<Path>>(
     root_path: P,
 ) -> Result<Arc<RwLock<ResourceIndex>>, Error> {
-    let canonical_path = CanonicalPathBuf::canonicalize(root_path).unwrap();
+    let root_path = CanonicalPathBuf::canonicalize(root_path).unwrap();
 
     {
         let registrar = REGISTRAR.read().unwrap();
 
-        if let Some(index) = registrar.get(&canonical_path) {
-            log::info!("Index has been built before");
+        if let Some(index) = registrar.get(&root_path) {
+            log::info!("Index has been registered  before");
             return Ok(index.clone());
         }
     }
 
-    log::info!("Index has not been built before");
-    let index = ResourceIndex::build2(&canonical_path).unwrap();
+    log::info!("Index has not been registered before");
+    match ResourceIndex::provide(&root_path) {
+        Ok(index) => {
+            let mut registrar = REGISTRAR.write().unwrap();
+            let arc = Arc::new(RwLock::new(index));
+            registrar.insert(root_path, arc.clone());
 
-    let mut registrar = REGISTRAR.write().unwrap();
-    let arc = Arc::new(RwLock::new(index));
-    registrar.insert(canonical_path, arc.clone());
-
-    log::info!("Index was registered");
-    return Ok(arc);
+            log::info!("Index was registered");
+            Ok(arc)
+        }
+        Err(e) => Err(e),
+    }
 }
