@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
+use std::ops::Add;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::str::FromStr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use itertools::Itertools;
 
@@ -13,12 +15,17 @@ use anyhow::Error;
 use log;
 
 use crate::id::ResourceId;
-use crate::meta::ResourceMeta;
 use crate::{INDEX_PATH, STORAGES_FOLDER};
+
+#[derive(Eq, PartialEq, Hash, Clone, Debug)]
+pub struct IndexEntry {
+    pub id: ResourceId,
+    pub modified: SystemTime,
+}
 
 #[derive(Debug)]
 pub struct ResourceIndex {
-    pub path2meta: HashMap<CanonicalPathBuf, ResourceMeta>,
+    pub entries: HashMap<CanonicalPathBuf, IndexEntry>,
     pub collisions: HashMap<ResourceId, usize>,
     ids: HashSet<ResourceId>,
     root: PathBuf,
@@ -27,16 +34,15 @@ pub struct ResourceIndex {
 #[derive(Debug)]
 pub struct IndexUpdate {
     pub deleted: HashSet<ResourceId>,
-    pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
+    pub added: HashMap<CanonicalPathBuf, ResourceId>,
 }
 
-pub const INDEX_ENTRY_DELIMITER: char = ' ';
-pub const INDEX_UPDATE_THRESHOLD: Duration = Duration::from_millis(1);
+pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
 
 impl ResourceIndex {
     pub fn size(&self) -> usize {
         //the actual size is lower in presence of collisions
-        self.path2meta.len()
+        self.entries.len()
     }
 
     pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
@@ -44,17 +50,17 @@ impl ResourceIndex {
         let root_path: PathBuf = root_path.as_ref().to_owned();
 
         let paths = discover_paths(&root_path);
-        let metadata = scan_metadata(paths);
+        let entries = scan_entries(paths);
 
         let mut index = ResourceIndex {
-            path2meta: HashMap::new(),
+            entries: HashMap::new(),
             collisions: HashMap::new(),
             ids: HashSet::new(),
             root: root_path,
         };
 
-        for (path, meta) in metadata {
-            index.add_entry(path, meta);
+        for (path, entry) in entries {
+            index.insert_entry(path, entry);
         }
 
         log::info!("Index built");
@@ -70,7 +76,7 @@ impl ResourceIndex {
 
         if let Ok(file) = File::open(&index_path) {
             let mut index = ResourceIndex {
-                path2meta: HashMap::new(),
+                entries: HashMap::new(),
                 collisions: HashMap::new(),
                 ids: HashSet::new(),
                 root: root_path.clone(),
@@ -78,26 +84,30 @@ impl ResourceIndex {
 
             for line in BufReader::new(file).lines() {
                 if let Ok(entry) = line {
-                    let mut parts = entry.split(INDEX_ENTRY_DELIMITER);
-                    let meta = ResourceMeta::load(parts.next().unwrap());
+                    let mut parts = entry.split(' ');
 
-                    let delimiter = INDEX_ENTRY_DELIMITER.to_string();
+                    let id: ResourceId =
+                        ResourceId::from_str(parts.next().unwrap()).unwrap();
+                    let modified: SystemTime =
+                        UNIX_EPOCH.add(Duration::from_millis(
+                            parts.next().unwrap().parse().unwrap(),
+                        ));
 
-                    let path: String = parts.intersperse(&delimiter).collect();
+                    let path: String = parts.intersperse(" ").collect();
                     let path: PathBuf = root_path.join(Path::new(&path));
                     let path: CanonicalPathBuf =
-                        CanonicalPathBuf::canonicalize(path).unwrap();
+                        CanonicalPathBuf::canonicalize(path)?;
 
-                    log::trace!("[load] {:?} -> {}", meta, path.display());
-                    index.add_entry(path, meta);
+                    log::trace!("[load] {} -> {}", id, path.display());
+                    index.insert_entry(path, IndexEntry { id, modified });
                 }
             }
 
             Ok(index)
         } else {
             let error = format!(
-                "No persisted index was found by path {:?}",
-                index_path.clone()
+                "No persisted index was found by path {}",
+                index_path.display()
             );
 
             Err(Error::msg(error))
@@ -114,18 +124,23 @@ impl ResourceIndex {
             .join(INDEX_PATH);
 
         let ark_dir = index_path.parent().unwrap();
-        fs::create_dir_all(ark_dir).unwrap();
-        let mut file = File::create(index_path).unwrap();
+        fs::create_dir_all(ark_dir)?;
 
-        for (path, meta) in self.path2meta.iter() {
-            log::trace!("[store] {:?} by path {}", meta, path.display());
+        let mut file = File::create(index_path)?;
 
-            let value = meta.clone().store();
-            let key =
+        for (path, entry) in self.entries.iter() {
+            log::trace!("[store] {} by path {}", entry.id, path.display());
+
+            let timestamp = entry
+                .modified
+                .duration_since(UNIX_EPOCH)?
+                .as_millis();
+
+            let path =
                 pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
                     .unwrap();
 
-            write!(file, "{} {}\n", value, key.to_str().unwrap()).unwrap();
+            write!(file, "{} {} {}\n", entry.id, timestamp, path.display())?;
         }
 
         Ok(())
@@ -134,15 +149,12 @@ impl ResourceIndex {
     pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
         match Self::load(&root_path) {
             Ok(mut index) => {
-                log::debug!(
-                    "Index loaded: {:?} entries",
-                    index.path2meta.len()
-                );
+                log::debug!("Index loaded: {} entries", index.entries.len());
 
                 match index.update() {
                     Ok(update) => {
                         log::debug!(
-                            "Index updated: {:?} added, {:?} deleted",
+                            "Index updated: {} added, {} deleted",
                             update.added.len(),
                             update.deleted.len()
                         );
@@ -178,14 +190,14 @@ impl ResourceIndex {
 
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
         log::debug!("Updating the index");
-        log::trace!("[update] known paths: {:?}", self.path2meta.keys());
+        log::trace!("[update] known paths: {:?}", self.entries.keys());
 
         let curr_entries = discover_paths(self.root.clone());
 
         //assuming that collections manipulation is
         // quicker than asking `path.exists()` for every path
         let curr_paths: Paths = curr_entries.keys().cloned().collect();
-        let prev_paths: Paths = self.path2meta.keys().cloned().collect();
+        let prev_paths: Paths = self.entries.keys().cloned().collect();
         let preserved_paths: Paths = curr_paths
             .intersection(&prev_paths)
             .cloned()
@@ -205,14 +217,14 @@ impl ResourceIndex {
         log::debug!("Checking updated paths");
         let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
             .into_iter()
-            .filter(|(path, entry)| {
+            .filter(|(path, dir_entry)| {
                 if !preserved_paths.contains(path.as_canonical_path()) {
                     false
                 } else {
-                    let our_meta = &self.path2meta[path];
-                    let prev_modified = our_meta.modified;
+                    let our_entry = &self.entries[path];
+                    let prev_modified = our_entry.modified;
 
-                    let result = entry.metadata();
+                    let result = dir_entry.metadata();
                     match result {
                         Err(msg) => {
                             log::error!(
@@ -237,14 +249,14 @@ impl ResourceIndex {
                                     .unwrap();
 
                                 let was_updated =
-                                    elapsed >= INDEX_UPDATE_THRESHOLD;
+                                    elapsed >= RESOURCE_UPDATED_THRESHOLD;
                                 if was_updated {
                                     log::trace!(
-                                        "[update] modified {:?} by path {}
+                                        "[update] modified {} by path {}
                                         \twas {:?}
                                         \tnow {:?}
                                         \telapsed {:?}",
-                                        our_meta.id,
+                                        our_entry.id,
                                         path.display(),
                                         prev_modified,
                                         curr_modified,
@@ -268,56 +280,61 @@ impl ResourceIndex {
             .cloned()
             .chain(updated_paths.keys().cloned())
             .for_each(|path| {
-                if let Some(meta) = self.path2meta.remove(&path) {
-                    let k = self.collisions.remove(&meta.id).unwrap_or(1);
+                if let Some(entry) = self.entries.remove(&path) {
+                    let k = self.collisions.remove(&entry.id).unwrap_or(1);
                     if k > 1 {
-                        self.collisions.insert(meta.id, k - 1);
+                        self.collisions.insert(entry.id, k - 1);
                     } else {
                         log::trace!(
-                            "[delete] {:?} by path {}",
-                            meta.id,
+                            "[delete] {} by path {}",
+                            entry.id,
                             path.display()
                         );
-                        self.ids.remove(&meta.id);
-                        deleted.insert(meta.id);
+                        self.ids.remove(&entry.id);
+                        deleted.insert(entry.id);
                     }
                 } else {
                     log::warn!("Path {} was not known", path.display());
                 }
             });
 
-        let added: HashMap<CanonicalPathBuf, ResourceMeta> =
-            scan_metadata(updated_paths)
+        let added: HashMap<CanonicalPathBuf, IndexEntry> =
+            scan_entries(updated_paths)
                 .into_iter()
                 .chain({
                     log::debug!("Checking added paths");
-                    scan_metadata(created_paths).into_iter()
+                    scan_entries(created_paths).into_iter()
                 })
-                .filter(|(_, meta)| !self.ids.contains(&meta.id))
+                .filter(|(_, entry)| !self.ids.contains(&entry.id))
                 .collect();
 
-        for (path, meta) in added.iter() {
-            if deleted.contains(&meta.id) {
+        for (path, entry) in added.iter() {
+            if deleted.contains(&entry.id) {
                 // emitting the resource as both deleted and added
                 // (renaming a duplicate might remain undetected)
                 log::trace!(
-                    "[update] moved {:?} to path {}",
-                    meta.id,
+                    "[update] moved {} to path {}",
+                    entry.id,
                     path.display()
                 );
             }
 
-            self.add_entry(path.clone(), meta.clone());
+            self.insert_entry(path.clone(), entry.clone());
         }
+
+        let added: HashMap<CanonicalPathBuf, ResourceId> = added
+            .into_iter()
+            .map(|(path, entry)| (path, entry.id))
+            .collect();
 
         Ok(IndexUpdate { deleted, added })
     }
 
-    fn add_entry(&mut self, path: CanonicalPathBuf, meta: ResourceMeta) {
-        log::trace!("[add] {:?} by path {}", meta, path.display());
+    fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
+        log::trace!("[add] {} by path {}", entry.id, path.display());
 
-        let id = meta.id.clone();
-        self.path2meta.insert(path, meta);
+        let id = entry.id;
+        self.entries.insert(path, entry);
 
         if self.ids.contains(&id) {
             if let Some(nonempty) = self.collisions.get_mut(&id) {
@@ -369,13 +386,34 @@ fn discover_paths<P: AsRef<Path>>(
         .collect()
 }
 
-fn scan_metadata(
+fn scan_entry(
+    path: CanonicalPathBuf,
+    entry: DirEntry,
+) -> Result<(CanonicalPathBuf, IndexEntry), Error> {
+    if entry.file_type().is_dir() {
+        return Err(Error::msg("DirEntry is directory"));
+    }
+
+    let metadata = entry.metadata()?;
+    let size = metadata.len();
+    if size == 0 {
+        return Err(Error::msg("Empty resource"));
+    }
+
+    let id = ResourceId::compute(size, &path);
+    let modified = metadata.modified()?;
+
+    let entry = IndexEntry { id, modified };
+    Ok((path.clone(), entry))
+}
+
+fn scan_entries(
     entries: HashMap<CanonicalPathBuf, DirEntry>,
-) -> HashMap<CanonicalPathBuf, ResourceMeta> {
+) -> HashMap<CanonicalPathBuf, IndexEntry> {
     entries
         .into_iter()
         .filter_map(|(path, entry)| {
-            let result = ResourceMeta::scan(path.clone(), entry);
+            let result = scan_entry(path.clone(), entry);
             match result {
                 Err(msg) => {
                     log::error!(
@@ -475,7 +513,7 @@ mod tests {
                 .expect("Could not build index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2meta.len(), 1);
+            assert_eq!(actual.entries.len(), 1);
             assert_eq!(actual.ids.len(), 1);
             assert!(actual.ids.contains(&ResourceId {
                 data_size: FILE_SIZE_1,
@@ -496,7 +534,7 @@ mod tests {
                 .expect("Could not build index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2meta.len(), 2);
+            assert_eq!(actual.entries.len(), 2);
             assert_eq!(actual.ids.len(), 1);
             assert!(actual.ids.contains(&ResourceId {
                 data_size: FILE_SIZE_1,
@@ -556,7 +594,7 @@ mod tests {
                 .expect("Should update index correctly");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2meta.len(), 2);
+            assert_eq!(actual.entries.len(), 2);
             assert_eq!(actual.ids.len(), 2);
             assert!(actual.ids.contains(&ResourceId {
                 data_size: FILE_SIZE_1,
@@ -579,7 +617,7 @@ mod tests {
                     .added
                     .get(&added_key)
                     .expect("Key exists")
-                    .id,
+                    .clone(),
                 ResourceId {
                     data_size: FILE_SIZE_2,
                     crc32: CRC32_2
@@ -606,7 +644,7 @@ mod tests {
                 .expect("Should update index successfully");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2meta.len(), 0);
+            assert_eq!(actual.entries.len(), 0);
             assert_eq!(actual.ids.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 0);
@@ -660,7 +698,7 @@ mod tests {
                 .expect("Could not generate index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2meta.len(), 0);
+            assert_eq!(actual.entries.len(), 0);
             assert_eq!(actual.ids.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
@@ -674,7 +712,7 @@ mod tests {
                 .expect("Could not generate index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2meta.len(), 0);
+            assert_eq!(actual.entries.len(), 0);
             assert_eq!(actual.ids.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
@@ -689,7 +727,7 @@ mod tests {
                 .expect("Could not build index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2meta.len(), 0);
+            assert_eq!(actual.entries.len(), 0);
             assert_eq!(actual.ids.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })

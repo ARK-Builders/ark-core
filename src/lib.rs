@@ -2,11 +2,11 @@
 extern crate lazy_static;
 extern crate canonical_path;
 pub mod id;
-mod index;
 pub mod link;
-mod meta;
-mod meta2;
 pub mod pdf;
+
+mod index;
+mod meta2;
 
 use index::ResourceIndex;
 
@@ -39,13 +39,13 @@ lazy_static! {
 pub fn provide_index<P: AsRef<Path>>(
     root_path: P,
 ) -> Result<Arc<RwLock<ResourceIndex>>, Error> {
-    let root_path = CanonicalPathBuf::canonicalize(root_path).unwrap();
+    let root_path = CanonicalPathBuf::canonicalize(root_path)?;
 
     {
         let registrar = REGISTRAR.read().unwrap();
 
         if let Some(index) = registrar.get(&root_path) {
-            log::info!("Index has been registered  before");
+            log::info!("Index has been registered before");
             return Ok(index.clone());
         }
     }
