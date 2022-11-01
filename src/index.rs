@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use itertools::Itertools;
 
@@ -30,6 +31,7 @@ pub struct IndexUpdate {
 }
 
 pub const INDEX_ENTRY_DELIMITER: char = ' ';
+pub const INDEX_UPDATE_THRESHOLD: Duration = Duration::from_millis(1);
 
 impl ResourceIndex {
     pub fn size(&self) -> usize {
@@ -86,8 +88,7 @@ impl ResourceIndex {
                     let path: CanonicalPathBuf =
                         CanonicalPathBuf::canonicalize(path).unwrap();
 
-                    log::trace!("[index.load] {:?} -> {:?}", meta, path);
-
+                    log::trace!("[load] {:?} -> {}", meta, path.display());
                     index.add_entry(path, meta);
                 }
             }
@@ -112,10 +113,12 @@ impl ResourceIndex {
             .join(STORAGES_FOLDER)
             .join(INDEX_PATH);
 
+        let ark_dir = index_path.parent().unwrap();
+        fs::create_dir_all(ark_dir).unwrap();
         let mut file = File::create(index_path).unwrap();
 
         for (path, meta) in self.path2meta.iter() {
-            log::trace!("[index.store] {:?} {:?}", meta, path);
+            log::trace!("[store] {:?} by path {}", meta, path.display());
 
             let value = meta.clone().store();
             let key =
@@ -128,22 +131,27 @@ impl ResourceIndex {
         Ok(())
     }
 
-    //todo: is `update` slower than `build`?
-
     pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
         match Self::load(&root_path) {
             Ok(mut index) => {
-                log::debug!("Index loaded: {:?} entries", index.path2meta.len());
+                log::debug!(
+                    "Index loaded: {:?} entries",
+                    index.path2meta.len()
+                );
 
                 match index.update() {
                     Ok(update) => {
-                        log::debug!("Index updated: {:?} added, {:?} deleted",
+                        log::debug!(
+                            "Index updated: {:?} added, {:?} deleted",
                             update.added.len(),
-                            update.deleted.len());
+                            update.deleted.len()
+                        );
                     }
                     Err(e) => {
-                        log::error!("Failed to update index: {}",
-                            e.to_string());
+                        log::error!(
+                            "Failed to update index: {}",
+                            e.to_string()
+                        );
                     }
                 }
 
@@ -170,7 +178,7 @@ impl ResourceIndex {
 
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
         log::debug!("Updating the index");
-        log::trace!("Known paths:\n{:?}", self.path2meta.keys());
+        log::trace!("[update] known paths: {:?}", self.path2meta.keys());
 
         let curr_entries = discover_paths(self.root.clone());
 
@@ -201,7 +209,8 @@ impl ResourceIndex {
                 if !preserved_paths.contains(path.as_canonical_path()) {
                     false
                 } else {
-                    let prev_modified = self.path2meta[path].modified;
+                    let our_meta = &self.path2meta[path];
+                    let prev_modified = our_meta.modified;
 
                     let result = entry.metadata();
                     match result {
@@ -222,7 +231,29 @@ impl ResourceIndex {
                                 );
                                 false
                             }
-                            Ok(curr_modified) => curr_modified > prev_modified,
+                            Ok(curr_modified) => {
+                                let elapsed = curr_modified
+                                    .duration_since(prev_modified)
+                                    .unwrap();
+
+                                let was_updated =
+                                    elapsed >= INDEX_UPDATE_THRESHOLD;
+                                if was_updated {
+                                    log::trace!(
+                                        "[update] modified {:?} by path {}
+                                        \twas {:?}
+                                        \tnow {:?}
+                                        \telapsed {:?}",
+                                        our_meta.id,
+                                        path.display(),
+                                        prev_modified,
+                                        curr_modified,
+                                        elapsed
+                                    );
+                                }
+
+                                was_updated
+                            }
                         },
                     }
                 }
@@ -231,7 +262,7 @@ impl ResourceIndex {
 
         let mut deleted: HashSet<ResourceId> = HashSet::new();
 
-        // treating deleted and updated paths as deletions
+        // treating both deleted and updated paths as deletions
         prev_paths
             .difference(&preserved_paths)
             .cloned()
@@ -242,7 +273,11 @@ impl ResourceIndex {
                     if k > 1 {
                         self.collisions.insert(meta.id, k - 1);
                     } else {
-                        log::trace!("Removing {:?} from index", meta.id);
+                        log::trace!(
+                            "[delete] {:?} by path {}",
+                            meta.id,
+                            path.display()
+                        );
                         self.ids.remove(&meta.id);
                         deleted.insert(meta.id);
                     }
@@ -266,7 +301,7 @@ impl ResourceIndex {
                 // emitting the resource as both deleted and added
                 // (renaming a duplicate might remain undetected)
                 log::trace!(
-                    "Resource {:?} was moved to {}",
+                    "[update] moved {:?} to path {}",
                     meta.id,
                     path.display()
                 );
@@ -279,7 +314,7 @@ impl ResourceIndex {
     }
 
     fn add_entry(&mut self, path: CanonicalPathBuf, meta: ResourceMeta) {
-        log::trace!("[index.add] {:?} -> {:?}", path, meta);
+        log::trace!("[add] {:?} by path {}", meta, path.display());
 
         let id = meta.id.clone();
         self.path2meta.insert(path, meta);
@@ -337,13 +372,9 @@ fn discover_paths<P: AsRef<Path>>(
 fn scan_metadata(
     entries: HashMap<CanonicalPathBuf, DirEntry>,
 ) -> HashMap<CanonicalPathBuf, ResourceMeta> {
-    log::trace!("Scanning metadata");
-
     entries
         .into_iter()
         .filter_map(|(path, entry)| {
-            log::trace!("\n\t{:?}\n\t\t{:?}", path, entry);
-
             let result = ResourceMeta::scan(path.clone(), entry);
             match result {
                 Err(msg) => {
