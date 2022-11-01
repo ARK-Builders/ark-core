@@ -37,7 +37,7 @@ impl ResourceId {
 
     pub fn compute<P: AsRef<Path>>(data_size: u64, file_path: P) -> Self {
         log::trace!(
-            "Calculating hash of {} (given size is {} megabytes)",
+            "[compute] file {} with size {} mb",
             file_path.as_ref().display(),
             data_size / MEGABYTE
         );
@@ -92,8 +92,8 @@ impl ResourceId {
         }
 
         let crc32: u32 = hasher.finalize().into();
-        log::trace!("{} bytes has been read", bytes_read);
-        log::trace!("checksum: {:#02x}", crc32);
+        log::trace!("[compute] {} bytes has been read", bytes_read);
+        log::trace!("[compute] checksum: {:#02x}", crc32);
         assert_eq!(
             bytes_read,
             (data_size.try_into() as Result<u32, TryFromIntError>).unwrap()
