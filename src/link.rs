@@ -2,6 +2,7 @@ use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::str::{self, FromStr};
@@ -10,8 +11,8 @@ use std::{fs, fs::File, io::Write, path::PathBuf};
 use url::Url;
 
 use crate::id::ResourceId;
+use crate::meta::ResourceMeta;
 const PREVIEWS_RELATIVE_PATH: &str = ".ark/previews";
-const METADATA_RELATIVE_PATH: &str = ".ark/meta";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
@@ -59,7 +60,6 @@ impl Link {
 
         let resource_id =
             ResourceId::compute_bytes(link.url.as_str().as_bytes());
-        link.load_metadata(root, resource_id);
         let json = serde_json::to_string(&link).unwrap();
         Ok(json)
     }
@@ -74,7 +74,7 @@ impl Link {
         let resource_id =
             ResourceId::compute_bytes(self.url.as_str().as_bytes());
         let metadata_json = serde_json::to_string(&self.metadata).unwrap();
-        let mut link_file = File::create(path).unwrap();
+        let mut link_file = File::create(path.as_ref().to_owned()).unwrap();
         link_file
             .write(self.url.as_str().as_bytes())
             .unwrap();
@@ -93,10 +93,14 @@ impl Link {
             )
             .await;
         }
-        self.save_metadata(
+        ResourceMeta::store(
             root.as_ref().to_owned(),
-            metadata_json.into_bytes(),
+            path.as_ref().to_owned(),
             resource_id.to_owned(),
+            Some(OsString::from("name")),
+            Some(OsString::from("link")),
+            Some(metadata_json.into_bytes()),
+            None,
         );
     }
 
@@ -138,42 +142,6 @@ impl Link {
         let runtime =
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
         return runtime.block_on(Link::get_preview(url));
-    }
-
-
-    pub fn load_metadata<P: AsRef<Path>>(
-        &mut self,
-        root: P,
-        resource_id: ResourceId,
-    ) {
-        let metadata_home = root.as_ref().join(METADATA_RELATIVE_PATH);
-        let metadata_path =
-            metadata_home.join(format!("{}", resource_id.crc32));
-
-        if metadata_path.exists() {
-            let metadata_bytes =
-                std::fs::read(metadata_path.to_owned()).unwrap();
-            self.metadata =
-                serde_json::from_slice(metadata_bytes.as_slice()).unwrap()
-        }
-    }
-
-    pub fn save_metadata<P: AsRef<Path>>(
-        &mut self,
-        root: P,
-        metadata: Vec<u8>,
-        resource_id: ResourceId,
-    ) {
-        let metadata_path = root.as_ref().join(METADATA_RELATIVE_PATH);
-        fs::create_dir_all(metadata_path.to_owned())
-            .expect(&format!("Creating {} directory", METADATA_RELATIVE_PATH));
-        let mut metadata_file = File::create(
-            metadata_path
-                .to_owned()
-                .join(format!("{}", resource_id.crc32)),
-        )
-        .unwrap();
-        metadata_file.write(metadata.as_slice()).unwrap();
     }
 
     /// Get metadata of the link.
@@ -379,12 +347,10 @@ fn test_create_link_file() {
         } else {
             assert_eq!(save_preview, false)
         }
-        let metadata_path = Path::new(tmp_path)
-            .join(METADATA_RELATIVE_PATH)
-            .join(format!("{}", resource_id.crc32));
-        let metadata_bytes = std::fs::read(metadata_path.to_owned()).unwrap();
+        let metadata = ResourceMeta::locate(tmp_path.clone(), resource_id);
         let j: Metadata =
-            serde_json::from_slice(metadata_bytes.as_slice()).unwrap();
+            serde_json::from_slice(metadata.unwrap().kind.unwrap().as_slice())
+                .unwrap();
         assert_eq!(j.title, meta.title);
         assert_eq!(j.desc, meta.desc);
     }
