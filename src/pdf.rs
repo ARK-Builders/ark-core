@@ -36,7 +36,7 @@ pub fn render_preview_page<R>(data: R, quailty: PDFQuality) -> DynamicImage
 where
     R: Read + Seek + 'static,
 {
-    let render_cfg = PdfBitmapConfig::new();
+    let render_cfg = PdfRenderConfig::new();
     let render_cfg = match quailty {
         PDFQuality::High => render_cfg.set_target_width(2000),
         PDFQuality::Medium => render_cfg,
@@ -49,7 +49,7 @@ where
         .pages()
         .get(0)
         .unwrap()
-        .get_bitmap_with_config(&render_cfg)
+        .render_with_config(&render_cfg)
         .unwrap()
         .as_image()
 }

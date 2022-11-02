@@ -17,10 +17,10 @@ use log;
 use crate::id::ResourceId;
 use crate::{INDEX_PATH, STORAGES_FOLDER};
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug)]
+#[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
-    pub id: ResourceId,
     pub modified: SystemTime,
+    pub id: ResourceId,
 }
 
 #[derive(Debug)]
@@ -86,12 +86,13 @@ impl ResourceIndex {
                 if let Ok(entry) = line {
                     let mut parts = entry.split(' ');
 
-                    let id: ResourceId =
-                        ResourceId::from_str(parts.next().unwrap()).unwrap();
                     let modified: SystemTime =
                         UNIX_EPOCH.add(Duration::from_millis(
                             parts.next().unwrap().parse().unwrap(),
                         ));
+
+                    let id: ResourceId =
+                        ResourceId::from_str(parts.next().unwrap()).unwrap();
 
                     let path: String = parts.intersperse(" ").collect();
                     let path: PathBuf = root_path.join(Path::new(&path));
@@ -117,6 +118,8 @@ impl ResourceIndex {
     pub fn store(&self) -> Result<(), Error> {
         log::info!("Storing the index to file");
 
+        let start = SystemTime::now();
+
         let index_path = self
             .root
             .to_owned()
@@ -128,7 +131,11 @@ impl ResourceIndex {
 
         let mut file = File::create(index_path)?;
 
-        for (path, entry) in self.entries.iter() {
+        let mut entries: Vec<(&CanonicalPathBuf, &IndexEntry)> =
+            self.entries.iter().collect();
+        entries.sort_by_key(|(_, entry)| entry.clone());
+
+        for (path, entry) in entries.iter() {
             log::trace!("[store] {} by path {}", entry.id, path.display());
 
             let timestamp = entry
@@ -140,9 +147,10 @@ impl ResourceIndex {
                 pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
                     .unwrap();
 
-            write!(file, "{} {} {}\n", entry.id, timestamp, path.display())?;
+            write!(file, "{} {} {}\n", timestamp, entry.id, path.display())?;
         }
 
+        log::trace!("Storing the index took {:?}", start.elapsed().unwrap());
         Ok(())
     }
 
@@ -442,12 +450,13 @@ type Paths = HashSet<CanonicalPathBuf>;
 #[cfg(test)]
 mod tests {
     use crate::id::ResourceId;
-    use crate::index::discover_paths;
+    use crate::index::{discover_paths, IndexEntry};
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
     use std::fs::{File, Permissions};
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
+    use std::time::SystemTime;
     use uuid::Uuid;
 
     const FILE_SIZE_1: u64 = 10;
@@ -754,5 +763,53 @@ mod tests {
             let actual = discover_paths(missing_path);
             assert_eq!(actual.len(), 0);
         })
+    }
+
+    #[test]
+    fn index_entry_order() {
+        let old1 = IndexEntry {
+            id: ResourceId {
+                data_size: 1,
+                crc32: 2,
+            },
+            modified: SystemTime::UNIX_EPOCH,
+        };
+        let old2 = IndexEntry {
+            id: ResourceId {
+                data_size: 2,
+                crc32: 1,
+            },
+            modified: SystemTime::UNIX_EPOCH,
+        };
+
+        let new1 = IndexEntry {
+            id: ResourceId {
+                data_size: 1,
+                crc32: 1,
+            },
+            modified: SystemTime::now(),
+        };
+        let new2 = IndexEntry {
+            id: ResourceId {
+                data_size: 1,
+                crc32: 2,
+            },
+            modified: SystemTime::now(),
+        };
+
+        assert!(new1 == new1);
+        assert!(new2 == new2);
+        assert!(old1 == old1);
+        assert!(old2 == old2);
+
+        assert!(new1 != new2);
+        assert!(new1 != old1);
+
+        assert!(old2 > old1);
+        assert!(new1 > old1);
+        assert!(new1 > old2);
+        assert!(new2 > old1);
+        assert!(new2 > old2);
+        assert!(new2 > new1);
     }
 }
