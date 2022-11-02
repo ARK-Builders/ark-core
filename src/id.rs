@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -6,7 +7,7 @@ use std::{fs, num::TryFromIntError};
 use crc32fast::Hasher;
 use log;
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceId {
     pub data_size: u64,
     pub crc32: u32,

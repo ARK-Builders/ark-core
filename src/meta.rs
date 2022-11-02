@@ -2,14 +2,22 @@ use crate::id::ResourceId;
 
 use anyhow::Error;
 use canonical_path::CanonicalPathBuf;
+use serde::{Deserialize, Serialize};
+use std::any;
 use std::ffi::{OsStr, OsString};
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::Path;
 use std::time::SystemTime;
 use walkdir::DirEntry;
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug)]
+const METADATA_RELATIVE_PATH: &str = ".ark/meta";
+
+#[derive(Eq, PartialEq, Hash, Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceMeta {
     pub id: ResourceId,
-    pub modified: SystemTime,
+    // pub modified: SystemTime,
+    pub created_date: SystemTime,
     pub name: Option<OsString>,
     pub extension: Option<OsString>,
     pub kind: Option<ResourceKind>,
@@ -17,6 +25,55 @@ pub struct ResourceMeta {
 }
 
 impl ResourceMeta {
+    pub fn store<P: AsRef<Path>>(
+        root: P,
+        path: P,
+        resource_id: ResourceId,
+        name: Option<OsString>,
+        extension: Option<OsString>,
+        kind: Option<ResourceKind>,
+        extra: Option<ResourceExtra>,
+    ) {
+        let metadata_path = root.as_ref().join(METADATA_RELATIVE_PATH);
+        fs::create_dir_all(metadata_path.to_owned())
+            .expect(&format!("Creating {} directory", METADATA_RELATIVE_PATH));
+        let mut metadata_file = File::create(
+            metadata_path
+                .to_owned()
+                .join(format!("{}", resource_id.crc32)),
+        )
+        .unwrap();
+        let metadata = Self {
+            id: resource_id,
+            created_date: SystemTime::now(),
+            name,
+            extension,
+            kind,
+            extra,
+        };
+        let metadata_json = serde_json::to_string(&metadata).unwrap();
+        metadata_file
+            .write(metadata_json.into_bytes().as_slice())
+            .unwrap();
+    }
+
+    pub fn locate<P: AsRef<Path>>(
+        root: P,
+        resource_id: ResourceId,
+    ) -> Option<ResourceMeta> {
+        let metadata_home = root.as_ref().join(METADATA_RELATIVE_PATH);
+        let metadata_path =
+            metadata_home.join(format!("{}", resource_id.crc32));
+
+        if !metadata_path.exists() {
+            return None;
+        }
+        let metadata_bytes = std::fs::read(metadata_path.to_owned()).unwrap();
+        let meta: ResourceMeta =
+            serde_json::from_slice(metadata_bytes.as_slice()).unwrap();
+        Some(meta)
+    }
+
     pub fn scan(
         path: CanonicalPathBuf,
         entry: DirEntry,
@@ -36,13 +93,12 @@ impl ResourceMeta {
         let extension = convert_str(path.extension());
         let modified = metadata.modified()?;
 
-        //todo
         let kind = None;
         let extra = None;
 
         let meta = ResourceMeta {
             id,
-            modified,
+            created_date: modified,
             name,
             extension,
             kind,
@@ -53,8 +109,7 @@ impl ResourceMeta {
     }
 }
 
-//todo
-pub type ResourceKind = ();
+pub type ResourceKind = Vec<u8>;
 pub type ResourceExtra = ();
 
 fn convert_str(option: Option<&OsStr>) -> Option<OsString> {
