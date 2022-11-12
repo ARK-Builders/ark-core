@@ -3,7 +3,6 @@ use crate::id::ResourceId;
 use anyhow::Error;
 use canonical_path::CanonicalPathBuf;
 use serde::{Deserialize, Serialize};
-use std::any;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::Write;
@@ -16,10 +15,7 @@ const METADATA_RELATIVE_PATH: &str = ".ark/meta";
 #[derive(Eq, PartialEq, Hash, Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceMeta {
     pub id: ResourceId,
-    // pub modified: SystemTime,
-    pub created_date: SystemTime,
-    pub name: Option<OsString>,
-    pub extension: Option<OsString>,
+    pub modified: SystemTime,
     pub kind: Option<ResourceKind>,
     pub extra: Option<ResourceExtra>,
 }
@@ -29,8 +25,6 @@ impl ResourceMeta {
         root: P,
         path: P,
         resource_id: ResourceId,
-        name: Option<OsString>,
-        extension: Option<OsString>,
         kind: Option<ResourceKind>,
         extra: Option<ResourceExtra>,
     ) {
@@ -40,14 +34,12 @@ impl ResourceMeta {
         let mut metadata_file = File::create(
             metadata_path
                 .to_owned()
-                .join(format!("{}", resource_id.crc32)),
+                .join(format!("{}-{}", fs::metadata(path).unwrap().len(), resource_id.crc32)),
         )
         .unwrap();
         let metadata = Self {
             id: resource_id,
-            created_date: SystemTime::now(),
-            name,
-            extension,
+            modified: SystemTime::now(),
             kind,
             extra,
         };
@@ -59,11 +51,12 @@ impl ResourceMeta {
 
     pub fn locate<P: AsRef<Path>>(
         root: P,
+        path: P,
         resource_id: ResourceId,
     ) -> Option<ResourceMeta> {
         let metadata_home = root.as_ref().join(METADATA_RELATIVE_PATH);
         let metadata_path =
-            metadata_home.join(format!("{}", resource_id.crc32));
+            metadata_home.join(format!("{}-{}", fs::metadata(path).unwrap().len(), resource_id.crc32));
 
         if !metadata_path.exists() {
             return None;
@@ -89,8 +82,6 @@ impl ResourceMeta {
         }
 
         let id = ResourceId::compute(size, &path);
-        let name = convert_str(path.file_name());
-        let extension = convert_str(path.extension());
         let modified = metadata.modified()?;
 
         let kind = None;
@@ -98,9 +89,7 @@ impl ResourceMeta {
 
         let meta = ResourceMeta {
             id,
-            created_date: modified,
-            name,
-            extension,
+            modified: modified,
             kind,
             extra,
         };
@@ -117,4 +106,31 @@ fn convert_str(option: Option<&OsStr>) -> Option<OsString> {
         return Some(value.to_os_string());
     }
     None
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::meta;
+
+    use super::*;
+
+    #[test]
+    fn overall() {
+        use tempdir::TempDir;
+        let dir = TempDir::new("arklib_test").unwrap();
+        let tmp_path = dir.path();
+        println!("temp path: {}", tmp_path.display());
+        let file_path = Path::new("./tests/lena.jpg");
+        let file_size = fs::metadata(file_path)
+            .expect(&format!(
+                "Could not open image test file_path.{}",
+                file_path.display()
+            ))
+            .len();
+        let resource_id = ResourceId::compute(file_size.try_into().unwrap(), file_path);
+        ResourceMeta::store(tmp_path, file_path, resource_id.to_owned(), Some(vec![1,2,3,4].into()), None);
+        let meta = ResourceMeta::locate(tmp_path, file_path, resource_id.to_owned()).unwrap();
+        assert_eq!(meta.kind.unwrap(), vec![1,2,3,4])
+    }
 }
