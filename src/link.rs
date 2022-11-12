@@ -2,7 +2,7 @@ use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
-use std::ffi::OsString;
+// use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::str::{self, FromStr};
@@ -60,6 +60,23 @@ impl Link {
 
         let resource_id =
             ResourceId::compute_bytes(link.url.as_str().as_bytes());
+        
+        // TODO: We're loading the metadata here!
+        if let Some(meta) = ResourceMeta::locate(
+                root.as_ref().to_owned(),
+                path.as_ref().to_owned(),
+                resource_id.to_owned(),
+        ){
+            if let Some(kind) = meta.kind{
+                match serde_json::from_slice::<Metadata>(kind.as_slice()) {
+                    Ok(kind) => {
+                        link.metadata = Some(kind);
+                    }
+                    Err(_) => {},
+                } 
+            }
+
+        }
         let json = serde_json::to_string(&link).unwrap();
         Ok(json)
     }
@@ -75,8 +92,9 @@ impl Link {
             ResourceId::compute_bytes(self.url.as_str().as_bytes());
         let metadata_json = serde_json::to_string(&self.metadata).unwrap();
         let mut link_file = File::create(path.as_ref().to_owned()).unwrap();
+        let file_data = self.url.as_str().as_bytes();
         link_file
-            .write(self.url.as_str().as_bytes())
+            .write(file_data)
             .unwrap();
         if save_preview {
             let preview_data = Link::get_preview(self.url.clone())
@@ -90,6 +108,7 @@ impl Link {
                 root.as_ref().to_owned(),
                 image_data,
                 resource_id.to_owned(),
+                file_data.len()
             )
             .await;
         }
@@ -97,8 +116,6 @@ impl Link {
             root.as_ref().to_owned(),
             path.as_ref().to_owned(),
             resource_id.to_owned(),
-            Some(OsString::from("name")),
-            Some(OsString::from("link")),
             Some(metadata_json.into_bytes()),
             None,
         );
@@ -121,6 +138,7 @@ impl Link {
         root: P,
         image_data: Vec<u8>,
         resource_id: ResourceId,
+        data_size: usize
     ) {
         let previews_path = root.as_ref().join(PREVIEWS_RELATIVE_PATH);
         fs::create_dir_all(previews_path.to_owned())
@@ -128,7 +146,7 @@ impl Link {
         let mut preview_file = File::create(
             previews_path
                 .to_owned()
-                .join(format!("{}.png", resource_id.crc32)),
+                .join(format!("{}-{}.png", data_size, resource_id.crc32)),
         )
         .unwrap();
         preview_file.write(image_data.as_slice()).unwrap();
@@ -340,14 +358,14 @@ fn test_create_link_file() {
 
         if Path::new(tmp_path)
             .join(PREVIEWS_RELATIVE_PATH)
-            .join(format!("{}.png", resource_id.crc32))
+            .join(format!("{}-{}.png", link_file_bytes.len() ,resource_id.crc32))
             .exists()
         {
             assert_eq!(save_preview, true)
         } else {
             assert_eq!(save_preview, false)
         }
-        let metadata = ResourceMeta::locate(tmp_path.clone(), resource_id);
+        let metadata = ResourceMeta::locate(tmp_path.clone(), link_file_path.as_path(), resource_id);
         let j: Metadata =
             serde_json::from_slice(metadata.unwrap().kind.unwrap().as_slice())
                 .unwrap();
