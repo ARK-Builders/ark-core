@@ -56,7 +56,7 @@ dependencies = [
 [[package]]
 name = "arklib"
 version = "0.1.0"
-source = "git+https://github.com/hhio618/arklib#f16127cd8736d855740eb9564665f38b0ca6d810"
+source = "git+https://github.com/ARK-Builders/arklib?rev=fea125e#fea125e8330243522183c187a467dc762dec1fb7"
 dependencies = [
  "anyhow",
  "canonical-path",
@@ -65,9 +65,11 @@ dependencies = [
  "flate2",
  "fs_extra",
  "image",
+ "itertools",
  "lazy_static",
  "libloading",
  "log",
+ "pathdiff",
  "pdfium-render",
  "reqwest",
  "scraper",
@@ -975,9 +977,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.10.3"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9a9d19fa1e79b6215ff29b9d6880b706147f16e9b1dbb1e4e5947b5b02bc5e3"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
 dependencies = [
  "either",
 ]
@@ -1348,6 +1350,12 @@ dependencies = [
  "rand_core 0.6.3",
  "subtle",
 ]
+
+[[package]]
+name = "pathdiff"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8835116a5c179084a830efb3adc117ab007512b535bc1a21c991d3b32a6b44dd"
 
 [[package]]
 name = "pbkdf2"
