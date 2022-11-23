@@ -23,11 +23,12 @@ pub struct IndexEntry {
     pub id: ResourceId,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ResourceIndex {
-    pub entries: HashMap<CanonicalPathBuf, IndexEntry>,
+    pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
+    pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
+
     pub collisions: HashMap<ResourceId, usize>,
-    ids: HashSet<ResourceId>,
     root: PathBuf,
 }
 
@@ -42,20 +43,20 @@ pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
 impl ResourceIndex {
     pub fn size(&self) -> usize {
         //the actual size is lower in presence of collisions
-        self.entries.len()
+        self.path2id.len()
     }
 
     pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
         log::info!("Building the index from scratch");
         let root_path: PathBuf = root_path.as_ref().to_owned();
 
-        let paths = discover_paths(&root_path);
-        let entries = scan_entries(paths);
+        let entries = discover_paths(&root_path);
+        let entries = scan_entries(entries);
 
         let mut index = ResourceIndex {
-            entries: HashMap::new(),
+            id2path: HashMap::new(),
+            path2id: HashMap::new(),
             collisions: HashMap::new(),
-            ids: HashSet::new(),
             root: root_path,
         };
 
@@ -76,9 +77,9 @@ impl ResourceIndex {
 
         if let Ok(file) = File::open(&index_path) {
             let mut index = ResourceIndex {
-                entries: HashMap::new(),
+                id2path: HashMap::new(),
+                path2id: HashMap::new(),
                 collisions: HashMap::new(),
-                ids: HashSet::new(),
                 root: root_path.clone(),
             };
 
@@ -137,11 +138,11 @@ impl ResourceIndex {
 
         let mut file = File::create(index_path)?;
 
-        let mut entries: Vec<(&CanonicalPathBuf, &IndexEntry)> =
-            self.entries.iter().collect();
-        entries.sort_by_key(|(_, entry)| entry.clone());
+        let mut path2id: Vec<(&CanonicalPathBuf, &IndexEntry)> =
+            self.path2id.iter().collect();
+        path2id.sort_by_key(|(_, entry)| entry.clone());
 
-        for (path, entry) in entries.iter() {
+        for (path, entry) in path2id.iter() {
             log::trace!("[store] {} by path {}", entry.id, path.display());
 
             let timestamp = entry
@@ -163,7 +164,7 @@ impl ResourceIndex {
     pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
         match Self::load(&root_path) {
             Ok(mut index) => {
-                log::debug!("Index loaded: {} entries", index.entries.len());
+                log::debug!("Index loaded: {} entries", index.path2id.len());
 
                 match index.update() {
                     Ok(update) => {
@@ -204,14 +205,14 @@ impl ResourceIndex {
 
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
         log::debug!("Updating the index");
-        log::trace!("[update] known paths: {:?}", self.entries.keys());
+        log::trace!("[update] known paths: {:?}", self.path2id.keys());
 
         let curr_entries = discover_paths(self.root.clone());
 
         //assuming that collections manipulation is
         // quicker than asking `path.exists()` for every path
         let curr_paths: Paths = curr_entries.keys().cloned().collect();
-        let prev_paths: Paths = self.entries.keys().cloned().collect();
+        let prev_paths: Paths = self.path2id.keys().cloned().collect();
         let preserved_paths: Paths = curr_paths
             .intersection(&prev_paths)
             .cloned()
@@ -235,7 +236,7 @@ impl ResourceIndex {
                 if !preserved_paths.contains(path.as_canonical_path()) {
                     false
                 } else {
-                    let our_entry = &self.entries[path];
+                    let our_entry = &self.path2id[path];
                     let prev_modified = our_entry.modified;
 
                     let result = dir_entry.metadata();
@@ -294,7 +295,7 @@ impl ResourceIndex {
             .cloned()
             .chain(updated_paths.keys().cloned())
             .for_each(|path| {
-                if let Some(entry) = self.entries.remove(&path) {
+                if let Some(entry) = self.path2id.remove(&path) {
                     let k = self.collisions.remove(&entry.id).unwrap_or(1);
                     if k > 1 {
                         self.collisions.insert(entry.id, k - 1);
@@ -304,7 +305,7 @@ impl ResourceIndex {
                             entry.id,
                             path.display()
                         );
-                        self.ids.remove(&entry.id);
+                        self.id2path.remove(&entry.id);
                         deleted.insert(entry.id);
                     }
                 } else {
@@ -319,7 +320,7 @@ impl ResourceIndex {
                     log::debug!("Checking added paths");
                     scan_entries(created_paths).into_iter()
                 })
-                .filter(|(_, entry)| !self.ids.contains(&entry.id))
+                .filter(|(_, entry)| !self.id2path.contains_key(&entry.id))
                 .collect();
 
         for (path, entry) in added.iter() {
@@ -346,19 +347,19 @@ impl ResourceIndex {
 
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
-
         let id = entry.id;
-        self.entries.insert(path, entry);
 
-        if self.ids.contains(&id) {
+        if self.id2path.contains_key(&id) {
             if let Some(nonempty) = self.collisions.get_mut(&id) {
                 *nonempty += 1;
             } else {
                 self.collisions.insert(id, 2);
             }
         } else {
-            self.ids.insert(id.clone());
+            self.id2path.insert(id, path.clone());
         }
+
+        self.path2id.insert(path, entry);
     }
 }
 
@@ -528,9 +529,9 @@ mod tests {
                 .expect("Could not build index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.entries.len(), 1);
-            assert_eq!(actual.ids.len(), 1);
-            assert!(actual.ids.contains(&ResourceId {
+            assert_eq!(actual.path2id.len(), 1);
+            assert_eq!(actual.id2path.len(), 1);
+            assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
@@ -549,9 +550,9 @@ mod tests {
                 .expect("Could not build index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.entries.len(), 2);
-            assert_eq!(actual.ids.len(), 1);
-            assert!(actual.ids.contains(&ResourceId {
+            assert_eq!(actual.path2id.len(), 2);
+            assert_eq!(actual.id2path.len(), 1);
+            assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
@@ -609,13 +610,13 @@ mod tests {
                 .expect("Should update index correctly");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.entries.len(), 2);
-            assert_eq!(actual.ids.len(), 2);
-            assert!(actual.ids.contains(&ResourceId {
+            assert_eq!(actual.path2id.len(), 2);
+            assert_eq!(actual.id2path.len(), 2);
+            assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
-            assert!(actual.ids.contains(&ResourceId {
+            assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_2,
                 crc32: CRC32_2,
             }));
@@ -659,8 +660,8 @@ mod tests {
                 .expect("Should update index successfully");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.entries.len(), 0);
-            assert_eq!(actual.ids.len(), 0);
+            assert_eq!(actual.path2id.len(), 0);
+            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 0);
             assert_eq!(update.deleted.len(), 1);
@@ -713,8 +714,8 @@ mod tests {
                 .expect("Could not generate index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.entries.len(), 0);
-            assert_eq!(actual.ids.len(), 0);
+            assert_eq!(actual.path2id.len(), 0);
+            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
     }
@@ -727,8 +728,8 @@ mod tests {
                 .expect("Could not generate index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.entries.len(), 0);
-            assert_eq!(actual.ids.len(), 0);
+            assert_eq!(actual.path2id.len(), 0);
+            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
     }
@@ -742,8 +743,8 @@ mod tests {
                 .expect("Could not build index");
 
             assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.entries.len(), 0);
-            assert_eq!(actual.ids.len(), 0);
+            assert_eq!(actual.path2id.len(), 0);
+            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
     }
