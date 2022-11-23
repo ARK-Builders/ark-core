@@ -6,7 +6,7 @@ pub mod link;
 pub mod pdf;
 
 mod index;
-mod meta2;
+mod meta;
 
 use index::ResourceIndex;
 
@@ -26,7 +26,7 @@ pub const INDEX_PATH: &str = "index";
 pub const PREVIEWS_PATH: &str = "previews";
 
 // must not be lost (user data)
-pub const META_PATH: &str = "meta";
+pub const METADATA_PATH: &str = "meta";
 pub const TAGS_PATH: &str = "tags";
 
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;

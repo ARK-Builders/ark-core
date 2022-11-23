@@ -2,17 +2,15 @@ use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
-use std::hash::{Hash, Hasher};
+use std::fmt;
 use std::path::Path;
 use std::str::{self, FromStr};
-use std::{collections::hash_map::DefaultHasher, fmt};
 use std::{fs, fs::File, io::Write, path::PathBuf};
 use url::Url;
 
 use crate::id::ResourceId;
-use crate::meta2::{load_meta_bytes, store_meta};
-
-const PREVIEWS_RELATIVE_PATH: &str = ".ark/previews";
+use crate::meta::{load_meta_bytes, store_meta};
+use crate::{PREVIEWS_PATH, STORAGES_FOLDER};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
@@ -34,32 +32,15 @@ impl Link {
         }
     }
 
-    pub fn id(&self) -> ResourceId {
+    pub fn id(&self) -> Result<ResourceId, Error> {
         ResourceId::compute_bytes(self.url.as_str().as_bytes())
-    }
-
-    /// Get formatted name for .link
-    pub fn format_name(&self) -> String {
-        let mut s = DefaultHasher::new();
-
-        let url = self
-            .url
-            .to_string()
-            .replace("http://", "")
-            .replace("https://", "")
-            .split(&['-', '?', '/'][..])
-            .filter(|x| x != &"")
-            .collect::<Vec<&str>>()
-            .join("-");
-        url.hash(&mut s);
-        s.finish().to_string()
     }
 
     /// Load a link with its metadata from file
     pub fn load<P: AsRef<Path>>(root: P, path: P) -> Result<Self, Error> {
         let p = path.as_ref().to_path_buf();
         let url = Self::load_url(p)?;
-        let id = ResourceId::compute_bytes(url.as_str().as_bytes());
+        let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
 
         let bytes = load_meta_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
         let meta: Metadata = serde_json::from_slice(&bytes)?;
@@ -73,13 +54,13 @@ impl Link {
         root: P,
         path: P,
         save_preview: bool,
-    ) {
-        let id = self.id();
-        store_meta::<Metadata, _>(root.as_ref(), id, &self.meta);
+    ) -> Result<(), Error> {
+        let id = self.id()?;
+        store_meta::<Metadata, _>(root.as_ref(), id, &self.meta)?;
 
-        let mut link_file = File::create(path.as_ref().to_owned()).unwrap();
+        let mut link_file = File::create(path.as_ref().to_owned())?;
         let file_data = self.url.as_str().as_bytes();
-        link_file.write(file_data).unwrap();
+        link_file.write(file_data)?;
         if save_preview {
             let preview_data = Link::get_preview(self.url.clone())
                 .await
@@ -88,11 +69,11 @@ impl Link {
                 .fetch_image()
                 .await
                 .unwrap_or_default();
-            self.save_preview(root.as_ref(), image_data, id, file_data.len())
-                .await;
+            self.save_preview(root.as_ref(), image_data, id)
+                .await?;
         }
 
-        store_meta::<Metadata, _>(root, id, &self.meta);
+        store_meta::<Metadata, _>(root, id, &self.meta)
     }
 
     /// Synchronized version of Write zipped file to path
@@ -101,29 +82,29 @@ impl Link {
         root: P,
         path: P,
         save_preview: bool,
-    ) {
-        let runtime =
-            tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-        runtime.block_on(self.write_to_path(root, path, save_preview));
+    ) -> Result<(), Error> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        runtime.block_on(self.write_to_path(root, path, save_preview))
     }
 
     pub async fn save_preview<P: AsRef<Path>>(
         &mut self,
         root: P,
         image_data: Vec<u8>,
-        resource_id: ResourceId,
-        data_size: usize,
-    ) {
-        let previews_path = root.as_ref().join(PREVIEWS_RELATIVE_PATH);
-        fs::create_dir_all(previews_path.to_owned())
-            .expect(&format!("Creating {} directory", PREVIEWS_RELATIVE_PATH));
-        let mut preview_file = File::create(
-            previews_path
-                .to_owned()
-                .join(format!("{}-{}.png", data_size, resource_id.crc32)),
-        )
-        .unwrap();
-        preview_file.write(image_data.as_slice()).unwrap();
+        id: ResourceId,
+    ) -> Result<(), Error> {
+        let path = root
+            .as_ref()
+            .join(STORAGES_FOLDER)
+            .join(PREVIEWS_PATH);
+        fs::create_dir_all(path.to_owned())?;
+
+        let file = path.to_owned().join(id.to_string());
+
+        let mut file = File::create(file)?;
+        file.write(image_data.as_slice())?;
+
+        Ok(())
     }
 
     /// Get metadata of the link (synced).
@@ -150,8 +131,7 @@ impl Link {
         );
         let client = reqwest::Client::builder()
             .default_headers(header)
-            .build()
-            .unwrap();
+            .build()?;
         let scraper = client
             .get(url.into())
             .send()
@@ -174,7 +154,7 @@ impl Link {
 
     fn load_url(path: PathBuf) -> Result<Url, Error> {
         let url_raw = std::fs::read(path)?;
-        let url_str = str::from_utf8(url_raw.as_slice()).unwrap();
+        let url_str = str::from_utf8(url_raw.as_slice())?;
         Ok(Url::from_str(url_str)?)
     }
 }
@@ -302,30 +282,27 @@ fn test_create_link_file() {
     let mut link =
         Link::new(url, String::from("title"), Some(String::from("desc")));
 
-    let hash = link.format_name();
-    assert_eq!(hash, "5257664237369877164");
-    let link_file_path = root.join(format!("{}.link", hash));
+    let path = root.join("test.link");
+
     for save_preview in [false, true] {
-        link.write_to_path_sync(root, link_file_path.as_path(), save_preview);
-        let link_file_bytes = std::fs::read(link_file_path.to_owned()).unwrap();
+        link.write_to_path_sync(root, path.as_path(), save_preview)
+            .unwrap();
+        let link_file_bytes = std::fs::read(path.to_owned()).unwrap();
         let url: Url =
             Url::from_str(str::from_utf8(&link_file_bytes).unwrap()).unwrap();
         assert_eq!(url.as_str(), "https://example.com/");
-        let link = Link::load(root.clone(), link_file_path.as_path()).unwrap();
+        let link = Link::load(root.clone(), path.as_path()).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.meta.desc.unwrap(), "desc");
         assert_eq!(link.meta.title, "title");
 
-        let resource_id = ResourceId::compute_bytes(link_file_bytes.as_slice());
-        println!("resource: {}, {}", resource_id.crc32, resource_id.data_size);
+        let id = ResourceId::compute_bytes(link_file_bytes.as_slice()).unwrap();
+        println!("resource: {}, {}", id.crc32, id.data_size);
 
         if Path::new(root)
-            .join(PREVIEWS_RELATIVE_PATH)
-            .join(format!(
-                "{}-{}.png",
-                link_file_bytes.len(),
-                resource_id.crc32
-            ))
+            .join(STORAGES_FOLDER)
+            .join(PREVIEWS_PATH)
+            .join(id.to_string())
             .exists()
         {
             assert_eq!(save_preview, true)
