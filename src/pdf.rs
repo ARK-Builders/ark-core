@@ -58,8 +58,8 @@ where
 fn test_multi_pdf_generate() {
     use tempdir::TempDir;
     let dir = TempDir::new("arklib_test").unwrap();
-    let tmp_path = dir.path();
-    println!("temp path: {}", tmp_path.display());
+    let root = dir.path();
+    println!("temporary root: {}", root.display());
     for i in 0..2 {
         use std::fs::File;
         let pdf_reader = File::open("tests/test.pdf").unwrap();
@@ -67,7 +67,7 @@ fn test_multi_pdf_generate() {
         println!("Rendering {}", &i);
         let img = render_preview_page(pdf_reader, PDFQuality::High);
 
-        img.save(tmp_path.join(format!("test{}.png", &i)))
+        img.save(root.join(format!("test{}.png", &i)))
             .expect("cannot save image");
     }
 }

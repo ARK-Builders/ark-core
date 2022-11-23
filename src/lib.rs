@@ -5,6 +5,7 @@ pub mod id;
 mod index;
 pub mod link;
 mod meta;
+mod meta2;
 pub mod pdf;
 
 use index::ResourceIndex;

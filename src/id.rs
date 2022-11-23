@@ -7,7 +7,7 @@ use std::{fs, num::TryFromIntError};
 use crc32fast::Hasher;
 use log;
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Hash, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct ResourceId {
     pub data_size: u64,
     pub crc32: u32,
