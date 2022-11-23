@@ -86,13 +86,19 @@ impl ResourceIndex {
                 if let Ok(entry) = line {
                     let mut parts = entry.split(' ');
 
-                    let modified: SystemTime =
-                        UNIX_EPOCH.add(Duration::from_millis(
-                            parts.next().unwrap().parse().unwrap(),
-                        ));
+                    let modified: SystemTime = {
+                        let str = parts.next().ok_or(Error::msg(
+                            "Couldn't find first part of index entry",
+                        ))?;
+                        UNIX_EPOCH.add(Duration::from_millis(str.parse()?))
+                    };
 
-                    let id: ResourceId =
-                        ResourceId::from_str(parts.next().unwrap()).unwrap();
+                    let id: ResourceId = {
+                        let str = parts.next().ok_or(Error::msg(
+                            "Couldn't find second part of index entry",
+                        ))?;
+                        ResourceId::from_str(str)?
+                    };
 
                     let path: String = parts.intersperse(" ").collect();
                     let path: PathBuf = root_path.join(Path::new(&path));
@@ -145,12 +151,12 @@ impl ResourceIndex {
 
             let path =
                 pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
-                    .unwrap();
+                    .ok_or(Error::msg("Couldn't calculate path diff"))?;
 
             write!(file, "{} {} {}\n", timestamp, entry.id, path.display())?;
         }
 
-        log::trace!("Storing the index took {:?}", start.elapsed().unwrap());
+        log::trace!("Storing the index took {:?}", start.elapsed()?);
         Ok(())
     }
 
@@ -408,7 +414,7 @@ fn scan_entry(
         return Err(Error::msg("Empty resource"));
     }
 
-    let id = ResourceId::compute(size, &path);
+    let id = ResourceId::compute(size, &path)?;
     let modified = metadata.modified()?;
 
     let entry = IndexEntry { id, modified };
@@ -739,19 +745,6 @@ mod tests {
             assert_eq!(actual.entries.len(), 0);
             assert_eq!(actual.ids.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
-        })
-    }
-
-    #[test]
-    fn should_fail_when_indexing_file_without_read_rights() {
-        run_test_and_clean_up(|path| {
-            let (file, _) = create_file_at(path.clone(), Some(1), None);
-            file.set_permissions(Permissions::from_mode(0o222))
-                .expect("Should be fine");
-
-            let actual =
-                std::panic::catch_unwind(|| ResourceIndex::build(path.clone()));
-            assert!(actual.is_err());
         })
     }
 

@@ -6,31 +6,26 @@ use anyhow::Error;
 use serde::Serialize;
 
 use crate::id::ResourceId;
+use crate::{METADATA_PATH, STORAGES_FOLDER};
 
-/// Dynamic metadata: stored as JSON and interpreted
-/// differently depending on resource's kind
-const METADATA_RELATIVE_PATH: &str = ".ark/meta";
-
+/// Dynamic metadata: stored as JSON and
+/// interpreted differently depending on kind of a resource
 pub fn store_meta<S: Serialize, P: AsRef<Path>>(
     root: P,
     id: ResourceId,
-    extra: &S,
-) {
-    let metadata_path = root.as_ref().join(METADATA_RELATIVE_PATH);
-    fs::create_dir_all(metadata_path.to_owned())
-        .expect(&format!("Creating {} directory", METADATA_RELATIVE_PATH));
-    let mut metadata_file = File::create(
-        metadata_path
-            .to_owned()
-            .join(format!("{}-{}", id.data_size, id.crc32)),
-    )
-    .unwrap();
+    metadata: &S,
+) -> Result<(), Error> {
+    let path = root
+        .as_ref()
+        .join(STORAGES_FOLDER)
+        .join(METADATA_PATH);
+    fs::create_dir_all(path.to_owned())?;
+    let mut file = File::create(path.to_owned().join(id.to_string()))?;
 
-    // only dynamical metadata a.k.a. `extra` goes into `.ark/meta`
-    let metadata_json = serde_json::to_string(&extra).unwrap();
-    metadata_file
-        .write(metadata_json.into_bytes().as_slice())
-        .unwrap();
+    let json = serde_json::to_string(&metadata)?;
+    let _ = file.write(json.into_bytes().as_slice())?;
+
+    Ok(())
 }
 
 /// The file must exist if this method is called
@@ -38,8 +33,11 @@ pub fn load_meta_bytes<P: AsRef<Path>>(
     root: P,
     id: ResourceId,
 ) -> Result<Vec<u8>, Error> {
-    let storage = root.as_ref().join(METADATA_RELATIVE_PATH);
-    let path = storage.join(format!("{}-{}", id.data_size, id.crc32));
+    let storage = root
+        .as_ref()
+        .join(STORAGES_FOLDER)
+        .join(METADATA_PATH);
+    let path = storage.join(id.to_string());
 
     Ok(std::fs::read(path)?)
 }
@@ -67,7 +65,7 @@ mod tests {
         meta.insert("abc".to_string(), "def".to_string());
         meta.insert("xyz".to_string(), "123".to_string());
 
-        store_meta(root, id, &meta);
+        store_meta(root, id, &meta).unwrap();
 
         let bytes = load_meta_bytes(root, id).unwrap();
         let meta2: TestMetadata = serde_json::from_slice(&bytes).unwrap();
