@@ -221,6 +221,12 @@ impl OpenGraph {
             None
         }
     }
+
+    pub fn fetch_image_synced(&self) -> Option<Vec<u8>> {
+        let runtime =
+            tokio::runtime::Runtime::new().expect("Unable to create a runtime");
+        return runtime.block_on(self.fetch_image());
+    }
 }
 /// OpenGraphTag meta tags collection
 pub enum OpenGraphTag {
