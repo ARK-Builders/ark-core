@@ -48,6 +48,7 @@ dependencies = [
  "arklib",
  "clap",
  "env_logger",
+ "fs_extra",
  "home",
  "url",
  "walkdir",
