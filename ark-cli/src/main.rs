@@ -1,5 +1,5 @@
 use std::env::current_dir;
-use std::fs::{canonicalize, copy, create_dir_all, File};
+use std::fs::{canonicalize, create_dir_all, metadata, File};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -10,6 +10,7 @@ use arklib::id::ResourceId;
 use arklib::index::ResourceIndex;
 use arklib::pdf::PDFQuality;
 use clap::{Parser, Subcommand};
+use fs_extra::dir::{self, CopyOptions};
 use home::home_dir;
 use url::Url;
 
@@ -71,10 +72,9 @@ enum Link {
     },
 }
 
-const ARK_HOME: &str = ".ark";
-
+const ARK_CONFIG: &str = ".config/ark";
+const ARK_BACKUPS_PATH: &str = ".ark-backups";
 const ROOTS_CFG_FILENAME: &str = "roots";
-const HOME_BACKUPS_DIRNAME: &str = "backups";
 
 fn main() {
     env_logger::init();
@@ -86,8 +86,7 @@ fn main() {
             let timestamp = timestamp().as_secs();
             let backup_dir = home_dir()
                 .expect("Couldn't retrieve home directory!")
-                .join(&ARK_HOME)
-                .join(&HOME_BACKUPS_DIRNAME)
+                .join(&ARK_BACKUPS_PATH)
                 .join(&timestamp.to_string());
 
             if backup_dir.is_dir() {
@@ -103,7 +102,7 @@ fn main() {
                 .partition(|root| storages_exists(&root));
 
             if !invalid.is_empty() {
-                println!("These folders don't contain tag storages:");
+                println!("These folders don't contain any storages:");
                 invalid
                     .into_iter()
                     .for_each(|root| println!("\t{}", root.display()));
@@ -133,12 +132,19 @@ fn main() {
                 .for_each(|(i, root)| {
                     println!("\tRoot {}", root.display());
                     let storage_backup = backup_dir.join(&i.to_string());
-                    let result = copy(
+
+                    let mut options = CopyOptions::new();
+                    options.overwrite = true;
+                    options.copy_inside = true;
+
+                    let result = dir::copy(
                         root.join(&arklib::STORAGES_FOLDER),
                         storage_backup,
+                        &options,
                     );
+
                     if let Err(e) = result {
-                        println!("\t\tFailed to copy tag storage!\n\t\t{}", e);
+                        println!("\t\tFailed to copy storages!\n\t\t{}", e);
                     }
                 });
 
@@ -252,12 +258,10 @@ fn discover_roots(roots_cfg: &Option<PathBuf>) -> Vec<PathBuf> {
 
         parse_roots(config)
     } else {
-        let roots_cfg = home_roots_cfg();
-
-        if let Ok(config) = File::open(&roots_cfg) {
+        if let Ok(config) = File::open(&ARK_CONFIG) {
             println!(
                 "\tRoots config was found automatically:\n\t\t{}",
-                roots_cfg.display()
+                &ARK_CONFIG
             );
 
             parse_roots(config)
@@ -353,15 +357,13 @@ fn monitor_index(root_dir: &Option<PathBuf>, interval: Option<u64>) {
     }
 }
 
-fn home_roots_cfg() -> PathBuf {
-    return home_dir()
-        .expect("Couldn't retrieve home directory!")
-        .join(&ARK_HOME)
-        .join(&ROOTS_CFG_FILENAME);
-}
-
 fn storages_exists(path: &Path) -> bool {
-    return File::open(path.join(&arklib::STORAGES_FOLDER)).is_ok();
+    let meta = metadata(path.join(&arklib::STORAGES_FOLDER));
+    if let Ok(meta) = meta {
+        return meta.is_dir();
+    }
+
+    false
 }
 
 fn parse_roots(config: File) -> Vec<PathBuf> {
