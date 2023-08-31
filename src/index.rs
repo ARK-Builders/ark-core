@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
+use std::fs::{self, File, Metadata};
 use std::io::{BufRead, BufReader, Write};
 use std::ops::Add;
 use std::path::{Path, PathBuf};
@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use itertools::Itertools;
 
-use canonical_path::CanonicalPathBuf;
+use canonical_path::{CanonicalPath, CanonicalPathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 use anyhow::Error;
@@ -39,6 +39,8 @@ pub struct IndexUpdate {
 }
 
 pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
+
+type Paths = HashSet<CanonicalPathBuf>;
 
 impl ResourceIndex {
     pub fn size(&self) -> usize {
@@ -166,7 +168,7 @@ impl ResourceIndex {
             Ok(mut index) => {
                 log::debug!("Index loaded: {} entries", index.path2id.len());
 
-                match index.update() {
+                match index.update_all() {
                     Ok(update) => {
                         log::debug!(
                             "Index updated: {} added, {} deleted",
@@ -203,7 +205,7 @@ impl ResourceIndex {
         }
     }
 
-    pub fn update(&mut self) -> Result<IndexUpdate, Error> {
+    pub fn update_all(&mut self) -> Result<IndexUpdate, Error> {
         log::debug!("Updating the index");
         log::trace!("[update] known paths: {:?}", self.path2id.keys());
 
@@ -295,7 +297,9 @@ impl ResourceIndex {
             .cloned()
             .chain(updated_paths.keys().cloned())
             .for_each(|path| {
-                if let Some(entry) = self.path2id.remove(&path) {
+                if let Some(entry) =
+                    self.path2id.remove(path.as_canonical_path())
+                {
                     let k = self.collisions.remove(&entry.id).unwrap_or(1);
                     if k > 1 {
                         self.collisions.insert(entry.id, k - 1);
@@ -345,6 +349,61 @@ impl ResourceIndex {
         Ok(IndexUpdate { deleted, added })
     }
 
+    pub fn update_one(
+        &mut self,
+        path_buf: CanonicalPathBuf,
+        old_id: ResourceId,
+    ) -> Result<IndexUpdate, Error> {
+        log::debug!("Updating a single entry in the index");
+
+        let path = path_buf.as_canonical_path();
+        log::trace!(
+            "[update] paths {:?} has id {:?}",
+            path,
+            self.path2id[path]
+        );
+
+        return match fs::metadata(path) {
+            Err(_) => {
+                // updating the index after resource removal is a correct scenario
+                self.forget_path(path, old_id)
+            }
+            Ok(metadata) => {
+                match scan_entry(path, metadata) {
+                    Err(_) => {
+                        // a directory or empty file exists by the path
+                        self.forget_path(path, old_id)
+                    }
+                    Ok(new_entry) => {
+                        // valid resource exists by the path
+                        let curr_entry = &self.path2id[path];
+
+                        if curr_entry.id == new_entry.id {
+                            // in rare cases we are here due to hash collision
+
+                            if curr_entry.modified == new_entry.modified {
+                                log::warn!("path {:?} was modified but not its content", &path);
+                            }
+
+                            // the caller must have ensured that the path was updated
+                            return Err(Error::msg("Nothing to update"));
+                        }
+
+                        // new resource exists by the path
+                        self.forget_path(path, old_id).map(|mut update| {
+                            update
+                                .added
+                                .insert(path_buf.clone(), new_entry.id);
+                            self.insert_entry(path_buf, new_entry);
+
+                            update
+                        })
+                    }
+                }
+            }
+        };
+    }
+
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
         let id = entry.id;
@@ -360,6 +419,61 @@ impl ResourceIndex {
         }
 
         self.path2id.insert(path, entry);
+    }
+
+    fn forget_path(
+        &mut self,
+        path: &CanonicalPath,
+        old_id: ResourceId,
+    ) -> Result<IndexUpdate, Error> {
+        self.path2id.remove(path);
+
+        if let Some(mut collisions) = self.collisions.get_mut(&old_id) {
+            debug_assert!(
+                *collisions > 1,
+                "Any collision must involve at least 2 resources"
+            );
+            *collisions -= 1;
+
+            if *collisions == 1 {
+                self.collisions.remove(&old_id);
+            }
+
+            // minor performance issue:
+            // we must find path of one of the collided
+            // resources and use it as new value
+            let maybe_collided_path =
+                self.path2id.iter().find_map(|(path, entry)| {
+                    if entry.id == old_id {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                });
+
+            if let Some(collided_path) = maybe_collided_path {
+                let old_path =
+                    self.id2path.insert(old_id, collided_path.clone());
+
+                debug_assert_eq!(
+                    old_path.unwrap().as_canonical_path(),
+                    path,
+                    "Must forget the requested path"
+                );
+            } else {
+                return Err(Error::msg("Illegal state of collision tracker"));
+            }
+        } else {
+            self.id2path.remove(&old_id);
+        }
+
+        let mut deleted = HashSet::new();
+        deleted.insert(old_id);
+
+        return Ok(IndexUpdate {
+            added: HashMap::new(),
+            deleted,
+        });
     }
 }
 
@@ -402,24 +516,22 @@ fn discover_paths<P: AsRef<Path>>(
 }
 
 fn scan_entry(
-    path: CanonicalPathBuf,
-    entry: DirEntry,
-) -> Result<(CanonicalPathBuf, IndexEntry), Error> {
-    if entry.file_type().is_dir() {
+    path: &CanonicalPath,
+    metadata: Metadata,
+) -> Result<IndexEntry, Error> {
+    if metadata.is_dir() {
         return Err(Error::msg("DirEntry is directory"));
     }
 
-    let metadata = entry.metadata()?;
     let size = metadata.len();
     if size == 0 {
         return Err(Error::msg("Empty resource"));
     }
 
-    let id = ResourceId::compute(size, &path)?;
+    let id = ResourceId::compute(size, path)?;
     let modified = metadata.modified()?;
 
-    let entry = IndexEntry { id, modified };
-    Ok((path.clone(), entry))
+    Ok(IndexEntry { id, modified })
 }
 
 fn scan_entries(
@@ -427,8 +539,11 @@ fn scan_entries(
 ) -> HashMap<CanonicalPathBuf, IndexEntry> {
     entries
         .into_iter()
-        .filter_map(|(path, entry)| {
-            let result = scan_entry(path.clone(), entry);
+        .filter_map(|(path_buf, entry)| {
+            let metadata = entry.metadata().ok()?;
+
+            let path = path_buf.as_canonical_path();
+            let result = scan_entry(path, metadata);
             match result {
                 Err(msg) => {
                     log::error!(
@@ -438,7 +553,7 @@ fn scan_entries(
                     );
                     None
                 }
-                Ok(meta) => Some(meta),
+                Ok(entry) => Some((path_buf, entry)),
             }
         })
         .collect()
@@ -451,8 +566,6 @@ fn is_hidden(entry: &DirEntry) -> bool {
         .map(|s| s.starts_with("."))
         .unwrap_or(false)
 }
-
-type Paths = HashSet<CanonicalPathBuf>;
 
 #[cfg(test)]
 mod tests {
@@ -584,7 +697,7 @@ mod tests {
                 .expect("Should rename file successfully");
 
             let update = actual
-                .update()
+                .update_all()
                 .expect("Should update index correctly");
 
             assert_eq!(actual.collisions.len(), 0);
@@ -606,7 +719,7 @@ mod tests {
                 create_file_at(path.clone(), Some(FILE_SIZE_2), None);
 
             let update = actual
-                .update()
+                .update_all()
                 .expect("Should update index correctly");
 
             assert_eq!(actual.root, path.clone());
@@ -656,7 +769,7 @@ mod tests {
                 .expect("Should remove file successfully");
 
             let update = actual
-                .update()
+                .update_all()
                 .expect("Should update index successfully");
 
             assert_eq!(actual.root, path.clone());
@@ -694,7 +807,7 @@ mod tests {
                 .expect("Should be fine");
 
             let update = actual
-                .update()
+                .update_all()
                 .expect("Should update index correctly");
 
             assert_eq!(actual.collisions.len(), 0);
