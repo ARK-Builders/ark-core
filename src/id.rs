@@ -1,4 +1,6 @@
-use anyhow::Error;
+use anyhow::anyhow;
+use crc32fast::Hasher;
+use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use std::io::Read;
@@ -7,8 +9,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::{fs, num::TryFromIntError};
 
-use crc32fast::Hasher;
-use log;
+use crate::{ArklibError, Result};
 
 #[derive(
     Eq,
@@ -34,14 +35,12 @@ impl Display for ResourceId {
 }
 
 impl FromStr for ResourceId {
-    type Err = Error;
+    type Err = ArklibError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (l, r) = s
-            .split_once('-')
-            .ok_or(Error::msg("Couldn't split ID"))?;
-        let data_size: u64 = l.parse()?;
-        let crc32: u32 = r.parse()?;
+    fn from_str(s: &str) -> Result<Self> {
+        let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
+        let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
+        let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
 
         Ok(ResourceId { data_size, crc32 })
     }
@@ -51,7 +50,7 @@ impl ResourceId {
     pub fn compute<P: AsRef<Path>>(
         data_size: u64,
         file_path: P,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         log::trace!(
             "[compute] file {} with size {} mb",
             file_path.as_ref().display(),
@@ -66,8 +65,10 @@ impl ResourceId {
         ResourceId::compute_reader(data_size, &mut reader)
     }
 
-    pub fn compute_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        let data_size = bytes.len().try_into()?; //.unwrap();
+    pub fn compute_bytes(bytes: &[u8]) -> Result<Self> {
+        let data_size = bytes.len().try_into().map_err(|_| {
+            ArklibError::Other(anyhow!("Can't convert usize to u64"))
+        })?; //.unwrap();
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, bytes);
         ResourceId::compute_reader(data_size, &mut reader)
     }
@@ -75,7 +76,7 @@ impl ResourceId {
     pub fn compute_reader<R: Read>(
         data_size: u64,
         reader: &mut BufReader<R>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         assert!(reader.buffer().is_empty());
 
         log::trace!(
@@ -92,16 +93,16 @@ impl ResourceId {
             }
             hasher.update(reader.buffer());
             reader.consume(bytes_read_iteration);
-            bytes_read += u32::try_from(bytes_read_iteration)?;
+            bytes_read +=
+                u32::try_from(bytes_read_iteration).map_err(|_| {
+                    ArklibError::Other(anyhow!("Can't convert usize to u32"))
+                })?;
         }
 
         let crc32: u32 = hasher.finalize().into();
         log::trace!("[compute] {} bytes has been read", bytes_read);
         log::trace!("[compute] checksum: {:#02x}", crc32);
-        assert_eq!(
-            bytes_read,
-            (data_size.try_into() as Result<u32, TryFromIntError>).unwrap()
-        );
+        assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
         Ok(ResourceId { data_size, crc32 })
     }

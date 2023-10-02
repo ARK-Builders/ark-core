@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate canonical_path;
+pub mod errors;
+pub use errors::{ArklibError, Result};
 pub mod id;
 pub mod link;
 pub mod pdf;
@@ -16,7 +18,6 @@ use std::sync::{Arc, RwLock};
 
 use canonical_path::CanonicalPathBuf;
 
-use anyhow::Error;
 use log;
 
 pub const ARK_FOLDER: &str = ".ark";
@@ -45,7 +46,7 @@ lazy_static! {
 
 pub fn provide_index<P: AsRef<Path>>(
     root_path: P,
-) -> Result<Arc<RwLock<ResourceIndex>>, Error> {
+) -> Result<Arc<RwLock<ResourceIndex>>> {
     let root_path = CanonicalPathBuf::canonicalize(root_path)?;
 
     {

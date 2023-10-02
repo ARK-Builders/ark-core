@@ -1,3 +1,5 @@
+use anyhow::anyhow;
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata};
 use std::io::{BufRead, BufReader, Write};
@@ -6,16 +8,13 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use itertools::Itertools;
-
 use canonical_path::{CanonicalPath, CanonicalPathBuf};
 use walkdir::{DirEntry, WalkDir};
 
-use anyhow::Error;
 use log;
 
 use crate::id::ResourceId;
-use crate::{ARK_FOLDER, INDEX_PATH};
+use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
@@ -48,7 +47,7 @@ impl ResourceIndex {
         self.path2id.len()
     }
 
-    pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+    pub fn build<P: AsRef<Path>>(root_path: P) -> Self {
         log::info!("Building the index from scratch");
         let root_path: PathBuf = root_path.as_ref().to_owned();
 
@@ -67,63 +66,53 @@ impl ResourceIndex {
         }
 
         log::info!("Index built");
-        return Ok(index);
+        index
     }
 
-    pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+    pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         log::info!("Loading the index from file");
         let root_path: PathBuf = root_path.as_ref().to_owned();
 
         let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
 
-        if let Ok(file) = File::open(&index_path) {
-            let mut index = ResourceIndex {
-                id2path: HashMap::new(),
-                path2id: HashMap::new(),
-                collisions: HashMap::new(),
-                root: root_path.clone(),
-            };
+        let file = File::open(&index_path)?;
+        let mut index = ResourceIndex {
+            id2path: HashMap::new(),
+            path2id: HashMap::new(),
+            collisions: HashMap::new(),
+            root: root_path.clone(),
+        };
 
-            for line in BufReader::new(file).lines() {
-                if let Ok(entry) = line {
-                    let mut parts = entry.split(' ');
+        for line in BufReader::new(file).lines() {
+            if let Ok(entry) = line {
+                let mut parts = entry.split(' ');
 
-                    let modified: SystemTime = {
-                        let str = parts.next().ok_or(Error::msg(
-                            "Couldn't find first part of index entry",
-                        ))?;
-                        UNIX_EPOCH.add(Duration::from_millis(str.parse()?))
-                    };
+                let modified: SystemTime = {
+                    let str = parts.next().ok_or(ArklibError::Parse)?;
+                    UNIX_EPOCH.add(Duration::from_millis(
+                        str.parse().map_err(|_| ArklibError::Parse)?,
+                    ))
+                };
 
-                    let id: ResourceId = {
-                        let str = parts.next().ok_or(Error::msg(
-                            "Couldn't find second part of index entry",
-                        ))?;
-                        ResourceId::from_str(str)?
-                    };
+                let id: ResourceId = {
+                    let str = parts.next().ok_or(ArklibError::Parse)?;
+                    ResourceId::from_str(str)?
+                };
 
-                    let path: String = parts.intersperse(" ").collect();
-                    let path: PathBuf = root_path.join(Path::new(&path));
-                    let path: CanonicalPathBuf =
-                        CanonicalPathBuf::canonicalize(path)?;
+                let path: String = parts.intersperse(" ").collect();
+                let path: PathBuf = root_path.join(Path::new(&path));
+                let path: CanonicalPathBuf =
+                    CanonicalPathBuf::canonicalize(path)?;
 
-                    log::trace!("[load] {} -> {}", id, path.display());
-                    index.insert_entry(path, IndexEntry { id, modified });
-                }
+                log::trace!("[load] {} -> {}", id, path.display());
+                index.insert_entry(path, IndexEntry { id, modified });
             }
-
-            Ok(index)
-        } else {
-            let error = format!(
-                "No persisted index was found by path {}",
-                index_path.display()
-            );
-
-            Err(Error::msg(error))
         }
+
+        Ok(index)
     }
 
-    pub fn store(&self) -> Result<(), Error> {
+    pub fn store(&self) -> Result<()> {
         log::info!("Storing the index to file");
 
         let start = SystemTime::now();
@@ -148,21 +137,31 @@ impl ResourceIndex {
 
             let timestamp = entry
                 .modified
-                .duration_since(UNIX_EPOCH)?
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| {
+                    ArklibError::Other(anyhow!("Error using duration since"))
+                })?
                 .as_millis();
 
             let path =
                 pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
-                    .ok_or(Error::msg("Couldn't calculate path diff"))?;
+                    .ok_or(ArklibError::Path(
+                        "Couldn't calculate path diff".into(),
+                    ))?;
 
             write!(file, "{} {} {}\n", timestamp, entry.id, path.display())?;
         }
 
-        log::trace!("Storing the index took {:?}", start.elapsed()?);
+        log::trace!(
+            "Storing the index took {:?}",
+            start
+                .elapsed()
+                .map_err(|_| ArklibError::Other(anyhow!("SystemTime error")))
+        );
         Ok(())
     }
 
-    pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
+    pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         match Self::load(&root_path) {
             Ok(mut index) => {
                 log::debug!("Index loaded: {} entries", index.path2id.len());
@@ -190,21 +189,12 @@ impl ResourceIndex {
             }
             Err(e) => {
                 log::warn!("{}", e.to_string());
-                match Self::build(root_path) {
-                    Ok(index) => {
-                        if let Err(e) = index.store() {
-                            log::error!("{}", e.to_string());
-                        }
-
-                        Ok(index)
-                    }
-                    error => error,
-                }
+                Ok(Self::build(root_path))
             }
         }
     }
 
-    pub fn update_all(&mut self) -> Result<IndexUpdate, Error> {
+    pub fn update_all(&mut self) -> Result<IndexUpdate> {
         log::debug!("Updating the index");
         log::trace!("[update] known paths: {:?}", self.path2id.keys());
 
@@ -352,7 +342,7 @@ impl ResourceIndex {
         &mut self,
         path_buf: CanonicalPathBuf,
         old_id: ResourceId,
-    ) -> Result<IndexUpdate, Error> {
+    ) -> Result<IndexUpdate> {
         log::debug!("Updating a single entry in the index");
 
         let path = path_buf.as_canonical_path();
@@ -385,7 +375,9 @@ impl ResourceIndex {
                             }
 
                             // the caller must have ensured that the path was updated
-                            return Err(Error::msg("Nothing to update"));
+                            return Err(ArklibError::Collision(
+                                "New content has the same id".into(),
+                            ));
                         }
 
                         // new resource exists by the path
@@ -424,7 +416,7 @@ impl ResourceIndex {
         &mut self,
         path: &CanonicalPath,
         old_id: ResourceId,
-    ) -> Result<IndexUpdate, Error> {
+    ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
 
         if let Some(mut collisions) = self.collisions.get_mut(&old_id) {
@@ -460,7 +452,9 @@ impl ResourceIndex {
                     "Must forget the requested path"
                 );
             } else {
-                return Err(Error::msg("Illegal state of collision tracker"));
+                return Err(ArklibError::Collision(
+                    "Illegal state of collision tracker".into(),
+                ));
             }
         } else {
             self.id2path.remove(&old_id);
@@ -514,17 +508,17 @@ fn discover_paths<P: AsRef<Path>>(
         .collect()
 }
 
-fn scan_entry(
-    path: &CanonicalPath,
-    metadata: Metadata,
-) -> Result<IndexEntry, Error> {
+fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
     if metadata.is_dir() {
-        return Err(Error::msg("DirEntry is directory"));
+        return Err(ArklibError::Path("Path is expected to be a file".into()));
     }
 
     let size = metadata.len();
     if size == 0 {
-        return Err(Error::msg("Empty resource"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Empty resource",
+        ))?;
     }
 
     let id = ResourceId::compute(size, path)?;
@@ -638,8 +632,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
-            let actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
+            let actual = ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 1);
@@ -659,8 +652,7 @@ mod tests {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
-            let actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
+            let actual = ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 2);
@@ -682,8 +674,7 @@ mod tests {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
             create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
 
-            let mut actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
+            let mut actual = ResourceIndex::build(path.clone());
 
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
@@ -712,8 +703,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
-            let mut actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
+            let mut actual = ResourceIndex::build(path.clone());
 
             let (_, expected_path) =
                 create_file_at(path.clone(), Some(FILE_SIZE_2), None);
@@ -760,8 +750,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
 
-            let mut actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
+            let mut actual = ResourceIndex::build(path.clone());
 
             let mut file_path = path.clone();
             file_path.push(FILE_NAME_1);
@@ -797,8 +786,7 @@ mod tests {
                 Some(FILE_NAME_2),
             );
 
-            let mut actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
+            let mut actual = ResourceIndex::build(path.clone());
 
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
@@ -823,8 +811,7 @@ mod tests {
     fn should_not_index_empty_file() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(0), None);
-            let actual = ResourceIndex::build(path.clone())
-                .expect("Could not generate index");
+            let actual = ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
@@ -837,8 +824,7 @@ mod tests {
     fn should_not_index_hidden_file() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(".hidden"));
-            let actual = ResourceIndex::build(path.clone())
-                .expect("Could not generate index");
+            let actual = ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
@@ -852,8 +838,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             create_dir_at(path.clone());
 
-            let actual = ResourceIndex::build(path.clone())
-                .expect("Could not build index");
+            let actual = ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);

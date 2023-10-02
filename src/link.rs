@@ -1,4 +1,3 @@
-use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -10,7 +9,7 @@ use url::Url;
 
 use crate::id::ResourceId;
 use crate::meta::{load_meta_bytes, store_meta};
-use crate::{ARK_FOLDER, PREVIEWS_STORAGE_FOLDER};
+use crate::{ArklibError, Result, ARK_FOLDER, PREVIEWS_STORAGE_FOLDER};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
@@ -27,23 +26,24 @@ pub struct Metadata {
 impl Link {
     pub fn new(url: Url, title: String, desc: Option<String>) -> Self {
         Self {
-            url: url,
+            url,
             meta: Metadata { title, desc },
         }
     }
 
-    pub fn id(&self) -> Result<ResourceId, Error> {
+    pub fn id(&self) -> Result<ResourceId> {
         ResourceId::compute_bytes(self.url.as_str().as_bytes())
     }
 
     /// Load a link with its metadata from file
-    pub fn load<P: AsRef<Path>>(root: P, path: P) -> Result<Self, Error> {
+    pub fn load<P: AsRef<Path>>(root: P, path: P) -> Result<Self> {
         let p = path.as_ref().to_path_buf();
         let url = Self::load_url(p)?;
         let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
 
         let bytes = load_meta_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
-        let meta: Metadata = serde_json::from_slice(&bytes)?;
+        let meta: Metadata =
+            serde_json::from_slice(&bytes).map_err(|_| ArklibError::Parse)?;
 
         Ok(Self { url, meta })
     }
@@ -54,7 +54,7 @@ impl Link {
         root: P,
         path: P,
         save_preview: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let id = self.id()?;
         store_meta::<Metadata, _>(root.as_ref(), id, &self.meta)?;
 
@@ -82,7 +82,7 @@ impl Link {
         root: P,
         path: P,
         save_preview: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let runtime = tokio::runtime::Runtime::new()?;
         runtime.block_on(self.write_to_path(root, path, save_preview))
     }
@@ -92,7 +92,7 @@ impl Link {
         root: P,
         image_data: Vec<u8>,
         id: ResourceId,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let path = root
             .as_ref()
             .join(ARK_FOLDER)
@@ -108,7 +108,7 @@ impl Link {
     }
 
     /// Get metadata of the link (synced).
-    pub fn get_preview_synced<S>(url: S) -> Result<OpenGraph, reqwest::Error>
+    pub fn get_preview_synced<S>(url: S) -> Result<OpenGraph>
     where
         S: Into<String>,
     {
@@ -118,7 +118,7 @@ impl Link {
     }
 
     /// Get metadata of the link.
-    pub async fn get_preview<S>(url: S) -> Result<OpenGraph, reqwest::Error>
+    pub async fn get_preview<S>(url: S) -> Result<OpenGraph>
     where
         S: Into<String>,
     {
@@ -152,10 +152,10 @@ impl Link {
         })
     }
 
-    fn load_url(path: PathBuf) -> Result<Url, Error> {
+    fn load_url(path: PathBuf) -> Result<Url> {
         let url_raw = std::fs::read(path)?;
         let url_str = str::from_utf8(url_raw.as_slice())?;
-        Ok(Url::from_str(url_str)?)
+        Url::from_str(url_str).map_err(|_| ArklibError::Parse)
     }
 }
 
