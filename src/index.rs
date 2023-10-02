@@ -15,7 +15,7 @@ use anyhow::Error;
 use log;
 
 use crate::id::ResourceId;
-use crate::{INDEX_PATH, STORAGES_FOLDER};
+use crate::{ARK_FOLDER, INDEX_PATH};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
@@ -74,8 +74,7 @@ impl ResourceIndex {
         log::info!("Loading the index from file");
         let root_path: PathBuf = root_path.as_ref().to_owned();
 
-        let index_path: PathBuf =
-            root_path.join(STORAGES_FOLDER).join(INDEX_PATH);
+        let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
 
         if let Ok(file) = File::open(&index_path) {
             let mut index = ResourceIndex {
@@ -132,7 +131,7 @@ impl ResourceIndex {
         let index_path = self
             .root
             .to_owned()
-            .join(STORAGES_FOLDER)
+            .join(ARK_FOLDER)
             .join(INDEX_PATH);
 
         let ark_dir = index_path.parent().unwrap();
@@ -574,6 +573,7 @@ mod tests {
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
     use std::fs::{File, Permissions};
+    #[cfg(target_os = "unix")]
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::time::SystemTime;
@@ -802,7 +802,7 @@ mod tests {
 
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
-
+            #[cfg(target_os = "unix")]
             file.set_permissions(Permissions::from_mode(0o222))
                 .expect("Should be fine");
 

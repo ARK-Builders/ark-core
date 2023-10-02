@@ -6,7 +6,7 @@ use anyhow::Error;
 use serde::Serialize;
 
 use crate::id::ResourceId;
-use crate::{METADATA_PATH, STORAGES_FOLDER};
+use crate::{ARK_FOLDER, METADATA_STORAGE_FOLDER};
 
 /// Dynamic metadata: stored as JSON and
 /// interpreted differently depending on kind of a resource
@@ -17,8 +17,8 @@ pub fn store_meta<S: Serialize, P: AsRef<Path>>(
 ) -> Result<(), Error> {
     let path = root
         .as_ref()
-        .join(STORAGES_FOLDER)
-        .join(METADATA_PATH);
+        .join(ARK_FOLDER)
+        .join(METADATA_STORAGE_FOLDER);
     fs::create_dir_all(path.to_owned())?;
     let mut file = File::create(path.to_owned().join(id.to_string()))?;
 
@@ -35,8 +35,8 @@ pub fn load_meta_bytes<P: AsRef<Path>>(
 ) -> Result<Vec<u8>, Error> {
     let storage = root
         .as_ref()
-        .join(STORAGES_FOLDER)
-        .join(METADATA_PATH);
+        .join(ARK_FOLDER)
+        .join(METADATA_STORAGE_FOLDER);
     let path = storage.join(id.to_string());
 
     Ok(std::fs::read(path)?)
