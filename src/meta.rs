@@ -2,11 +2,10 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::Error;
 use serde::Serialize;
 
 use crate::id::ResourceId;
-use crate::{ARK_FOLDER, METADATA_STORAGE_FOLDER};
+use crate::{ArklibError, Result, ARK_FOLDER, METADATA_STORAGE_FOLDER};
 
 /// Dynamic metadata: stored as JSON and
 /// interpreted differently depending on kind of a resource
@@ -14,7 +13,7 @@ pub fn store_meta<S: Serialize, P: AsRef<Path>>(
     root: P,
     id: ResourceId,
     metadata: &S,
-) -> Result<(), Error> {
+) -> Result<()> {
     let path = root
         .as_ref()
         .join(ARK_FOLDER)
@@ -22,7 +21,8 @@ pub fn store_meta<S: Serialize, P: AsRef<Path>>(
     fs::create_dir_all(path.to_owned())?;
     let mut file = File::create(path.to_owned().join(id.to_string()))?;
 
-    let json = serde_json::to_string(&metadata)?;
+    let json =
+        serde_json::to_string(&metadata).map_err(|_| ArklibError::Parse)?;
     let _ = file.write(json.into_bytes().as_slice())?;
 
     Ok(())
@@ -32,7 +32,7 @@ pub fn store_meta<S: Serialize, P: AsRef<Path>>(
 pub fn load_meta_bytes<P: AsRef<Path>>(
     root: P,
     id: ResourceId,
-) -> Result<Vec<u8>, Error> {
+) -> Result<Vec<u8>> {
     let storage = root
         .as_ref()
         .join(ARK_FOLDER)
