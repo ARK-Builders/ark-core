@@ -70,11 +70,10 @@ impl ResourceIndex {
     }
 
     pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
-        log::info!("Loading the index from file");
         let root_path: PathBuf = root_path.as_ref().to_owned();
 
         let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
-
+        log::info!("Loading the index from file {}", index_path.display());
         let file = File::open(&index_path)?;
         let mut index = ResourceIndex {
             id2path: HashMap::new(),
@@ -83,29 +82,36 @@ impl ResourceIndex {
             root: root_path.clone(),
         };
 
+        // We should not return early in case of missing files
         for line in BufReader::new(file).lines() {
             if let Ok(entry) = line {
                 let mut parts = entry.split(' ');
 
-                let modified: SystemTime = {
+                let modified = {
                     let str = parts.next().ok_or(ArklibError::Parse)?;
                     UNIX_EPOCH.add(Duration::from_millis(
                         str.parse().map_err(|_| ArklibError::Parse)?,
                     ))
                 };
 
-                let id: ResourceId = {
+                let id = {
                     let str = parts.next().ok_or(ArklibError::Parse)?;
                     ResourceId::from_str(str)?
                 };
 
-                let path: String = parts.intersperse(" ").collect();
+                let path: String =
+                    itertools::Itertools::intersperse(parts, " ").collect();
                 let path: PathBuf = root_path.join(Path::new(&path));
-                let path: CanonicalPathBuf =
-                    CanonicalPathBuf::canonicalize(path)?;
-
-                log::trace!("[load] {} -> {}", id, path.display());
-                index.insert_entry(path, IndexEntry { id, modified });
+                match CanonicalPathBuf::canonicalize(&path) {
+                    Ok(path) => {
+                        log::trace!("[load] {} -> {}", id, path.display());
+                        index.insert_entry(path, IndexEntry { id, modified });
+                    }
+                    Err(_) => {
+                        log::warn!("File {} not found", path.display());
+                        continue;
+                    }
+                }
             }
         }
 
