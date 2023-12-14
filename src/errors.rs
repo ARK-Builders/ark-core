@@ -31,3 +31,21 @@ impl From<Utf8Error> for ArklibError {
         Self::Parse
     }
 }
+
+impl From<serde_json::Error> for ArklibError {
+    fn from(_: serde_json::Error) -> Self {
+        Self::Parse
+    }
+}
+
+impl From<url::ParseError> for ArklibError {
+    fn from(_: url::ParseError) -> Self {
+        Self::Parse
+    }
+}
+
+impl From<Box<dyn std::error::Error>> for ArklibError {
+    fn from(e: Box<dyn std::error::Error>) -> Self {
+        Self::Other(anyhow::anyhow!(e.to_string()))
+    }
+}

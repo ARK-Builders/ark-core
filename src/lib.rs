@@ -1,14 +1,22 @@
+#![deny(clippy::all)]
 #[macro_use]
 extern crate lazy_static;
 extern crate canonical_path;
+
 pub mod errors;
 pub use errors::{ArklibError, Result};
+
 pub mod id;
+pub mod index;
+
 pub mod link;
 pub mod pdf;
 
-pub mod index;
-mod meta;
+mod atomic;
+mod storage;
+mod util;
+
+pub use atomic::{modify, modify_json, AtomicFile};
 
 use index::ResourceIndex;
 
@@ -18,13 +26,12 @@ use std::sync::{Arc, RwLock};
 
 use canonical_path::CanonicalPathBuf;
 
-use log;
-
 pub const ARK_FOLDER: &str = ".ark";
 
 // must not be lost (user data)
 pub const STATS_FOLDER: &str = "stats";
 pub const FAVORITES_FILE: &str = "favorites";
+pub const DEVICE_ID: &str = "device";
 
 // User-defined data
 pub const TAG_STORAGE_FILE: &str = "user/tags";

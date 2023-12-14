@@ -1,33 +1,50 @@
+use crate::id::ResourceId;
+use crate::storage::meta::store_metadata;
+use crate::storage::prop::store_properties;
+use crate::{
+    storage::prop::load_raw_properties, AtomicFile, Result, ARK_FOLDER,
+    PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER,
+};
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
 use std::str::{self, FromStr};
-use std::{fs, fs::File, io::Write, path::PathBuf};
+use std::{io::Write, path::PathBuf};
 use url::Url;
-
-use crate::id::ResourceId;
-use crate::meta::{load_meta_bytes, store_meta};
-use crate::{ArklibError, Result, ARK_FOLDER, PREVIEWS_STORAGE_FOLDER};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
     pub url: Url,
-    pub meta: Metadata,
+    pub prop: Properties,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Metadata {
+pub struct Properties {
     pub title: String,
     pub desc: Option<String>,
+}
+/// Write data to a tempory file and move that written file to destination
+///
+/// May failed if writing or moving failed
+fn temp_and_move(
+    data: &[u8],
+    dest_dir: impl AsRef<Path>,
+    filename: &str,
+) -> Result<()> {
+    let mut path = std::env::temp_dir();
+    path.push(filename);
+    std::fs::write(&path, data)?;
+    std::fs::rename(path, dest_dir.as_ref().join(filename))?;
+    Ok(())
 }
 
 impl Link {
     pub fn new(url: Url, title: String, desc: Option<String>) -> Self {
         Self {
             url,
-            meta: Metadata { title, desc },
+            prop: Properties { title, desc },
         }
     }
 
@@ -35,93 +52,103 @@ impl Link {
         ResourceId::compute_bytes(self.url.as_str().as_bytes())
     }
 
-    /// Load a link with its metadata from file
-    pub fn load<P: AsRef<Path>>(root: P, path: P) -> Result<Self> {
-        let p = path.as_ref().to_path_buf();
+    fn load_user_data<P: AsRef<Path>>(
+        root: P,
+        id: &ResourceId,
+    ) -> Result<Properties> {
+        let path = root
+            .as_ref()
+            .join(ARK_FOLDER)
+            .join(PROPERTIES_STORAGE_FOLDER)
+            .join(id.to_string());
+        let file = AtomicFile::new(path)?;
+        let current = file.load()?;
+        let data = current.read_to_string()?;
+        let user_meta: Properties = serde_json::from_str(&data)?;
+        Ok(user_meta)
+    }
+
+    /// Load a link with its properties from file
+    pub fn load<P: AsRef<Path>>(root: P, filename: P) -> Result<Self> {
+        let p = root.as_ref().join(filename);
         let url = Self::load_url(p)?;
         let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
+        // Load user properties first
+        let user_prop = Self::load_user_data(&root, &id)?;
+        let mut description = user_prop.desc;
 
-        let bytes = load_meta_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
-        let meta: Metadata =
-            serde_json::from_slice(&bytes).map_err(|_| ArklibError::Parse)?;
-
-        Ok(Self { url, meta })
-    }
-
-    /// Write zipped file to path
-    pub async fn write_to_path<P: AsRef<Path>>(
-        &mut self,
-        root: P,
-        path: P,
-        save_preview: bool,
-    ) -> Result<()> {
-        let id = self.id()?;
-        store_meta::<Metadata, _>(root.as_ref(), id, &self.meta)?;
-
-        let mut link_file = File::create(path.as_ref().to_owned())?;
-        let file_data = self.url.as_str().as_bytes();
-        link_file.write(file_data)?;
-        if save_preview {
-            let preview_data = Link::get_preview(self.url.clone())
-                .await
-                .unwrap_or_default();
-            let image_data = preview_data
-                .fetch_image()
-                .await
-                .unwrap_or_default();
-            self.save_preview(root.as_ref(), image_data, id)
-                .await?;
+        // Only load properties if the description is not set
+        if description.is_none() {
+            let bytes = load_raw_properties(root.as_ref(), id)?;
+            let graph_meta: OpenGraph = serde_json::from_slice(&bytes)?;
+            description = graph_meta.description;
         }
 
-        store_meta::<Metadata, _>(root, id, &self.meta)
+        Ok(Self {
+            url,
+            prop: Properties {
+                title: user_prop.title,
+                desc: description,
+            },
+        })
     }
 
-    /// Synchronized version of Write zipped file to path
-    pub fn write_to_path_sync<P: AsRef<Path>>(
-        &mut self,
+    pub async fn save<P: AsRef<Path>>(
+        &self,
         root: P,
-        path: P,
-        save_preview: bool,
+        with_preview: bool,
     ) -> Result<()> {
-        let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(self.write_to_path(root, path, save_preview))
+        let id = self.id()?;
+        let id_string = id.to_string();
+
+        // Resources are stored in the folder chosen by user
+        let bytes = self.url.as_str().as_bytes();
+        temp_and_move(bytes, root.as_ref(), &id_string)?;
+        //User defined properties
+        store_properties(&root, id, &self.prop)?;
+
+        // Generated data
+        if let Ok(graph) = self.get_preview().await {
+            log::debug!("Trying to save: {with_preview} with {graph:?}");
+
+            store_metadata(&root, id, &graph)?;
+            if with_preview {
+                if let Some(preview_data) = graph.fetch_image().await {
+                    self.save_preview(root, preview_data, &id)?;
+                }
+            }
+        }
+        Ok(())
     }
 
-    pub async fn save_preview<P: AsRef<Path>>(
-        &mut self,
+    fn save_preview<P: AsRef<Path>>(
+        &self,
         root: P,
         image_data: Vec<u8>,
-        id: ResourceId,
+        id: &ResourceId,
     ) -> Result<()> {
         let path = root
             .as_ref()
             .join(ARK_FOLDER)
-            .join(PREVIEWS_STORAGE_FOLDER);
-        fs::create_dir_all(path.to_owned())?;
-
-        let file = path.to_owned().join(id.to_string());
-
-        let mut file = File::create(file)?;
-        file.write(image_data.as_slice())?;
-
+            .join(PREVIEWS_STORAGE_FOLDER)
+            .join(id.to_string());
+        let file = AtomicFile::new(path)?;
+        let tmp = file.make_temp()?;
+        (&tmp).write_all(&image_data)?;
+        let current_preview = file.load()?;
+        file.compare_and_swap(&current_preview, tmp)?;
         Ok(())
     }
 
-    /// Get metadata of the link (synced).
-    pub fn get_preview_synced<S>(url: S) -> Result<OpenGraph>
-    where
-        S: Into<String>,
-    {
+    /// Get OGP metadata of the link (synced).
+    pub fn get_preview_synced(&self) -> Result<OpenGraph> {
         let runtime =
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-        return runtime.block_on(Link::get_preview(url));
+        return runtime.block_on(self.get_preview());
     }
 
-    /// Get metadata of the link.
-    pub async fn get_preview<S>(url: S) -> Result<OpenGraph>
-    where
-        S: Into<String>,
-    {
+    /// Get OGP metadata of the link.
+    pub async fn get_preview(&self) -> Result<OpenGraph> {
         let mut header = reqwest::header::HeaderMap::new();
         header.insert(
             "User-Agent",
@@ -132,13 +159,9 @@ impl Link {
         let client = reqwest::Client::builder()
             .default_headers(header)
             .build()?;
-        let scraper = client
-            .get(url.into())
-            .send()
-            .await?
-            .text()
-            .await?;
-        let html = Html::parse_document(&scraper.as_str());
+        let url = self.url.to_string();
+        let scraper = client.get(url).send().await?.text().await?;
+        let html = Html::parse_document(scraper.as_str());
         let title =
             select_og(&html, OpenGraphTag::Title).or(select_title(&html));
         Ok(OpenGraph {
@@ -153,9 +176,8 @@ impl Link {
     }
 
     fn load_url(path: PathBuf) -> Result<Url> {
-        let url_raw = std::fs::read(path)?;
-        let url_str = str::from_utf8(url_raw.as_slice())?;
-        Url::from_str(url_str).map_err(|_| ArklibError::Parse)
+        let content = std::fs::read_to_string(path)?;
+        Ok(Url::from_str(&content)?)
     }
 }
 
@@ -191,7 +213,7 @@ fn select_title(html: &Html) -> Option<String> {
 
     None
 }
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct OpenGraph {
     /// Represents the "og:title" OpenGraph meta tag.
     ///
@@ -278,42 +300,44 @@ impl OpenGraphTag {
     }
 }
 
-#[test]
-fn test_create_link_file() {
+#[tokio::test]
+async fn test_create_link_file() {
     use tempdir::TempDir;
+
     let dir = TempDir::new("arklib_test").unwrap();
     let root = dir.path();
     println!("temporary root: {}", root.display());
-    let url = Url::parse("https://example.com/").unwrap();
-    let mut link =
-        Link::new(url, String::from("title"), Some(String::from("desc")));
+    let url = Url::parse("https://kaydee.net/blog/open-graph-image/").unwrap();
+    let link = Link::new(
+        url,
+        String::from("test_title"),
+        Some(String::from("test_desc")),
+    );
 
-    let path = root.join("test.link");
+    // Resources are stored in the folder chosen by user
+    let path = root.join(link.id().unwrap().to_string());
 
     for save_preview in [false, true] {
-        link.write_to_path_sync(root, path.as_path(), save_preview)
-            .unwrap();
-        let link_file_bytes = std::fs::read(path.to_owned()).unwrap();
+        link.save(&root, save_preview).await.unwrap();
+        let current_bytes = std::fs::read_to_string(&path).unwrap();
         let url: Url =
-            Url::from_str(str::from_utf8(&link_file_bytes).unwrap()).unwrap();
-        assert_eq!(url.as_str(), "https://example.com/");
-        let link = Link::load(root.clone(), path.as_path()).unwrap();
+            Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
+                .unwrap();
+        assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
+        let link = Link::load(root, &path).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
-        assert_eq!(link.meta.desc.unwrap(), "desc");
-        assert_eq!(link.meta.title, "title");
+        assert_eq!(link.prop.desc.unwrap(), "test_desc");
+        assert_eq!(link.prop.title, "test_title");
 
-        let id = ResourceId::compute_bytes(link_file_bytes.as_slice()).unwrap();
-        println!("resource: {}, {}", id.crc32, id.data_size);
-
-        if Path::new(root)
+        let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
+        let path = Path::new(&root)
             .join(ARK_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)
-            .join(id.to_string())
-            .exists()
-        {
-            assert_eq!(save_preview, true)
+            .join(id.to_string());
+        if path.exists() {
+            assert!(save_preview)
         } else {
-            assert_eq!(save_preview, false)
+            assert!(!save_preview)
         }
     }
 }
