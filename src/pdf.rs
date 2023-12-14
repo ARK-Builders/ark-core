@@ -28,8 +28,11 @@ fn initialize_pdfium() {
     )
     .or_else(|_| Pdfium::bind_to_system_library())
     .unwrap();
-    PDFIUM.set(Pdfium::new(bindings)); // Instead of returning the bindings, we
-                                       // cache them in the static initializer
+    PDFIUM
+        .set(Pdfium::new(bindings))
+        .ok()
+        .expect("Can't set PDFIUM"); // Instead of returning the bindings, we
+                                     // cache them in the static initializer
 }
 
 pub fn render_preview_page<R>(data: R, quailty: PDFQuality) -> DynamicImage

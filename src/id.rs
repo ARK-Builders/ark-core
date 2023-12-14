@@ -3,11 +3,11 @@ use crc32fast::Hasher;
 use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
+use std::fs;
 use std::io::Read;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
-use std::{fs, num::TryFromIntError};
 
 use crate::{ArklibError, Result};
 
@@ -99,7 +99,7 @@ impl ResourceId {
                 })?;
         }
 
-        let crc32: u32 = hasher.finalize().into();
+        let crc32: u32 = hasher.finalize();
         log::trace!("[compute] {} bytes has been read", bytes_read);
         log::trace!("[compute] checksum: {:#02x}", crc32);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
@@ -120,14 +120,15 @@ mod tests {
     fn compute_id_test() {
         let file_path = Path::new("./tests/lena.jpg");
         let data_size = fs::metadata(file_path)
-            .expect(&format!(
-                "Could not open image test file_path.{}",
-                file_path.display()
-            ))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Could not open image test file_path.{}",
+                    file_path.display()
+                )
+            })
             .len();
 
-        let id1 = ResourceId::compute(data_size.try_into().unwrap(), file_path)
-            .unwrap();
+        let id1 = ResourceId::compute(data_size, file_path).unwrap();
         assert_eq!(id1.crc32, 0x342a3d4a);
         assert_eq!(id1.data_size, 128760);
 
