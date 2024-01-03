@@ -76,7 +76,8 @@ const ARK_CONFIG: &str = ".config/ark";
 const ARK_BACKUPS_PATH: &str = ".ark-backups";
 const ROOTS_CFG_FILENAME: &str = "roots";
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
 
     let args = Cli::parse();
@@ -138,7 +139,7 @@ fn main() {
                     options.copy_inside = true;
 
                     let result = dir::copy(
-                        root.join(&arklib::STORAGES_FOLDER),
+                        root.join(&arklib::ARK_FOLDER),
                         storage_backup,
                         &options,
                     );
@@ -190,20 +191,26 @@ fn main() {
                 let root = provide_root(root_dir);
 
                 let url = Url::parse(url.as_deref().unwrap());
-                let mut link: arklib::link::Link = arklib::link::Link::new(
+                let link: arklib::link::Link = arklib::link::Link::new(
                     url.unwrap(),
                     title.to_owned().unwrap(),
                     desc.to_owned(),
                 );
 
-                let timestamp = timestamp().as_secs();
-                let path = Path::join(
-                    &root,
-                    format!("{}.link", &timestamp.to_string()),
-                );
-                link.write_to_path_sync(root, path.clone(), true)
-                    .unwrap();
-                println!("Link saved successfully: {:?}", path.display())
+                let future = link.save(&root, true);
+
+                println!("Saving link...");
+
+                match future.await {
+                    Ok(_) => {
+                        println!("Link saved successfully!");
+                        match provide_index(&root).store() {
+                            Ok(_) => println!("Index stored successfully!"),
+                            Err(e) => println!("Error: {}", e),
+                        }
+                    }
+                    Err(e) => println!("Error: {}", e),
+                }
             }
 
             Link::Load {
@@ -328,9 +335,10 @@ fn monitor_index(root_dir: &Option<PathBuf>, interval: Option<u64>) {
                     thread::sleep(pause);
 
                     let start = Instant::now();
-                    match index.update() {
+                    match index.update_all() {
                         Err(msg) => println!("Oops! {}", msg),
                         Ok(diff) => {
+                            index.store().expect("Could not store index");
                             let duration = start.elapsed();
                             println!("Updating succeeded in {:?}\n", duration);
 
@@ -358,7 +366,7 @@ fn monitor_index(root_dir: &Option<PathBuf>, interval: Option<u64>) {
 }
 
 fn storages_exists(path: &Path) -> bool {
-    let meta = metadata(path.join(&arklib::STORAGES_FOLDER));
+    let meta = metadata(path.join(&arklib::ARK_FOLDER));
     if let Ok(meta) = meta {
         return meta.is_dir();
     }
