@@ -108,16 +108,76 @@ impl ResourceId {
     }
 }
 
+pub mod app_id {
+    use std::{fs, path::Path};
+
+    use anyhow::anyhow;
+
+    use crate::{ArklibError, Result};
+
+    use crate::{APP_ID_FILE, APP_ID_PATH};
+
+    fn generate<P: AsRef<Path>>(app_id_path: P) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        fs::write(app_id_path, &id)?;
+        Ok(id)
+    }
+
+    pub fn read() -> Result<String> {
+        let device_path = APP_ID_PATH.read().map_err(|_| {
+            ArklibError::Other(anyhow!("Could not lock device id path"))
+        })?;
+
+        if let Some(app_id_path) = &*device_path {
+            Ok(fs::read_to_string(app_id_path)?)
+        } else {
+            Err(ArklibError::Other(anyhow!("Device id path is not set")))
+        }
+    }
+
+    pub fn load<P: AsRef<Path>>(root_path: P) -> Result<String> {
+        let app_id_path = root_path.as_ref().join(APP_ID_FILE);
+
+        let id = if app_id_path.exists() {
+            fs::read_to_string(&app_id_path)?
+        } else {
+            generate(&app_id_path)?
+        };
+
+        let mut app_id = APP_ID_PATH.write().map_err(|_| {
+            ArklibError::Other(anyhow!("Could not lock device id path"))
+        })?;
+        *app_id = Some(app_id_path);
+        Ok(id)
+    }
+
+    pub fn remove() -> Result<()> {
+        let app_id_path = APP_ID_PATH.read().map_err(|_| {
+            ArklibError::Other(anyhow!("Could not lock device id path"))
+        })?;
+
+        if let Some(app_id_path) = &*app_id_path {
+            fs::remove_file(app_id_path)?;
+        }
+
+        Ok(())
+    }
+}
+
 const KILOBYTE: u64 = 1024;
 const MEGABYTE: u64 = 1024 * KILOBYTE;
 const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 
 #[cfg(test)]
 mod tests {
+    use crate::initialize;
+
     use super::*;
 
     #[test]
     fn compute_id_test() {
+        initialize();
+
         let file_path = Path::new("./tests/lena.jpg");
         let data_size = fs::metadata(file_path)
             .unwrap_or_else(|_| {

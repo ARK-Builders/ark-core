@@ -604,10 +604,10 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::ResourceId;
+    use crate::id::{app_id, ResourceId};
     use crate::index::{discover_paths, IndexEntry};
-    use crate::ArklibError;
     use crate::ResourceIndex;
+    use crate::{initialize, ArklibError};
     use canonical_path::CanonicalPathBuf;
     use std::fs::File;
     #[cfg(target_os = "linux")]
@@ -662,6 +662,8 @@ mod tests {
     fn run_test_and_clean_up(
         test: impl FnOnce(PathBuf) + std::panic::UnwindSafe,
     ) {
+        initialize();
+
         let path = get_temp_dir();
         let result = std::panic::catch_unwind(|| test(path.clone()));
         std::fs::remove_dir_all(path.clone())

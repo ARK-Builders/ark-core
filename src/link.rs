@@ -1,4 +1,5 @@
-use crate::id::ResourceId;
+use crate::id::{app_id, ResourceId};
+use crate::initialize;
 use crate::storage::meta::store_metadata;
 use crate::storage::prop::store_properties;
 use crate::{
@@ -302,10 +303,13 @@ impl OpenGraphTag {
 
 #[tokio::test]
 async fn test_create_link_file() {
+    initialize();
+
     use tempdir::TempDir;
 
     let dir = TempDir::new("arklib_test").unwrap();
-    let root = dir.path();
+
+    let root: &Path = dir.path();
     println!("temporary root: {}", root.display());
     let url = Url::parse("https://kaydee.net/blog/open-graph-image/").unwrap();
     let link = Link::new(
