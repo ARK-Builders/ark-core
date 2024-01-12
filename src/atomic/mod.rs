@@ -58,12 +58,16 @@ pub fn modify_json<T: Serialize + DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
+    use crate::initialize;
+
     use super::*;
     use std::io::Write;
     use tempdir::TempDir;
 
     #[test]
     fn failed_to_write_simultaneously() {
+        initialize();
+
         let dir = TempDir::new("writing_test").unwrap();
         let root = dir.path();
         let shared_file = std::sync::Arc::new(AtomicFile::new(root).unwrap());
@@ -97,6 +101,8 @@ mod tests {
 
     #[test]
     fn multiple_writes_detected() {
+        initialize();
+
         let dir = TempDir::new("simultaneous_writes").unwrap();
         let root = dir.path();
         let shared_file = std::sync::Arc::new(AtomicFile::new(root).unwrap());

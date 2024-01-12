@@ -4,6 +4,8 @@ use std::io::{Error, ErrorKind, Read, Result};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use crate::id::app_id;
+
 const MAX_VERSION_FILES: usize = 10;
 
 pub struct TmpFile {
@@ -46,8 +48,8 @@ impl Drop for TmpFile {
 
 #[derive(Clone)]
 pub struct ReadOnlyFile {
-    version: usize,
-    path: PathBuf,
+    pub version: usize,
+    pub path: PathBuf,
 }
 
 /// This struct is the only way to read the file. Both path and version are private
@@ -105,7 +107,8 @@ impl AtomicFile {
         // This UID must be treated as confidential information.
         // Depending on network transport used to sync the files (if any),
         // it can leak to an unauthorized party.
-        let machine_id = machine_uid::get()?;
+        let machine_id = app_id::read()?;
+
         std::fs::create_dir_all(&directory)?;
         let filename: &str = match directory.file_name() {
             Some(name) => name.to_str().unwrap(),
@@ -122,7 +125,7 @@ impl AtomicFile {
     /// files matching this version. Multiple files for the same version
     /// can appear due to usage of file syncronization. Different devices
     /// can create same version simultaneously.
-    fn latest_version(&self) -> Result<(usize, Vec<ReadOnlyFile>)> {
+    pub fn latest_version(&self) -> Result<(usize, Vec<ReadOnlyFile>)> {
         let files_iterator = fs::read_dir(&self.directory)?.flatten();
         let (files, version) = files_iterator.into_iter().fold(
             (vec![], 0),
@@ -267,6 +270,8 @@ impl AtomicFile {
 
 #[cfg(test)]
 mod tests {
+    use crate::{id::app_id, initialize};
+
     use super::*;
     use rstest::rstest;
     use std::io::Write;
@@ -274,6 +279,7 @@ mod tests {
 
     #[test]
     fn delete_old_files() {
+        initialize();
         let dir = TempDir::new("max_files").unwrap();
         let root = dir.path();
         let file = AtomicFile::new(root).unwrap();
@@ -294,6 +300,8 @@ mod tests {
 
     #[test]
     fn multiple_version_files() {
+        initialize();
+
         let dir = TempDir::new("multiple_version").unwrap();
         let root = dir.path();
 
@@ -336,10 +344,12 @@ mod tests {
         #[case] cellphone_versions: &[usize],
         #[case] temp_name: &str,
     ) {
+        initialize();
+
         // Create the files without atmic to handles files names
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
-        let current_machine = machine_uid::get().unwrap();
+        let current_machine = app_id::read().unwrap();
         let file = AtomicFile::new(root).unwrap();
         let prefix = &file.prefix;
         for version in 0..versions {

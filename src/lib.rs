@@ -21,10 +21,15 @@ pub use atomic::{modify, modify_json, AtomicFile};
 use index::ResourceIndex;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use canonical_path::CanonicalPathBuf;
+use std::sync::Once;
+
+use crate::id::app_id;
+
+pub static INIT: Once = Once::new();
 
 pub const ARK_FOLDER: &str = ".ark";
 
@@ -44,11 +49,23 @@ pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
 pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";
 
+pub const APP_ID_FILE: &str = "app_id";
+
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 
 lazy_static! {
     pub static ref REGISTRAR: RwLock<HashMap<CanonicalPathBuf, ResourceIndexLock>> =
         RwLock::new(HashMap::new());
+}
+lazy_static! {
+    pub static ref APP_ID_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
+}
+
+pub fn initialize() {
+    INIT.call_once(|| {
+        log::info!("Initializing arklib");
+        app_id::load("./").unwrap();
+    });
 }
 
 pub fn provide_index<P: AsRef<Path>>(
