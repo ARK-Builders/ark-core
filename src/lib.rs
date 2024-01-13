@@ -6,6 +6,7 @@ extern crate canonical_path;
 pub mod errors;
 pub use errors::{ArklibError, Result};
 
+pub mod app_id;
 pub mod id;
 pub mod index;
 
@@ -27,16 +28,14 @@ use std::sync::{Arc, RwLock};
 use canonical_path::CanonicalPathBuf;
 use std::sync::Once;
 
-use crate::id::app_id;
-
 pub static INIT: Once = Once::new();
 
 pub const ARK_FOLDER: &str = ".ark";
 
-// must not be lost (user data)
+// Should not be lost if possible
 pub const STATS_FOLDER: &str = "stats";
 pub const FAVORITES_FILE: &str = "favorites";
-pub const DEVICE_ID: &str = "device";
+pub const APP_ID_FILE: &str = "app_id";
 
 // User-defined data
 pub const TAG_STORAGE_FILE: &str = "user/tags";
@@ -48,8 +47,6 @@ pub const INDEX_PATH: &str = "index";
 pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
 pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";
-
-pub const APP_ID_FILE: &str = "app_id";
 
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 

@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind, Read, Result};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use crate::id::app_id;
+use crate::app_id;
 
 const MAX_VERSION_FILES: usize = 10;
 
@@ -107,7 +107,7 @@ impl AtomicFile {
         // This UID must be treated as confidential information.
         // Depending on network transport used to sync the files (if any),
         // it can leak to an unauthorized party.
-        let machine_id = app_id::read()?;
+        let app_id = app_id::read()?;
 
         std::fs::create_dir_all(&directory)?;
         let filename: &str = match directory.file_name() {
@@ -117,7 +117,7 @@ impl AtomicFile {
                 "`path` must specify a directory name",
             ))?,
         };
-        let prefix = format!("{}_{}.", filename, machine_id);
+        let prefix = format!("{}_{}.", filename, app_id);
         Ok(Self { directory, prefix })
     }
 
@@ -132,8 +132,9 @@ impl AtomicFile {
             |(mut files, mut current_max_version), entry| {
                 let filename = entry.file_name();
                 if let Some(version) = parse_version(filename.to_str()) {
-                    // It's possible to have same version for two files coming from different machines
-                    // Add this files to the result
+                    // It's possible to have same version for two files coming
+                    // from different devices or even different local apps.
+                    // Add such files to the result
                     if version >= current_max_version {
                         let read_only = ReadOnlyFile {
                             version,
@@ -314,9 +315,9 @@ mod tests {
             .unwrap();
         file.compare_and_swap(&current, temp).unwrap();
 
-        // Other machine file (renamed on purpose to validate test)
+        // Other peer file (renamed on purpose to validate test)
         let current = file.load().unwrap();
-        let content_remote = "Content created on remote machine".to_string();
+        let content_remote = "Content created on remote peer".to_string();
         let temp = file.make_temp().unwrap();
         (&temp)
             .write_all(content_remote.as_bytes())
@@ -328,7 +329,7 @@ mod tests {
             root.join(format!("{}_cellphoneId.1", root.display()));
         fs::rename(version_2_path, rename_path).unwrap();
 
-        // We should take content from current machine
+        // We should take content from current peer
         let current = file.load().unwrap();
         let content = current.read_to_string().unwrap();
         assert_eq!(content, content_local);
@@ -346,20 +347,20 @@ mod tests {
     ) {
         initialize();
 
-        // Create the files without atmic to handles files names
+        // Create the files without atomic to handles files names
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
-        let current_machine = app_id::read().unwrap();
+        let local_peer = app_id::read().unwrap();
         let file = AtomicFile::new(root).unwrap();
         let prefix = &file.prefix;
         for version in 0..versions {
             let file_path = root.join(format!("{}{}", prefix, version + 1));
             let mut file = fs::File::create(file_path).unwrap();
-            let content =
-                format!("Version {} on {current_machine}", version + 1);
+            let content = format!("Version {} on {local_peer}", version + 1);
             file.write_all(content.as_bytes()).unwrap();
         }
-        // Write other machine files
+
+        // Write remote peer files
         let mut path = prefix.split('_');
         let path = path.next().unwrap();
         for cellphone_version in cellphone_versions {
@@ -370,11 +371,12 @@ mod tests {
             file.write_all(content.as_bytes()).unwrap();
         }
         assert_eq!(file.latest_version().unwrap().0, versions);
+
         let latest = file.load().unwrap();
         let latest_content = latest.read_to_string().unwrap();
         assert_eq!(
             latest_content,
-            format!("Version {} on {current_machine}", versions)
+            format!("Version {} on {local_peer}", versions)
         );
     }
 }
