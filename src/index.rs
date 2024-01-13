@@ -604,10 +604,10 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::{app_id, ResourceId};
+    use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
+    use crate::initialize;
     use crate::ResourceIndex;
-    use crate::{initialize, ArklibError};
     use canonical_path::CanonicalPathBuf;
     use std::fs::File;
     #[cfg(target_os = "linux")]
@@ -616,7 +616,6 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use std::path::PathBuf;
-    use std::str::FromStr;
     use std::time::SystemTime;
     use uuid::Uuid;
 

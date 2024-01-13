@@ -302,7 +302,7 @@ impl OpenGraphTag {
 
 #[tokio::test]
 async fn test_create_link_file() {
-    initialize();
+    crate::initialize();
 
     use tempdir::TempDir;
 

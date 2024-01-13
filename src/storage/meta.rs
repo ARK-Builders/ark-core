@@ -63,7 +63,7 @@ pub fn load_raw_metadata<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{id::app_id, initialize};
+    use crate::initialize;
 
     use super::*;
     use tempdir::TempDir;
