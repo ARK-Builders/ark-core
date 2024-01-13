@@ -92,8 +92,8 @@ impl ReadOnlyFile {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AtomicFile {
-    directory: PathBuf,
-    prefix: String,
+    pub directory: PathBuf,
+    pub prefix: String,
 }
 
 fn parse_version(filename: Option<&str>) -> Option<usize> {
@@ -160,7 +160,7 @@ impl AtomicFile {
         Ok((version, files))
     }
 
-    fn path(&self, version: usize) -> PathBuf {
+    pub fn path(&self, version: usize) -> PathBuf {
         self.directory
             .join(format!("{}{version}", self.prefix))
     }
