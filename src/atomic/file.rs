@@ -271,7 +271,7 @@ impl AtomicFile {
 
 #[cfg(test)]
 mod tests {
-    use crate::{id::app_id, initialize};
+    use crate::{app_id, initialize};
 
     use super::*;
     use rstest::rstest;

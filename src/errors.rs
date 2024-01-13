@@ -6,7 +6,7 @@ pub type Result<T> = std::result::Result<T, ArklibError>;
 
 #[derive(Error, Debug)]
 pub enum ArklibError {
-    #[error("IO error")]
+    #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Path error: {0}")]
     Path(String),
