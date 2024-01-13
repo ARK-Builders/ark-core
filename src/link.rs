@@ -1,5 +1,4 @@
-use crate::id::{app_id, ResourceId};
-use crate::initialize;
+use crate::id::ResourceId;
 use crate::storage::meta::store_metadata;
 use crate::storage::prop::store_properties;
 use crate::{
