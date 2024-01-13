@@ -1,4 +1,4 @@
-use std::env::{self, current_dir};
+use std::env::current_dir;
 use std::fs::{canonicalize, create_dir_all, metadata, File};
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -7,11 +7,12 @@ use std::str::FromStr;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use arklib::id::{app_id, ResourceId};
+use arklib::app_id;
+use arklib::id::ResourceId;
 use arklib::index::ResourceIndex;
 use arklib::pdf::PDFQuality;
 use arklib::{
-    modify, modify_json, AtomicFile, ARK_FOLDER, DEVICE_ID, FAVORITES_FILE,
+    modify, AtomicFile, APP_ID_FILE, ARK_FOLDER, FAVORITES_FILE,
     METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
     PROPERTIES_STORAGE_FOLDER, SCORE_STORAGE_FILE, STATS_FOLDER,
     TAG_STORAGE_FILE, THUMBNAILS_STORAGE_FOLDER,
