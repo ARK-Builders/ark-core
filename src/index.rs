@@ -21,7 +21,7 @@ pub struct IndexEntry {
     pub id: ResourceId,
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct ResourceIndex {
     pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
     pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
@@ -30,7 +30,7 @@ pub struct ResourceIndex {
     root: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct IndexUpdate {
     pub deleted: HashSet<ResourceId>,
     pub added: HashMap<CanonicalPathBuf, ResourceId>,
@@ -38,7 +38,7 @@ pub struct IndexUpdate {
 
 pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
 
-type Paths = HashSet<CanonicalPathBuf>;
+pub type Paths = HashSet<CanonicalPathBuf>;
 
 impl ResourceIndex {
     pub fn size(&self) -> usize {
@@ -341,6 +341,60 @@ impl ResourceIndex {
         Ok(IndexUpdate { deleted, added })
     }
 
+    // the caller must ensure that:
+    // * the index is up-to-date except this single path
+    // * the path hasn't been indexed before
+    pub fn index_new(&mut self, path: &dyn AsRef<Path>) -> Result<IndexUpdate> {
+        log::debug!("Indexing a new path");
+
+        if !path.as_ref().exists() {
+            return Err(ArklibError::Path(
+                "Absent paths cannot be indexed".into(),
+            ));
+        }
+
+        let path_buf = CanonicalPathBuf::canonicalize(path)?;
+        let path = path_buf.as_canonical_path();
+
+        return match fs::metadata(path) {
+            Err(_) => {
+                return Err(ArklibError::Path(
+                    "Couldn't to retrieve file metadata".into(),
+                ));
+            }
+            Ok(metadata) => match scan_entry(path, metadata) {
+                Err(_) => {
+                    return Err(ArklibError::Path(
+                        "The path points to a directory or empty file".into(),
+                    ));
+                }
+                Ok(new_entry) => {
+                    let id = new_entry.id;
+
+                    if let Some(nonempty) = self.collisions.get_mut(&id) {
+                        *nonempty += 1;
+                    }
+
+                    let mut added = HashMap::new();
+                    added.insert(path_buf.clone(), id);
+
+                    self.id2path.insert(id, path_buf.clone());
+                    self.path2id.insert(path_buf, new_entry);
+
+                    Ok(IndexUpdate {
+                        added,
+                        deleted: HashSet::new(),
+                    })
+                }
+            },
+        };
+    }
+
+    // the caller must ensure that:
+    // * the index is up-to-date except this single path
+    // * the path has been indexed before
+    // * the path maps into `old_id`
+    // * the content by the path has been modified
     pub fn update_one(
         &mut self,
         path: &dyn AsRef<Path>,
@@ -352,64 +406,67 @@ impl ResourceIndex {
             return self.forget_id(old_id);
         }
 
-        let canonical_path_buf = CanonicalPathBuf::canonicalize(path)?;
-        let canonical_path = canonical_path_buf.as_canonical_path();
+        let path_buf = CanonicalPathBuf::canonicalize(path)?;
+        let path = path_buf.as_canonical_path();
 
         log::trace!(
             "[update] paths {:?} has id {:?}",
-            canonical_path,
-            self.path2id[canonical_path]
+            path,
+            self.path2id[path]
         );
 
-        match fs::metadata(canonical_path) {
+        return match fs::metadata(path) {
             Err(_) => {
-                // updating the index after resource removal is a correct
-                // scenario
-                self.forget_path(canonical_path, old_id)
+                // updating the index after resource removal
+                // is a correct scenario
+                self.forget_path(path, old_id)
             }
             Ok(metadata) => {
-                match scan_entry(canonical_path, metadata) {
+                match scan_entry(path, metadata) {
                     Err(_) => {
                         // a directory or empty file exists by the path
-                        self.forget_path(canonical_path, old_id)
+                        self.forget_path(path, old_id)
                     }
                     Ok(new_entry) => {
                         // valid resource exists by the path
-                        let curr_entry = &self.path2id[canonical_path];
+
+                        let curr_entry = &self.path2id.get(path);
+                        if curr_entry.is_none() {
+                            // if the path is not indexed, then we can't have `old_id`
+                            // if you want to index new path, use `index_new` method
+                            return Err(ArklibError::Path(
+                                "Couldn't find the path in the index".into(),
+                            ));
+                        }
+                        let curr_entry = curr_entry.unwrap();
 
                         if curr_entry.id == new_entry.id {
                             // in rare cases we are here due to hash collision
-
                             if curr_entry.modified == new_entry.modified {
-                                log::warn!("path {:?} was modified but not its content", &canonical_path);
+                                log::warn!("path {:?} was not modified", &path);
+                            } else {
+                                log::warn!("path {:?} was modified but not its content", &path);
                             }
 
-                            // the caller must have ensured that the path was
-                            // updated
+                            // the caller must have ensured that the path was indeed update
                             return Err(ArklibError::Collision(
                                 "New content has the same id".into(),
                             ));
                         }
 
                         // new resource exists by the path
-                        self.forget_path(canonical_path, old_id).map(
-                            |mut update| {
-                                update.added.insert(
-                                    canonical_path_buf.clone(),
-                                    new_entry.id,
-                                );
-                                self.insert_entry(
-                                    canonical_path_buf,
-                                    new_entry,
-                                );
+                        self.forget_path(path, old_id).map(|mut update| {
+                            update
+                                .added
+                                .insert(path_buf.clone(), new_entry.id);
+                            self.insert_entry(path_buf, new_entry);
 
-                                update
-                            },
-                        )
+                            update
+                        })
                     }
                 }
             }
-        }
+        };
     }
 
     pub fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
@@ -676,7 +733,7 @@ mod tests {
     // resource index build
 
     #[test]
-    fn should_build_resource_index_with_1_file_successfully() {
+    fn index_build_should_process_1_file_successfully() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
@@ -695,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn should_index_colliding_files_correctly() {
+    fn index_build_should_process_colliding_files_correctly() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
@@ -717,7 +774,7 @@ mod tests {
     // resource index update
 
     #[test]
-    fn should_update_index_with_renamed_file_correctly() {
+    fn update_all_should_handle_renamed_file_correctly() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
             create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
@@ -747,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn should_update_resource_index_adding_1_additional_file_successfully() {
+    fn update_all_should_index_new_file_successfully() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
@@ -794,7 +851,73 @@ mod tests {
     }
 
     #[test]
-    fn should_update_resource_index_deleting_1_additional_file_successfully() {
+    fn index_new_should_index_new_file_successfully() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+            let mut index = ResourceIndex::build(path.clone());
+
+            let (_, new_path) =
+                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+
+            let update = index
+                .index_new(&new_path)
+                .expect("Should update index correctly");
+
+            assert_eq!(index.root, path.clone());
+            assert_eq!(index.path2id.len(), 2);
+            assert_eq!(index.id2path.len(), 2);
+            assert!(index.id2path.contains_key(&ResourceId {
+                data_size: FILE_SIZE_1,
+                crc32: CRC32_1,
+            }));
+            assert!(index.id2path.contains_key(&ResourceId {
+                data_size: FILE_SIZE_2,
+                crc32: CRC32_2,
+            }));
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 2);
+            assert_eq!(update.deleted.len(), 0);
+            assert_eq!(update.added.len(), 1);
+
+            let added_key = CanonicalPathBuf::canonicalize(new_path.clone())
+                .expect("CanonicalPathBuf should be fine");
+            assert_eq!(
+                update
+                    .added
+                    .get(&added_key)
+                    .expect("Key exists")
+                    .clone(),
+                ResourceId {
+                    data_size: FILE_SIZE_2,
+                    crc32: CRC32_2
+                }
+            )
+        })
+    }
+
+    #[test]
+    fn update_one_should_error_on_new_file() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+            let mut index = ResourceIndex::build(path.clone());
+
+            let (_, new_path) =
+                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+
+            let update = index.update_one(
+                &new_path,
+                ResourceId {
+                    data_size: FILE_SIZE_2,
+                    crc32: CRC32_2,
+                },
+            );
+
+            assert!(update.is_err())
+        })
+    }
+
+    #[test]
+    fn update_one_should_index_delete_file_successfully() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
 
@@ -831,7 +954,7 @@ mod tests {
     }
 
     #[test]
-    fn should_not_update_index_on_files_without_permissions() {
+    fn update_all_should_error_on_files_without_permissions() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
             let (file, _) = create_file_at(
@@ -862,7 +985,33 @@ mod tests {
     // error cases
 
     #[test]
-    fn should_not_update_nonexistent_path() {
+    fn update_one_should_not_update_absent_path() {
+        run_test_and_clean_up(|path| {
+            let mut missing_path = path.clone();
+            missing_path.push("missing/directory");
+            let mut actual = ResourceIndex::build(path.clone());
+            let old_id = ResourceId {
+                data_size: 1,
+                crc32: 2,
+            };
+            let result = actual
+                .update_one(&missing_path, old_id)
+                .map(|i| i.deleted.clone().take(&old_id))
+                .ok()
+                .flatten();
+
+            assert_eq!(
+                result,
+                Some(ResourceId {
+                    data_size: 1,
+                    crc32: 2,
+                })
+            );
+        })
+    }
+
+    #[test]
+    fn update_one_should_index_new_path() {
         run_test_and_clean_up(|path| {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
@@ -969,13 +1118,13 @@ mod tests {
             modified: SystemTime::now(),
         };
 
-        assert!(new1 == new1);
-        assert!(new2 == new2);
-        assert!(old1 == old1);
-        assert!(old2 == old2);
+        assert_eq!(new1, new1);
+        assert_eq!(new2, new2);
+        assert_eq!(old1, old1);
+        assert_eq!(old2, old2);
 
-        assert!(new1 != new2);
-        assert!(new1 != old1);
+        assert_ne!(new1, new2);
+        assert_ne!(new1, old1);
 
         assert!(old2 > old1);
         assert!(new1 > old1);
