@@ -1,5 +1,5 @@
 pub enum Format {
-    Json,
+    KeyValue,
     Raw,
 }
 
@@ -26,7 +26,7 @@ pub fn get_format(s: &Option<String>) -> Option<Format> {
     match s {
         Some(value) => {
             if value.to_lowercase() == "json" {
-                Some(Format::Json)
+                Some(Format::KeyValue)
             } else {
                 None
             }

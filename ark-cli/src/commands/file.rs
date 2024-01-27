@@ -1,7 +1,6 @@
 use crate::parsers::{self, Format};
 use arklib::{modify, modify_json, AtomicFile};
-use std::{fmt::Write, path::PathBuf, process::Output};
-use walkdir::WalkDir;
+
 
 pub fn file_append(
     atomic_file: &AtomicFile,
@@ -15,7 +14,7 @@ pub fn file_append(
             combined_vec
         })
         .map_err(|_| "ERROR: Could not append string".to_string()),
-        parsers::Format::Json => {
+        parsers::Format::KeyValue => {
             let values = parsers::key_value_to_str(&content)
                 .map_err(|_| "ERROR: Could not parse json".to_string())?;
 
@@ -35,7 +34,7 @@ pub fn file_insert(
             modify(&atomic_file, |_| content.as_bytes().to_vec())
                 .map_err(|_| "ERROR: Could not insert string".to_string())
         }
-        parsers::Format::Json => {
+        parsers::Format::KeyValue => {
             let values = parsers::key_value_to_str(&content)
                 .map_err(|_| "ERROR: Could not parse json".to_string())?;
 
@@ -52,103 +51,9 @@ pub fn file_insert(
                     *current = Some(serde_json::Value::Object(new));
                 },
             )
-            .map_err(|_| "ERROR:Could not insert json".to_string())
+            .map_err(|e| e.to_string())
         }
     }
-}
-
-pub fn file_read(
-    atomic_file: &AtomicFile,
-    key: &Option<String>,
-) -> Result<String, String> {
-    if let Some(file) = format_file(&atomic_file) {
-        let mut output = String::new();
-        writeln!(
-            output,
-            "{}",
-            format_line("version", "name", "machine", "path"),
-        )
-        .map_err(|_| "Could not write to output".to_string())?;
-
-        writeln!(output, "{}", file)
-            .map_err(|_| "Could not write to output".to_string())?;
-
-        let current = atomic_file
-            .load()
-            .map_err(|_| "Could not load atomic file.".to_string())?;
-
-        let data = current
-            .read_to_string()
-            .map_err(|_| "Could not read atomic file content.".to_string())?;
-
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
-            if let Some(key) = key {
-                if let Some(value) = json.get(key) {
-                    writeln!(output, "\n{}", value)
-                        .map_err(|_| "Could not write to output".to_string())?;
-                } else {
-                    return Err(format!("Key {} not found", key));
-                }
-            } else {
-                writeln!(
-                    output,
-                    "\n{}",
-                    serde_json::to_string_pretty(&json).unwrap()
-                )
-                .map_err(|_| "Could not write to output".to_string())?;
-            }
-        } else {
-            writeln!(output, "\n{}", data)
-                .map_err(|_| "Could not write to output".to_string())?;
-        }
-        Ok(output)
-    } else {
-        Err("File not found".to_string())
-    }
-}
-
-pub fn file_list(path: PathBuf, versions: &bool) -> Result<String, String> {
-    let mut output = String::new();
-
-    let files: Vec<AtomicFile> = WalkDir::new(path)
-        .min_depth(1)
-        .max_depth(1)
-        .into_iter()
-        .filter_entry(|e| e.file_type().is_dir())
-        .filter_map(|v| v.ok())
-        .filter_map(|e| match AtomicFile::new(e.path()) {
-            Ok(file) => Some(file),
-            Err(_) => None,
-        })
-        .collect();
-
-    if *versions {
-        writeln!(
-            output,
-            "{}",
-            format_line("version", "name", "machine", "path"),
-        );
-
-        for file in files {
-            if let Some(file) = format_file(&file) {
-                writeln!(output, "{}", file);
-            }
-        }
-    } else {
-        for file in files {
-            write!(
-                output,
-                "{} ",
-                file.directory
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-            );
-        }
-    }
-
-    Ok(output)
 }
 
 fn append_json(
@@ -198,7 +103,12 @@ fn append_json(
     Ok(())
 }
 
-fn format_line<A, B, C, D>(version: A, name: B, machine: C, path: D) -> String
+pub fn format_line<A, B, C, D>(
+    version: A,
+    name: B,
+    machine: C,
+    path: D,
+) -> String
 where
     A: std::fmt::Display,
     B: std::fmt::Display,
@@ -208,7 +118,7 @@ where
     format!("{: <8} {: <14} {: <36} {}", version, name, machine, path)
 }
 
-fn format_file(file: &AtomicFile) -> Option<String> {
+pub fn format_file(file: &AtomicFile) -> Option<String> {
     let current = file.load().ok()?;
 
     if current.version == 0 {
