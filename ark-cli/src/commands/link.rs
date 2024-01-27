@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use arklib::{id::ResourceId, link::Link};
 use url::Url;
 
-use crate::provide_index;
+use crate::util::provide_index;
 
 pub async fn create_link(
     root: &PathBuf,

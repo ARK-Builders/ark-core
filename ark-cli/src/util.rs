@@ -1,0 +1,150 @@
+use arklib::index::ResourceIndex;
+use std::env::current_dir;
+use std::fs::{canonicalize, metadata};
+use std::io::BufRead;
+use std::io::BufReader;
+use std::path::Path;
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{fs::File, path::PathBuf};
+
+use crate::ARK_CONFIG;
+
+pub fn discover_roots(roots_cfg: &Option<PathBuf>) -> Vec<PathBuf> {
+    if let Some(path) = roots_cfg {
+        println!(
+            "\tRoots config provided explicitly:\n\t\t{}",
+            path.display()
+        );
+        let config = File::open(&path).expect("File doesn't exist!");
+
+        parse_roots(config)
+    } else {
+        if let Ok(config) = File::open(&ARK_CONFIG) {
+            println!(
+                "\tRoots config was found automatically:\n\t\t{}",
+                &ARK_CONFIG
+            );
+
+            parse_roots(config)
+        } else {
+            println!("\tRoots config wasn't found.");
+
+            println!("Looking for a folder containing tag storage:");
+            let path = canonicalize(
+                current_dir().expect("Can't open current directory!"),
+            )
+            .expect("Couldn't canonicalize working directory!");
+
+            let result = path.ancestors().find(|path| {
+                println!("\t{}", path.display());
+                storages_exists(path)
+            });
+
+            if let Some(root) = result {
+                println!("Root folder found:\n\t{}", root.display());
+                vec![root.to_path_buf()]
+            } else {
+                println!("Root folder wasn't found.");
+                vec![]
+            }
+        }
+    }
+}
+
+pub fn provide_root(root_dir: &Option<PathBuf>) -> PathBuf {
+    if let Some(path) = root_dir {
+        path.clone()
+    } else {
+        current_dir()
+            .expect("Can't open current directory!")
+            .clone()
+    }
+}
+
+// Read-only structure
+pub fn provide_index(root_dir: &PathBuf) -> ResourceIndex {
+    let rwlock =
+        arklib::provide_index(root_dir).expect("Failed to retrieve index");
+    let index = &*rwlock.read().unwrap();
+    index.clone()
+}
+
+pub fn monitor_index(root_dir: &Option<PathBuf>, interval: Option<u64>) {
+    let dir_path = provide_root(root_dir);
+
+    println!("Building index of folder {}", dir_path.display());
+    let start = Instant::now();
+    let dir_path = provide_root(root_dir);
+    let result = arklib::provide_index(dir_path);
+    let duration = start.elapsed();
+
+    match result {
+        Ok(rwlock) => {
+            println!("Build succeeded in {:?}\n", duration);
+
+            if let Some(millis) = interval {
+                let mut index = rwlock.write().unwrap();
+                loop {
+                    let pause = Duration::from_millis(millis);
+                    thread::sleep(pause);
+
+                    let start = Instant::now();
+                    match index.update_all() {
+                        Err(msg) => println!("Oops! {}", msg),
+                        Ok(diff) => {
+                            index.store().expect("Could not store index");
+                            let duration = start.elapsed();
+                            println!("Updating succeeded in {:?}\n", duration);
+
+                            if !diff.deleted.is_empty() {
+                                println!("Deleted: {:?}", diff.deleted);
+                            }
+                            if !diff.added.is_empty() {
+                                println!("Added: {:?}", diff.added);
+                            }
+                        }
+                    }
+                }
+            } else {
+                let index = rwlock.read().unwrap();
+
+                println!("Here are {} entries in the index", index.size());
+
+                for (key, count) in index.collisions.iter() {
+                    println!("Id {:?} calculated {} times", key, count);
+                }
+            }
+        }
+        Err(err) => println!("Failure: {:?}", err),
+    }
+}
+
+pub fn storages_exists(path: &Path) -> bool {
+    let meta = metadata(path.join(&arklib::ARK_FOLDER));
+    if let Ok(meta) = meta {
+        return meta.is_dir();
+    }
+
+    false
+}
+
+pub fn parse_roots(config: File) -> Vec<PathBuf> {
+    return BufReader::new(config)
+        .lines()
+        .filter_map(|line| match line {
+            Ok(path) => Some(PathBuf::from(path)),
+            Err(msg) => {
+                println!("{:?}", msg);
+                None
+            }
+        })
+        .collect();
+}
+
+pub fn timestamp() -> Duration {
+    let start = SystemTime::now();
+    return start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards!");
+}
