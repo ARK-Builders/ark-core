@@ -432,8 +432,9 @@ impl ResourceIndex {
 
                         let curr_entry = &self.path2id.get(path);
                         if curr_entry.is_none() {
-                            // if the path is not indexed, then we can't have `old_id`
-                            // if you want to index new path, use `index_new` method
+                            // if the path is not indexed, then we can't have
+                            // `old_id` if you want
+                            // to index new path, use `index_new` method
                             return Err(ArklibError::Path(
                                 "Couldn't find the path in the index".into(),
                             ));
@@ -448,7 +449,8 @@ impl ResourceIndex {
                                 log::warn!("path {:?} was modified but not its content", &path);
                             }
 
-                            // the caller must have ensured that the path was indeed update
+                            // the caller must have ensured that the path was
+                            // indeed update
                             return Err(ArklibError::Collision(
                                 "New content has the same id".into(),
                             ));
@@ -1132,5 +1134,29 @@ mod tests {
         assert!(new2 > old1);
         assert!(new2 > old2);
         assert!(new2 > new1);
+    }
+
+    /// Test the performance of `ResourceIndex::build` on a specific directory.
+    ///
+    /// This test evaluates the performance of building a resource
+    /// index using the `ResourceIndex::build` method on a given directory.
+    /// It measures the time taken to build the resource index and prints the
+    /// number of collisions detected.
+    #[test]
+    fn test_build_resource_index() {
+        use std::time::Instant;
+
+        let path = "tests/"; // The path to the directory to index
+        assert!(
+            std::path::Path::new(path).is_dir(),
+            "The provided path is not a directory or does not exist"
+        );
+
+        let start_time = Instant::now();
+        let index = ResourceIndex::build(path.to_string());
+        let elapsed_time = start_time.elapsed();
+
+        println!("Number of collisions: {}", index.collisions.len());
+        println!("Time taken: {:?}", elapsed_time);
     }
 }
