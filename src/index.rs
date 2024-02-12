@@ -1156,6 +1156,8 @@ mod tests {
         let index = ResourceIndex::build(path.to_string());
         let elapsed_time = start_time.elapsed();
 
+        println!("Number of paths: {}", index.id2path.len());
+        println!("Number of resources: {}", index.id2path.len());
         println!("Number of collisions: {}", index.collisions.len());
         println!("Time taken: {:?}", elapsed_time);
     }
