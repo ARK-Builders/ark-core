@@ -1,25 +1,33 @@
-use arklib::app_id;
+use std::fs::{create_dir_all, File};
+use std::io::Write;
+use std::path::PathBuf;
+use std::str::FromStr;
+
 use arklib::id::ResourceId;
 use arklib::pdf::PDFQuality;
+use arklib::{app_id, provide_index, INDEX_PATH};
 use arklib::{
     modify, AtomicFile, APP_ID_FILE, ARK_FOLDER, FAVORITES_FILE,
     METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
     PROPERTIES_STORAGE_FOLDER, SCORE_STORAGE_FILE, STATS_FOLDER,
     TAG_STORAGE_FILE, THUMBNAILS_STORAGE_FOLDER,
 };
+
+use chrono::prelude::DateTime;
+use chrono::Utc;
+
 use clap::{Parser, Subcommand};
+
 use fs_extra::dir::{self, CopyOptions};
+
 use home::home_dir;
-use std::fs::{create_dir_all, File};
-use std::io::Write;
-use std::path::PathBuf;
-use std::str::FromStr;
-use storage::StorageType;
 
 use crate::parsers::Format;
 use crate::storage::Storage;
+use storage::StorageType;
 use util::{
-    discover_roots, monitor_index, provide_root, storages_exists, timestamp,
+    discover_roots, monitor_index, provide_root, read_storage_value,
+    storages_exists, timestamp, translate_storage,
 };
 
 mod commands;
@@ -59,6 +67,23 @@ enum Command {
         quality: Option<String>,
     },
 
+    List {
+        #[clap(parse(from_os_str))]
+        root_dir: Option<PathBuf>,
+
+        #[clap(long, short)]
+        entry: Option<String>,
+
+        #[clap(long, short)]
+        timestamp: Option<bool>,
+
+        #[clap(long, short = 'g')]
+        tags: Option<bool>,
+
+        #[clap(long, short)]
+        scores: Option<bool>,
+    },
+
     #[clap(subcommand)]
     Link(Link),
 
@@ -72,10 +97,13 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum StorageCommand {
     List {
-        storage: String,
+        #[clap(parse(from_os_str))]
+        root_dir: Option<PathBuf>,
+
+        storage: Option<String>,
 
         #[clap(short, long)]
-        versions: bool,
+        versions: Option<bool>,
 
         #[clap(short, long)]
         type_: Option<String>,
@@ -85,6 +113,9 @@ enum StorageCommand {
 #[derive(Subcommand, Debug)]
 enum FileCommand {
     Append {
+        #[clap(parse(from_os_str))]
+        root_dir: PathBuf,
+
         storage: String,
 
         id: String,
@@ -99,6 +130,9 @@ enum FileCommand {
     },
 
     Insert {
+        #[clap(parse(from_os_str))]
+        root_dir: PathBuf,
+
         storage: String,
 
         id: String,
@@ -113,6 +147,9 @@ enum FileCommand {
     },
 
     Read {
+        #[clap(parse(from_os_str))]
+        root_dir: PathBuf,
+
         storage: String,
 
         id: String,
@@ -144,6 +181,12 @@ enum Link {
     },
 }
 
+enum EntryOutput {
+    Id,
+    Path,
+    Both,
+}
+
 const ARK_CONFIG: &str = ".config/ark";
 const ARK_BACKUPS_PATH: &str = ".ark-backups";
 const ROOTS_CFG_FILENAME: &str = "roots";
@@ -166,6 +209,78 @@ async fn main() {
     });
 
     match &args.command {
+        Command::List {
+            entry,
+            root_dir,
+            timestamp,
+            tags,
+            scores,
+        } => {
+            let root = provide_root(root_dir);
+
+            let entry_output: EntryOutput = match entry {
+                Some(entry) => match entry.to_lowercase().as_str() {
+                    "id" => EntryOutput::Id,
+                    "path" => EntryOutput::Path,
+                    "both" => EntryOutput::Both,
+                    _ => panic!("unknown entry option"),
+                },
+                None => EntryOutput::Id,
+            };
+
+            let index = provide_index(&root).expect("could not provide index");
+
+            let resource_index = index.read().unwrap();
+
+            for (path, resource) in resource_index.path2id.iter() {
+                let tags_list = read_storage_value(
+                    &root,
+                    "tags",
+                    &resource.id.to_string(),
+                    &None,
+                )
+                .unwrap_or("".to_string());
+
+                let scores_list = read_storage_value(
+                    &root,
+                    "scores",
+                    &resource.id.to_string(),
+                    &None,
+                )
+                .unwrap_or("0".to_string());
+
+                let mut output: String = match entry_output {
+                    EntryOutput::Id => resource.id.to_string(),
+                    EntryOutput::Path => path.display().to_string(),
+                    EntryOutput::Both => {
+                        format!("{}@{}", resource.id, path.display())
+                    }
+                };
+
+                let datetime = DateTime::<Utc>::from(resource.modified);
+
+                if timestamp.unwrap_or(false) {
+                    let timestamp_str = datetime
+                        .format("%Y-%m-%d %H:%M:%S.%f")
+                        .to_string();
+                    output.push_str(&format!(
+                        " last modified on {}",
+                        timestamp_str
+                    ));
+                }
+
+                if tags.unwrap_or(false) {
+                    output.push_str(&format!(" with tags {}", tags_list));
+                }
+
+                if scores.unwrap_or(false) {
+                    output.push_str(&format!(" with score {}", scores_list));
+                }
+
+                println!("{}", output);
+            }
+        }
+
         Command::Backup { roots_cfg } => {
             let timestamp = timestamp().as_secs();
             let backup_dir = home_dir()
@@ -308,14 +423,16 @@ async fn main() {
         },
         Command::File(file) => match &file {
             FileCommand::Append {
+                root_dir,
                 storage,
                 id,
                 content,
                 format,
                 type_,
             } => {
-                let (file_path, storage_type) = translate_storage(storage)
-                    .expect("ERROR: Could not find storage folder");
+                let (file_path, storage_type) =
+                    translate_storage(&Some(root_dir.to_owned()), storage)
+                        .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
                     Some(type_) => match type_.to_lowercase().as_str() {
@@ -341,14 +458,16 @@ async fn main() {
             }
 
             FileCommand::Insert {
+                root_dir,
                 storage,
                 id,
                 content,
                 format,
                 type_,
             } => {
-                let (file_path, storage_type) = translate_storage(storage)
-                    .expect("ERROR: Could not find storage folder");
+                let (file_path, storage_type) =
+                    translate_storage(&Some(root_dir.to_owned()), storage)
+                        .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
                     Some(type_) => match type_.to_lowercase().as_str() {
@@ -373,9 +492,15 @@ async fn main() {
                     .unwrap();
             }
 
-            FileCommand::Read { storage, id, type_ } => {
-                let (file_path, storage_type) = translate_storage(storage)
-                    .expect("ERROR: Could not find storage folder");
+            FileCommand::Read {
+                root_dir,
+                storage,
+                id,
+                type_,
+            } => {
+                let (file_path, storage_type) =
+                    translate_storage(&Some(root_dir.to_owned()), storage)
+                        .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
                     Some(type_) => match type_.to_lowercase().as_str() {
@@ -402,12 +527,20 @@ async fn main() {
         },
         Command::Storage(cmd) => match &cmd {
             StorageCommand::List {
+                root_dir,
                 storage,
                 type_,
                 versions,
             } => {
-                let (file_path, storage_type) = translate_storage(storage)
-                    .expect("ERROR: Could not find storage folder");
+                let storage = storage
+                    .as_ref()
+                    .expect("ERROR: Storage was not provided");
+
+                let versions = versions.unwrap_or(false);
+
+                let (file_path, storage_type) =
+                    translate_storage(root_dir, storage)
+                        .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
                     Some(type_) => match type_.to_lowercase().as_str() {
@@ -426,65 +559,11 @@ async fn main() {
                     .expect("ERROR: Could not load storage");
 
                 let output = storage
-                    .list(*versions)
+                    .list(versions)
                     .expect("ERROR: Could not list storage content");
 
                 println!("{}", output);
             }
         },
-    }
-}
-
-fn translate_storage(storage: &str) -> Option<(PathBuf, Option<StorageType>)> {
-    if let Ok(path) = PathBuf::from_str(storage) {
-        if path.exists() && path.is_dir() {
-            return Some((path, None));
-        }
-    }
-
-    match storage.to_lowercase().as_str() {
-        "tags" => Some((
-            provide_root(&None)
-                .join(ARK_FOLDER)
-                .join(TAG_STORAGE_FILE),
-            Some(StorageType::File),
-        )),
-        "scores" => Some((
-            provide_root(&None)
-                .join(ARK_FOLDER)
-                .join(SCORE_STORAGE_FILE),
-            Some(StorageType::File),
-        )),
-        "stats" => Some((
-            provide_root(&None)
-                .join(ARK_FOLDER)
-                .join(STATS_FOLDER),
-            Some(StorageType::Folder),
-        )),
-        "properties" => Some((
-            provide_root(&None)
-                .join(ARK_FOLDER)
-                .join(PROPERTIES_STORAGE_FOLDER),
-            Some(StorageType::Folder),
-        )),
-        "metadata" => Some((
-            provide_root(&None)
-                .join(ARK_FOLDER)
-                .join(METADATA_STORAGE_FOLDER),
-            Some(StorageType::Folder),
-        )),
-        "previews" => Some((
-            provide_root(&None)
-                .join(ARK_FOLDER)
-                .join(PREVIEWS_STORAGE_FOLDER),
-            Some(StorageType::Folder),
-        )),
-        "thumbnails" => Some((
-            provide_root(&None)
-                .join(ARK_FOLDER)
-                .join(THUMBNAILS_STORAGE_FOLDER),
-            Some(StorageType::Folder),
-        )),
-        _ => None,
     }
 }

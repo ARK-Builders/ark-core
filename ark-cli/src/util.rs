@@ -1,13 +1,21 @@
+use arklib::id::ResourceId;
 use arklib::index::ResourceIndex;
+use arklib::{
+    ARK_FOLDER, METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
+    PROPERTIES_STORAGE_FOLDER, SCORE_STORAGE_FILE, STATS_FOLDER,
+    TAG_STORAGE_FILE, THUMBNAILS_STORAGE_FOLDER,
+};
 use std::env::current_dir;
 use std::fs::{canonicalize, metadata};
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::Path;
+use std::str::FromStr;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{fs::File, path::PathBuf};
 
+use crate::storage::{Storage, StorageType};
 use crate::ARK_CONFIG;
 
 pub fn discover_roots(roots_cfg: &Option<PathBuf>) -> Vec<PathBuf> {
@@ -147,4 +155,89 @@ pub fn timestamp() -> Duration {
     return start
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards!");
+}
+
+pub fn translate_storage(
+    root: &Option<PathBuf>,
+    storage: &str,
+) -> Option<(PathBuf, Option<StorageType>)> {
+    if let Ok(path) = PathBuf::from_str(storage) {
+        if path.exists() && path.is_dir() {
+            return Some((path, None));
+        }
+    }
+
+    match storage.to_lowercase().as_str() {
+        "tags" => Some((
+            provide_root(root)
+                .join(ARK_FOLDER)
+                .join(TAG_STORAGE_FILE),
+            Some(StorageType::File),
+        )),
+        "scores" => Some((
+            provide_root(root)
+                .join(ARK_FOLDER)
+                .join(SCORE_STORAGE_FILE),
+            Some(StorageType::File),
+        )),
+        "stats" => Some((
+            provide_root(root)
+                .join(ARK_FOLDER)
+                .join(STATS_FOLDER),
+            Some(StorageType::Folder),
+        )),
+        "properties" => Some((
+            provide_root(root)
+                .join(ARK_FOLDER)
+                .join(PROPERTIES_STORAGE_FOLDER),
+            Some(StorageType::Folder),
+        )),
+        "metadata" => Some((
+            provide_root(root)
+                .join(ARK_FOLDER)
+                .join(METADATA_STORAGE_FOLDER),
+            Some(StorageType::Folder),
+        )),
+        "previews" => Some((
+            provide_root(root)
+                .join(ARK_FOLDER)
+                .join(PREVIEWS_STORAGE_FOLDER),
+            Some(StorageType::Folder),
+        )),
+        "thumbnails" => Some((
+            provide_root(root)
+                .join(ARK_FOLDER)
+                .join(THUMBNAILS_STORAGE_FOLDER),
+            Some(StorageType::Folder),
+        )),
+        _ => None,
+    }
+}
+
+pub fn read_storage_value(
+    root_dir: &PathBuf,
+    storage: &str,
+    id: &str,
+    type_: &Option<String>,
+) -> Result<String, String> {
+    let (file_path, storage_type) =
+        translate_storage(&Some(root_dir.to_owned()), storage)
+            .expect("ERROR: Could not find storage folder");
+
+    let storage_type = storage_type.unwrap_or(match type_ {
+        Some(type_) => match type_.to_lowercase().as_str() {
+            "file" => StorageType::File,
+            "folder" => StorageType::Folder,
+            _ => panic!("unknown storage type"),
+        },
+        None => StorageType::File,
+    });
+
+    let mut storage = Storage::new(file_path, storage_type)
+        .expect("ERROR: Could not create storage");
+
+    let resource_id =
+        ResourceId::from_str(id).expect("ERROR: Could not parse id");
+
+    storage.read(resource_id)
 }
