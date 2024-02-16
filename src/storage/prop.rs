@@ -27,7 +27,8 @@ pub fn store_properties<
         let new_value = serde_json::to_value(properties).unwrap();
         match current_data {
             Some(old_data) => {
-                // Should not failed unless serialize failed which should never happen
+                // Should not failed unless serialize failed which should never
+                // happen
                 let old_value = serde_json::to_value(old_data).unwrap();
                 *current_data = Some(merge(old_value, new_value));
             }

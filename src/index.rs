@@ -82,7 +82,10 @@ impl ResourceIndex {
         };
 
         // We should not return early in case of missing files
-        for line in BufReader::new(file).lines().flatten() {
+        let lines = BufReader::new(file).lines();
+        for line in lines {
+            let line = line?;
+
             let mut parts = line.split(' ');
 
             let modified = {

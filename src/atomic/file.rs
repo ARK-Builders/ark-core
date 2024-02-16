@@ -52,7 +52,8 @@ pub struct ReadOnlyFile {
     pub path: PathBuf,
 }
 
-/// This struct is the only way to read the file. Both path and version are private
+/// This struct is the only way to read the file. Both path and version are
+/// private
 impl ReadOnlyFile {
     /// Open the underlying file, which can be read from but not written to.
     /// May return `Ok(None)`, which means that no version

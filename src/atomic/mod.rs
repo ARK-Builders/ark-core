@@ -79,7 +79,8 @@ mod tests {
                 let current = file.load().unwrap();
                 let content = format!("Content from thread {i}!");
                 (&temp).write_all(content.as_bytes()).unwrap();
-                // In case slow computer ensure each thread are running in the same time
+                // In case slow computer ensure each thread are running in the
+                // same time
                 std::thread::sleep(std::time::Duration::from_millis(300));
                 file.compare_and_swap(&current, temp)
             });
@@ -108,7 +109,8 @@ mod tests {
         let shared_file = std::sync::Arc::new(AtomicFile::new(root).unwrap());
         let thread_number = 10;
         assert!(thread_number > 3);
-        // Need to have less than 255 thread to store thread number as byte directly
+        // Need to have less than 255 thread to store thread number as byte
+        // directly
         assert!(thread_number < 256);
         let mut handles = Vec::with_capacity(thread_number);
         for i in 0..thread_number {
