@@ -1,4 +1,4 @@
-use std::str::Utf8Error;
+use std::{str::Utf8Error, time::SystemTimeError};
 
 use thiserror::Error;
 
@@ -16,6 +16,8 @@ pub enum ArklibError {
     Parse,
     #[error("Networking error")]
     Network,
+    #[error("Storage error: {0} {1}")]
+    Storage(String, String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -41,6 +43,12 @@ impl From<serde_json::Error> for ArklibError {
 impl From<url::ParseError> for ArklibError {
     fn from(_: url::ParseError) -> Self {
         Self::Parse
+    }
+}
+
+impl From<SystemTimeError> for ArklibError {
+    fn from(value: SystemTimeError) -> Self {
+        Self::Other(anyhow::anyhow!(value.to_string()))
     }
 }
 
