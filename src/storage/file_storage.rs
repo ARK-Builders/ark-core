@@ -41,7 +41,7 @@ impl FileStorage {
     /// is called on the data after reading it.
     pub fn read_from_disk<V>(
         &self,
-        handle: impl FnOnce(HashMap<ResourceId, V>) -> (),
+        handle: impl FnOnce(HashMap<ResourceId, V>),
     ) -> Result<()>
     where
         V: FromStr,
@@ -165,7 +165,7 @@ impl FileStorage {
 
 impl Drop for FileStorage {
     fn drop(&mut self) {
-        if let (Err(e)) = fs::remove_file(&self.path) {
+        if let Err(e) = fs::remove_file(&self.path) {
             log::error!(
                 "{} Failed to delete file because of error: {}",
                 self.log_prefix,
