@@ -36,7 +36,7 @@ fn temp_and_move(
     let mut path = std::env::temp_dir();
     path.push(filename);
     std::fs::write(&path, data)?;
-    std::fs::rename(path, dest_dir.as_ref().join(filename))?;
+    std::fs::copy(path, dest_dir.as_ref().join(filename))?;
     Ok(())
 }
 
