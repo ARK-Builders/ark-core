@@ -1,6 +1,5 @@
-use crate::parsers::{self, Format};
+use crate::models::{format, format::Format};
 use arklib::{modify, modify_json, AtomicFile};
-
 
 pub fn file_append(
     atomic_file: &AtomicFile,
@@ -8,14 +7,14 @@ pub fn file_append(
     format: Format,
 ) -> Result<(), String> {
     match format {
-        parsers::Format::Raw => modify(&atomic_file, |current| {
+        Format::Raw => modify(&atomic_file, |current| {
             let mut combined_vec: Vec<u8> = current.to_vec();
             combined_vec.extend_from_slice(content.as_bytes());
             combined_vec
         })
         .map_err(|_| "ERROR: Could not append string".to_string()),
-        parsers::Format::KeyValue => {
-            let values = parsers::key_value_to_str(&content)
+        Format::KeyValue => {
+            let values = format::key_value_to_str(&content)
                 .map_err(|_| "ERROR: Could not parse json".to_string())?;
 
             append_json(&atomic_file, values.to_vec())
@@ -30,12 +29,10 @@ pub fn file_insert(
     format: Format,
 ) -> Result<(), String> {
     match format {
-        parsers::Format::Raw => {
-            modify(&atomic_file, |_| content.as_bytes().to_vec())
-                .map_err(|_| "ERROR: Could not insert string".to_string())
-        }
-        parsers::Format::KeyValue => {
-            let values = parsers::key_value_to_str(&content)
+        Format::Raw => modify(&atomic_file, |_| content.as_bytes().to_vec())
+            .map_err(|_| "ERROR: Could not insert string".to_string()),
+        Format::KeyValue => {
+            let values = format::key_value_to_str(&content)
                 .map_err(|_| "ERROR: Could not parse json".to_string())?;
 
             modify_json(

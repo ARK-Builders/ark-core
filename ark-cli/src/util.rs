@@ -15,7 +15,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{fs::File, path::PathBuf};
 
-use crate::storage::{Storage, StorageType};
+use crate::models::storage::{Storage, StorageType};
 use crate::ARK_CONFIG;
 
 pub fn discover_roots(roots_cfg: &Option<PathBuf>) -> Vec<PathBuf> {
