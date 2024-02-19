@@ -16,176 +16,26 @@ use arklib::{
 use chrono::prelude::DateTime;
 use chrono::Utc;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 
 use fs_extra::dir::{self, CopyOptions};
 
 use home::home_dir;
 
-use crate::parsers::Format;
-use crate::storage::Storage;
-use storage::StorageType;
+use crate::models::cli::{Command, FileCommand, Link, StorageCommand};
+use crate::models::entry::EntryOutput;
+use crate::models::format::Format;
+use crate::models::sort::Sort;
+use crate::models::storage::{Storage, StorageType};
+
 use util::{
     discover_roots, monitor_index, provide_root, read_storage_value,
     storages_exists, timestamp, translate_storage,
 };
 
 mod commands;
-mod parsers;
-mod storage;
+mod models;
 mod util;
-
-#[derive(Parser, Debug)]
-#[clap(name = "ark-cli")]
-#[clap(about = "Manage ARK tag storages and indexes", long_about = None)]
-struct Cli {
-    #[clap(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand, Debug)]
-enum Command {
-    Backup {
-        #[clap(parse(from_os_str))]
-        roots_cfg: Option<PathBuf>,
-    },
-
-    Collisions {
-        #[clap(parse(from_os_str))]
-        root_dir: Option<PathBuf>,
-    },
-
-    Monitor {
-        #[clap(parse(from_os_str))]
-        root_dir: Option<PathBuf>,
-        interval: Option<u64>,
-    },
-
-    Render {
-        #[clap(parse(from_os_str))]
-        path: Option<PathBuf>,
-        quality: Option<String>,
-    },
-
-    List {
-        #[clap(parse(from_os_str))]
-        root_dir: Option<PathBuf>,
-
-        #[clap(long, short)]
-        entry: Option<String>,
-
-        #[clap(long, short)]
-        timestamp: Option<bool>,
-
-        #[clap(long, short = 'g')]
-        tags: Option<bool>,
-
-        #[clap(long, short)]
-        scores: Option<bool>,
-    },
-
-    #[clap(subcommand)]
-    Link(Link),
-
-    #[clap(subcommand)]
-    File(FileCommand),
-
-    #[clap(subcommand)]
-    Storage(StorageCommand),
-}
-
-#[derive(Subcommand, Debug)]
-enum StorageCommand {
-    List {
-        #[clap(parse(from_os_str))]
-        root_dir: Option<PathBuf>,
-
-        storage: Option<String>,
-
-        #[clap(short, long)]
-        versions: Option<bool>,
-
-        #[clap(short, long)]
-        type_: Option<String>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum FileCommand {
-    Append {
-        #[clap(parse(from_os_str))]
-        root_dir: PathBuf,
-
-        storage: String,
-
-        id: String,
-
-        content: String,
-
-        #[clap(short, long)]
-        format: Option<String>,
-
-        #[clap(short, long)]
-        type_: Option<String>,
-    },
-
-    Insert {
-        #[clap(parse(from_os_str))]
-        root_dir: PathBuf,
-
-        storage: String,
-
-        id: String,
-
-        content: String,
-
-        #[clap(short, long)]
-        format: Option<String>,
-
-        #[clap(short, long)]
-        type_: Option<String>,
-    },
-
-    Read {
-        #[clap(parse(from_os_str))]
-        root_dir: PathBuf,
-
-        storage: String,
-
-        id: String,
-
-        #[clap(short, long)]
-        type_: Option<String>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum Link {
-    Create {
-        #[clap(parse(from_os_str))]
-        root_dir: Option<PathBuf>,
-
-        url: Option<String>,
-        title: Option<String>,
-        desc: Option<String>,
-    },
-
-    Load {
-        #[clap(parse(from_os_str))]
-        root_dir: Option<PathBuf>,
-
-        #[clap(parse(from_os_str))]
-        file_path: Option<PathBuf>,
-
-        id: Option<ResourceId>,
-    },
-}
-
-enum EntryOutput {
-    Id,
-    Path,
-    Both,
-}
 
 const ARK_CONFIG: &str = ".config/ark";
 const ARK_BACKUPS_PATH: &str = ".ark-backups";
@@ -195,7 +45,7 @@ const ROOTS_CFG_FILENAME: &str = "roots";
 async fn main() {
     env_logger::init();
 
-    let args = Cli::parse();
+    let args = models::cli::Cli::parse();
 
     let app_id_dir = home_dir().expect("Couldn't retrieve home directory!");
     let ark_dir = app_id_dir.join(".ark");
@@ -211,45 +61,84 @@ async fn main() {
     match &args.command {
         Command::List {
             entry,
+            entry_id,
+            entry_path,
+
             root_dir,
-            timestamp,
+            modified,
             tags,
             scores,
+            sort,
+            filter,
         } => {
             let root = provide_root(root_dir);
 
-            let entry_output: EntryOutput = match entry {
-                Some(entry) => match entry.to_lowercase().as_str() {
-                    "id" => EntryOutput::Id,
-                    "path" => EntryOutput::Path,
-                    "both" => EntryOutput::Both,
-                    _ => panic!("unknown entry option"),
-                },
-                None => EntryOutput::Id,
+            let entry_output = match (entry, entry_id, entry_path) {
+                (Some(e), false, false) => e,
+                (None, true, false) => &EntryOutput::Id,
+                (None, false, true) => &EntryOutput::Path,
+                (None, true, true) => &EntryOutput::Both,
+                (None, false, false) => &EntryOutput::Id, // default value
+                _ => panic!(
+                    "incompatible entry output options, please choose only one"
+                ),
             };
 
             let index = provide_index(&root).expect("could not provide index");
 
-            let resource_index = index.read().unwrap();
+            let resource_index = index.read().expect("could not read index");
 
-            for (path, resource) in resource_index.path2id.iter() {
-                let tags_list = read_storage_value(
-                    &root,
-                    "tags",
-                    &resource.id.to_string(),
-                    &None,
-                )
-                .unwrap_or("".to_string());
+            let mut resources = resource_index
+                .path2id
+                .iter()
+                .map(|(path, resource)| {
+                    let tags_list = read_storage_value(
+                        &root,
+                        "tags",
+                        &resource.id.to_string(),
+                        &None,
+                    )
+                    .unwrap_or("NO_TAGS".to_string());
 
-                let scores_list = read_storage_value(
-                    &root,
-                    "scores",
-                    &resource.id.to_string(),
-                    &None,
-                )
-                .unwrap_or("0".to_string());
+                    let scores_list = read_storage_value(
+                        &root,
+                        "scores",
+                        &resource.id.to_string(),
+                        &None,
+                    )
+                    .unwrap_or("NO_SCORE".to_string());
 
-                let mut output: String = match entry_output {
+                    let datetime = DateTime::<Utc>::from(resource.modified);
+
+                    (path, resource, tags_list, scores_list, datetime)
+                })
+                .collect::<Vec<_>>();
+
+            match sort {
+                Some(Sort::Asc) => resources
+                    .sort_by(|(_, _, _, _, a), (_, _, _, _, b)| a.cmp(b)),
+
+                Some(Sort::Desc) => resources
+                    .sort_by(|(_, _, _, _, a), (_, _, _, _, b)| b.cmp(a)),
+                None => (),
+            };
+
+            if let Some(filter) = filter {
+                resources = resources
+                    .into_iter()
+                    .filter(|(_, _, tags_list, _, _)| {
+                        tags_list
+                            .split(',')
+                            .any(|tag| tag.trim() == filter)
+                    })
+                    .collect();
+            }
+
+            for (path, resource, tags_list, scores_list, datetime) in resources
+            {
+                let mut output = String::new();
+
+                let entry_str = match entry_output {
                     EntryOutput::Id => resource.id.to_string(),
                     EntryOutput::Path => path.display().to_string(),
                     EntryOutput::Both => {
@@ -257,9 +146,9 @@ async fn main() {
                     }
                 };
 
-                let datetime = DateTime::<Utc>::from(resource.modified);
+                output.push_str(&entry_str);
 
-                if timestamp.unwrap_or(false) {
+                if *modified {
                     let timestamp_str = datetime
                         .format("%Y-%m-%d %H:%M:%S.%f")
                         .to_string();
@@ -269,11 +158,11 @@ async fn main() {
                     ));
                 }
 
-                if tags.unwrap_or(false) {
+                if *tags {
                     output.push_str(&format!(" with tags {}", tags_list));
                 }
 
-                if scores.unwrap_or(false) {
+                if *scores {
                     output.push_str(&format!(" with score {}", scores_list));
                 }
 
@@ -435,16 +324,11 @@ async fn main() {
                         .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
-                    Some(type_) => match type_.to_lowercase().as_str() {
-                        "file" => StorageType::File,
-                        "folder" => StorageType::Folder,
-                        _ => panic!("unknown storage type"),
-                    },
+                    Some(t) => *t,
                     None => StorageType::File,
                 });
 
-                let format =
-                    parsers::get_format(&format).unwrap_or(Format::Raw);
+                let format = format.unwrap_or(Format::Raw);
 
                 let mut storage = Storage::new(file_path, storage_type)
                     .expect("ERROR: Could not create storage");
@@ -454,7 +338,7 @@ async fn main() {
 
                 storage
                     .append(resource_id, content, format)
-                    .unwrap();
+                    .expect("ERROR: Could not append content to storage");
             }
 
             FileCommand::Insert {
@@ -470,16 +354,11 @@ async fn main() {
                         .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
-                    Some(type_) => match type_.to_lowercase().as_str() {
-                        "file" => StorageType::File,
-                        "folder" => StorageType::Folder,
-                        _ => panic!("unknown storage type"),
-                    },
+                    Some(t) => *t,
                     None => StorageType::File,
                 });
 
-                let format =
-                    parsers::get_format(&format).unwrap_or(Format::Raw);
+                let format = format.unwrap_or(Format::Raw);
 
                 let mut storage = Storage::new(file_path, storage_type)
                     .expect("ERROR: Could not create storage");
@@ -489,7 +368,7 @@ async fn main() {
 
                 storage
                     .insert(resource_id, content, format)
-                    .unwrap();
+                    .expect("ERROR: Could not insert content to storage");
             }
 
             FileCommand::Read {
@@ -503,11 +382,7 @@ async fn main() {
                         .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
-                    Some(type_) => match type_.to_lowercase().as_str() {
-                        "file" => StorageType::File,
-                        "folder" => StorageType::Folder,
-                        _ => panic!("unknown storage type"),
-                    },
+                    Some(t) => *t,
                     None => StorageType::File,
                 });
 
@@ -543,11 +418,7 @@ async fn main() {
                         .expect("ERROR: Could not find storage folder");
 
                 let storage_type = storage_type.unwrap_or(match type_ {
-                    Some(type_) => match type_.to_lowercase().as_str() {
-                        "file" => StorageType::File,
-                        "folder" => StorageType::Folder,
-                        _ => panic!("unknown storage type"),
-                    },
+                    Some(t) => *t,
                     None => StorageType::File,
                 });
 

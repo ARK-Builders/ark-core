@@ -7,13 +7,25 @@ use crate::{
         self,
         file::{format_file, format_line},
     },
-    parsers::Format,
+    models::format::Format,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum StorageType {
     File,
     Folder,
+}
+
+impl std::str::FromStr for StorageType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "file" => Ok(StorageType::File),
+            "folder" => Ok(StorageType::Folder),
+            _ => Err(format!("Invalid storage type: {}", s)),
+        }
+    }
 }
 
 pub struct Storage {
@@ -71,10 +83,14 @@ impl Storage {
                 for (i, line) in data.lines().enumerate() {
                     let mut line = line.split(':');
                     let id = line.next().unwrap();
-                    let id = id.parse::<ResourceId>().map_err(|_| {
+                    match id.parse::<ResourceId>().map_err(|_| {
                         format!("Failed to parse ResourceId from line: {i}",)
-                    })?;
-                    self.files.push(id);
+                    }) {
+                        Ok(id) => self.files.push(id),
+                        Err(e) => {
+                            eprintln!("Error parsing line {}: {}", i, e);
+                        }
+                    }
                 }
             }
             StorageType::Folder => {
@@ -126,13 +142,13 @@ impl Storage {
                         "Key value format is not supported for file storage"
                             .to_owned(),
                     ),
-                    Format::Raw => format!("\n{}:{}", id, content),
+                    Format::Raw => format!("{}:{}\n", id, content),
                 };
 
                 match commands::file::file_append(
                     &atomic_file,
                     &content,
-                    crate::parsers::Format::Raw,
+                    Format::Raw,
                 ) {
                     Ok(_) => {
                         return Ok(());
@@ -202,13 +218,18 @@ impl Storage {
                 for (i, line) in data.lines().enumerate() {
                     let mut line = line.split(':');
                     let line_id: &str = line.next().unwrap();
-                    let line_id = line_id.parse::<ResourceId>().map_err(|_| {
+                    match line_id.parse::<ResourceId>().map_err(|_| {
                         format!("Failed to parse ResourceId from line: {i}",)
-                    })?;
-
-                    if id == line_id {
-                        let data = line.next().unwrap();
-                        return Ok(format!("{}", data));
+                    }) {
+                        Ok(line_id) => {
+                            if id == line_id {
+                                let data = line.next().unwrap();
+                                return Ok(format!("{}", data));
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error parsing line {}: {}", i, e);
+                        }
                     }
                 }
 
@@ -265,13 +286,13 @@ impl Storage {
                         "Key value format is not supported for file storage"
                             .to_owned(),
                     ),
-                    Format::Raw => format!("{}:{}", id, content),
+                    Format::Raw => format!("{}:{}\n", id, content),
                 };
 
                 match commands::file::file_insert(
                     &atomic_file,
                     &content,
-                    crate::parsers::Format::Raw,
+                    Format::Raw,
                 ) {
                     Ok(_) => {
                         return Ok(());
@@ -352,11 +373,18 @@ impl Storage {
 
                     for line in data.lines() {
                         let mut line = line.split(':');
-                        let id = line.next().unwrap();
-                        let data = line.next().unwrap();
-                        writeln!(output, "{: <16} {}", id, data).map_err(
-                            |_| "Could not write to output".to_string(),
-                        )?;
+                        let id = line.next();
+                        let data = line.next();
+
+                        match (id, data) {
+                            (Some(id), Some(data)) => {
+                                writeln!(output, "{: <16} {}", id, data)
+                                    .map_err(|_| {
+                                        "Could not write to output".to_string()
+                                    })?;
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 StorageType::Folder => {
