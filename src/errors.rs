@@ -14,18 +14,10 @@ pub enum ArklibError {
     Collision(String),
     #[error("Parsing error")]
     Parse,
-    #[error("Networking error")]
-    Network,
     #[error("Storage error: {0} {1}")]
     Storage(String, String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
-}
-
-impl From<reqwest::Error> for ArklibError {
-    fn from(_: reqwest::Error) -> Self {
-        Self::Network
-    }
 }
 
 impl From<Utf8Error> for ArklibError {
@@ -36,12 +28,6 @@ impl From<Utf8Error> for ArklibError {
 
 impl From<serde_json::Error> for ArklibError {
     fn from(_: serde_json::Error) -> Self {
-        Self::Parse
-    }
-}
-
-impl From<url::ParseError> for ArklibError {
-    fn from(_: url::ParseError) -> Self {
         Self::Parse
     }
 }
