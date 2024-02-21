@@ -1,4 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["fs-atomic-versions", "fs-index", "fs-utils"]
+default-members = ["fs-atomic-versions", "fs-index", "fs-utils"]
 
 resolver = "2"

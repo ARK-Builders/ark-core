@@ -1149,7 +1149,7 @@ mod tests {
     fn test_build_resource_index() {
         use std::time::Instant;
 
-        let path = "../../testdata/"; // The path to the directory to index
+        let path = "../testdata/"; // The path to the directory to index
         assert!(
             std::path::Path::new(path).is_dir(),
             "The provided path is not a directory or does not exist"

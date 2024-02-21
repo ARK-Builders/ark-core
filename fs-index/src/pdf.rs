@@ -70,7 +70,7 @@ fn test_multi_pdf_generate() {
     println!("temporary root: {}", root.display());
     for i in 0..2 {
         use std::fs::File;
-        let pdf_reader = File::open("../../testdata/test.pdf").unwrap();
+        let pdf_reader = File::open("../testdata/test.pdf").unwrap();
 
         println!("Rendering {}", &i);
         let img = render_preview_page(pdf_reader, PDFQuality::High);

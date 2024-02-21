@@ -60,6 +60,6 @@ cargo bench index_build
 
 Our benchmark suite includes tests on local files and directories. These benchmarks are located in the [`benches/`](/benches) directory. Each benchmark sets a time limit using `group.measurement_time()`, which you can adjust manually based on your requirements.
 
-You have the flexibility to benchmark specific files or folders by modifying the variables within the benchmark files. By default, the benchmarks operate on the [`testdata/`](../../testdata/) directory and its contents. You can change the directory/files by setting the `DIR_PATH` and `FILE_PATHS` variables to the desired values.
+You have the flexibility to benchmark specific files or folders by modifying the variables within the benchmark files. By default, the benchmarks operate on the [`testdata/`](../testdata/) directory and its contents. You can change the directory/files by setting the `DIR_PATH` and `FILE_PATHS` variables to the desired values.
 
 For pre-benchmark assessment of required time to index a huge local folder, you can modify `test_build_resource_index` test case in `src/index.rs`.
