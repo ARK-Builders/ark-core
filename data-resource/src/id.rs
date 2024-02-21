@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::{ArklibError, Result};
+use fs_utils::errors::{ArklibError, Result};
 
 #[derive(
     Eq,
@@ -122,7 +122,7 @@ mod tests {
     fn compute_id_test() {
         initialize();
 
-        let file_path = Path::new("../../testdata/lena.jpg");
+        let file_path = Path::new("../testdata/lena.jpg");
         let data_size = fs::metadata(file_path)
             .unwrap_or_else(|_| {
                 panic!(

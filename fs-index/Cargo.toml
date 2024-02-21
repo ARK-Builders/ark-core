@@ -11,9 +11,9 @@ bench = false
 [dependencies]
 fs-utils = { path = "../fs-utils" }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
+data-resource = { path = "../data-resource" }
 
 log = { version = "0.4.17", features = ["release_max_level_off"] }
-crc32fast = "1.3.2"
 walkdir = "2.3.2"
 anyhow = "1.0.58"
 lazy_static = "1.4.0"
@@ -26,6 +26,13 @@ reqwest = "0.11.11"
 scraper = "0.13.0"
 tokio = { version = "1", features = ["full"] }
 itertools = "0.10.5"
+once_cell = "1.16.0"
+image = "0.24.2"
+pdfium-render = { git = "https://github.com/ajrcarey/pdfium-render", rev = "d2559c1", features = [
+    "thread_safe",
+    "sync",
+] }
+
 
 [dev-dependencies]
 uuid = { version = "1.6.1", features = ["v4"] }
@@ -43,11 +50,6 @@ tar = "0.4.38"
 target-lexicon = "0.12.4"
 ureq = "2.4.0"
 ring = "=0.17.5"
-
-[[bench]]
-name = "compute_bytes_benchmark"
-harness = false
-path = "benches/compute_bytes_benchmark.rs"
 
 [[bench]]
 name = "index_build_benchmark"

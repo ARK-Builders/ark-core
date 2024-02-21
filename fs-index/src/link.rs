@@ -1,10 +1,10 @@
-use crate::id::ResourceId;
 use crate::storage::meta::store_metadata;
 use crate::storage::prop::store_properties;
 use crate::{
     storage::prop::load_raw_properties, AtomicFile, Result, ARK_FOLDER,
     PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER,
 };
+use data_resource::ResourceId;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
