@@ -12,17 +12,13 @@ The purpose of the library is to manage _resource index_ of folders with various
 
 <div align="center">
 
-| Package              | Description                       |
-| -------------------- | --------------------------------- |
-| `fs-index`           | Resource Index Management         |
-| `fs-atomic-versions` | `app_id` File Management          |
-| `fs-utils`           | Utility functions and common code |
+| Package              | Description                               |
+| -------------------- | ----------------------------------------- |
+| `fs-index`           | Resource Index construction and updating  |
+| `fs-atomic-versions` | Version-based preventing of dirty writes  |
+| `fs-utils`           | Utility functions and common code         |
 
 </div>
-
-## Prerequisites
-
-- PDFium prebuilt ([bblanchon](https://github.com/bblanchon/pdfium-binaries))
 
 ## Build
 
