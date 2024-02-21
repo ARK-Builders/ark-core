@@ -8,7 +8,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::id::ResourceId;
 use crate::{ArklibError, Result};
 
 const LOG_PREFIX: &str = "[file-storage]";
@@ -37,14 +36,16 @@ impl FileStorage {
     /// Read data from disk
     ///
     /// Data is read as a key value pairs separated by a symbol and stored
-    /// in a [HashMap] with [ResourceId] key and a generic V value. A handler
+    /// in a [HashMap] with a generic key K and V value. A handler
     /// is called on the data after reading it.
-    pub fn read_from_disk<V>(
+    pub fn read_from_disk<K, V>(
         &self,
-        handle: impl FnOnce(HashMap<ResourceId, V>),
+        handle: impl FnOnce(HashMap<K, V>),
     ) -> Result<()>
     where
+        K: FromStr + std::hash::Hash + std::cmp::Eq,
         V: FromStr,
+        ArklibError: From<<K as FromStr>::Err>,
         ArklibError: From<<V as FromStr>::Err>,
     {
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
@@ -77,7 +78,7 @@ impl FileStorage {
 
                     let parts: Vec<&str> =
                         line.split(KEY_VALUE_SEPARATOR).collect();
-                    let id = ResourceId::from_str(parts[0])?;
+                    let id = K::from_str(parts[0])?;
                     let value = V::from_str(parts[1])?;
 
                     // TODO: neutral value check when introducing monoids
@@ -99,11 +100,12 @@ impl FileStorage {
     /// Write data to file
     ///
     /// Data is a key-value mapping between [ResourceId] and a generic Value
-    pub fn write_to_disk<V>(
+    pub fn write_to_disk<K, V>(
         &mut self,
-        value_by_id: &HashMap<ResourceId, V>,
+        value_by_id: &HashMap<K, V>,
     ) -> Result<()>
     where
+        K: Display,
         V: Display,
     {
         fs::create_dir_all(self.path.parent().unwrap())?;
