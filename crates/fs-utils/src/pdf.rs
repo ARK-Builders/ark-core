@@ -1,5 +1,4 @@
 use std::{
-    env,
     io::{Read, Seek},
     path::PathBuf,
 };
@@ -17,7 +16,7 @@ pub enum PDFQuality {
 }
 
 fn initialize_pdfium() {
-    let out_path = env!("OUT_DIR");
+    let out_path = std::env::var("OUT_DIR").unwrap();
     let pdfium_lib_path =
         PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
     let bindings = Pdfium::bind_to_library(

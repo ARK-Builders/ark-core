@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::anyhow;
 
-use crate::{ArklibError, Result};
+use fs_utils::errors::{ArklibError, Result};
 
 use crate::{APP_ID_FILE, APP_ID_PATH};
 

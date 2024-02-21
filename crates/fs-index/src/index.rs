@@ -668,9 +668,9 @@ fn is_hidden(entry: &DirEntry) -> bool {
 mod tests {
     use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
-    use crate::initialize;
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
+    use fs_atomic_versions::initialize;
     use std::fs::File;
     #[cfg(target_os = "linux")]
     use std::fs::Permissions;

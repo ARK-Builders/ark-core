@@ -103,7 +103,7 @@ fn parse_version(filename: Option<&str>) -> Option<usize> {
 }
 
 impl AtomicFile {
-    pub fn new(path: impl Into<PathBuf>) -> crate::Result<Self> {
+    pub fn new(path: impl Into<PathBuf>) -> fs_utils::errors::Result<Self> {
         let directory = path.into();
         // This UID must be treated as confidential information.
         // Depending on network transport used to sync the files (if any),

@@ -1,4 +1,4 @@
-use crate::atomic::{modify_json, AtomicFile};
+use fs_atomic_versions::atomic::{modify_json, AtomicFile};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 use std::io::Read;
@@ -38,6 +38,7 @@ pub fn store_metadata<
 }
 
 /// The file must exist if this method is called
+#[allow(dead_code)]
 pub fn load_raw_metadata<P: AsRef<Path>>(
     root: P,
     id: ResourceId,
@@ -63,7 +64,7 @@ pub fn load_raw_metadata<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::initialize;
+    use fs_atomic_versions::initialize;
 
     use super::*;
     use tempdir::TempDir;

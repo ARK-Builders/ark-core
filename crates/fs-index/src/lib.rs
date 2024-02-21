@@ -3,39 +3,30 @@
 extern crate lazy_static;
 extern crate canonical_path;
 
-pub mod errors;
-pub use errors::{ArklibError, Result};
+use fs_utils::errors::{ArklibError, Result};
 
-pub mod app_id;
 pub mod id;
 pub mod index;
 
 pub mod link;
-pub mod pdf;
 
-mod atomic;
 mod storage;
-mod util;
 
-pub use atomic::{modify, modify_json, AtomicFile};
+pub use fs_atomic_versions::atomic::{modify, modify_json, AtomicFile};
 
 use index::ResourceIndex;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use canonical_path::CanonicalPathBuf;
-use std::sync::Once;
-
-pub static INIT: Once = Once::new();
 
 pub const ARK_FOLDER: &str = ".ark";
 
 // Should not be lost if possible
 pub const STATS_FOLDER: &str = "stats";
 pub const FAVORITES_FILE: &str = "favorites";
-pub const APP_ID_FILE: &str = "app_id";
 
 // User-defined data
 pub const TAG_STORAGE_FILE: &str = "user/tags";
@@ -53,16 +44,6 @@ pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 lazy_static! {
     pub static ref REGISTRAR: RwLock<HashMap<CanonicalPathBuf, ResourceIndexLock>> =
         RwLock::new(HashMap::new());
-}
-lazy_static! {
-    pub static ref APP_ID_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
-}
-
-pub fn initialize() {
-    INIT.call_once(|| {
-        log::info!("Initializing arklib");
-        app_id::load("./").unwrap();
-    });
 }
 
 pub fn provide_index<P: AsRef<Path>>(

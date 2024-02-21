@@ -1,0 +1,22 @@
+[package]
+name = "fs-utils"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+thiserror = "1"
+reqwest = "0.11.11"
+serde_json = "1.0.82"
+anyhow = "1"
+url = { version = "2.2.2", features = ["serde"] }
+once_cell = "1.16.0"
+image = "0.24.2"
+pdfium-render = { git = "https://github.com/ajrcarey/pdfium-render", rev = "d2559c1", features = [
+    "thread_safe",
+    "sync",
+] }
+
+[dev-dependencies]
+rstest = "0.18"
+tempdir = "0.3"

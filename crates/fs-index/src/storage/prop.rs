@@ -1,4 +1,5 @@
-use crate::atomic::{modify_json, AtomicFile};
+use fs_atomic_versions::atomic::{modify_json, AtomicFile};
+use fs_utils::json::merge;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
@@ -6,7 +7,6 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::id::ResourceId;
-use crate::util::json::merge;
 use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
 
 pub fn store_properties<
@@ -64,7 +64,7 @@ pub fn load_raw_properties<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::initialize;
+    use fs_atomic_versions::initialize;
 
     use super::*;
     use tempdir::TempDir;

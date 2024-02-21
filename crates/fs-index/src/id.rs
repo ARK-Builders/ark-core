@@ -114,7 +114,7 @@ const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 
 #[cfg(test)]
 mod tests {
-    use crate::initialize;
+    use fs_atomic_versions::initialize;
 
     use super::*;
 
