@@ -1,9 +1,0 @@
-[package]
-name = "fs-atomic-light"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-name = "fs-atomic-light"
-crate-type = ["rlib"]
-bench = false

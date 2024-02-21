@@ -1,9 +1,10 @@
-use arklib::index::ResourceIndex;
 use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
 };
+use fs_index::index::ResourceIndex;
+use pprof::criterion::{Output, PProfProfiler};
 
-const DIR_PATH: &str = "tests/"; // Set the path to the directory containing the resources here
+const DIR_PATH: &str = "../../testdata/"; // Set the path to the directory containing the resources here
 
 fn index_build_benchmark(c: &mut Criterion) {
     // assert the path exists and is a directory
@@ -33,5 +34,9 @@ fn index_build_benchmark(c: &mut Criterion) {
     println!("Collisions: {}", collisions_size);
 }
 
-criterion_group!(benches, index_build_benchmark);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    targets = index_build_benchmark
+}
 criterion_main!(benches);

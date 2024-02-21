@@ -1,3 +1,4 @@
-# TODO
-# 1. Workspace?
-# 2. How to import particular crates from the monorepo in Rust apps?
+[workspace]
+members = ["crates/*"]
+
+resolver = "2"

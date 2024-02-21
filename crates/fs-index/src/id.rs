@@ -122,7 +122,7 @@ mod tests {
     fn compute_id_test() {
         initialize();
 
-        let file_path = Path::new("./tests/lena.jpg");
+        let file_path = Path::new("../../testdata/lena.jpg");
         let data_size = fs::metadata(file_path)
             .unwrap_or_else(|_| {
                 panic!(

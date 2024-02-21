@@ -1,9 +1,11 @@
-use arklib::id::ResourceId;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use fs_index::id::ResourceId;
+use pprof::criterion::{Output, PProfProfiler};
 use rand::prelude::*;
 use std::fs;
 
-const FILE_PATHS: [&str; 2] = ["tests/lena.jpg", "tests/test.pdf"]; // Add files to benchmark here
+const FILE_PATHS: [&str; 2] =
+    ["../../testdata/lena.jpg", "../../testdata/test.pdf"]; // Add files to benchmark here
 
 fn generate_random_data(size: usize) -> Vec<u8> {
     let mut rng = rand::thread_rng();
@@ -60,8 +62,8 @@ fn compute_bytes_on_files_benchmark(c: &mut Criterion) {
 }
 
 criterion_group!(
-    benches,
-    compute_bytes_on_raw_data,
-    compute_bytes_on_files_benchmark
+    name = benches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    targets = compute_bytes_on_raw_data, compute_bytes_on_files_benchmark
 );
 criterion_main!(benches);
