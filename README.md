@@ -1,4 +1,4 @@
-# fs-index
+# ArkLib
 
 This is the home of core ARK library.
 
@@ -7,6 +7,14 @@ Being implemented in Rust, it provides us capability to port all our apps to all
 **The Concept of the library**
 
 The purpose of the library is to manage _resource index_ of folders with various _user data_, as well as to manage user-defined metadata: tags, scores, arbitrary properties like movie title or description. Such a metadata is persisted to filesystem for easier sync and backup. The _resource index_ provides us with [content addressing](https://en.wikipedia.org/wiki/Content-addressable_storage) and allows easier storage and versions tracking. We also believe it'll allow easier cross-device sync implementation.
+
+## Packages
+
+| Package              | Description                       |
+| -------------------- | --------------------------------- |
+| `fs-index`           | Resource Index Management         |
+| `fs-atomic-versions` | `app_id` File Management          |
+| `fs-utils`           | Utility functions and common code |
 
 ## Prerequisites
 
