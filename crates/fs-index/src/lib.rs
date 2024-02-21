@@ -7,8 +7,8 @@ use fs_utils::errors::{ArklibError, Result};
 
 pub mod id;
 pub mod index;
-
 pub mod link;
+pub mod pdf;
 
 mod storage;
 

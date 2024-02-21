@@ -26,6 +26,13 @@ reqwest = "0.11.11"
 scraper = "0.13.0"
 tokio = { version = "1", features = ["full"] }
 itertools = "0.10.5"
+once_cell = "1.16.0"
+image = "0.24.2"
+pdfium-render = { git = "https://github.com/ajrcarey/pdfium-render", rev = "d2559c1", features = [
+    "thread_safe",
+    "sync",
+] }
+
 
 [dev-dependencies]
 uuid = { version = "1.6.1", features = ["v4"] }
