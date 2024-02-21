@@ -16,7 +16,7 @@ pub enum PDFQuality {
 }
 
 fn initialize_pdfium() {
-    let out_path = std::env::var("OUT_DIR").unwrap();
+    let out_path = env!("OUT_DIR");
     let pdfium_lib_path =
         PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
     let bindings = Pdfium::bind_to_library(
@@ -70,7 +70,7 @@ fn test_multi_pdf_generate() {
     println!("temporary root: {}", root.display());
     for i in 0..2 {
         use std::fs::File;
-        let pdf_reader = File::open("../../testdata/test.pdf").unwrap();
+        let pdf_reader = File::open("../testdata/test.pdf").unwrap();
 
         println!("Rendering {}", &i);
         let img = render_preview_page(pdf_reader, PDFQuality::High);

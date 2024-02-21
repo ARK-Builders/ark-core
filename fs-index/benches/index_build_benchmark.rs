@@ -4,7 +4,7 @@ use criterion::{
 use fs_index::index::ResourceIndex;
 use pprof::criterion::{Output, PProfProfiler};
 
-const DIR_PATH: &str = "../../testdata/"; // Set the path to the directory containing the resources here
+const DIR_PATH: &str = "../testdata/"; // Set the path to the directory containing the resources here
 
 fn index_build_benchmark(c: &mut Criterion) {
     // assert the path exists and is a directory

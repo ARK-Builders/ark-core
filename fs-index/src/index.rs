@@ -12,8 +12,8 @@ use walkdir::{DirEntry, WalkDir};
 
 use log;
 
-use crate::id::ResourceId;
 use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
+use data_resource::ResourceId;
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
@@ -666,10 +666,10 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
+    use data_resource::ResourceId;
     use fs_atomic_versions::initialize;
     use std::fs::File;
     #[cfg(target_os = "linux")]
@@ -1149,7 +1149,7 @@ mod tests {
     fn test_build_resource_index() {
         use std::time::Instant;
 
-        let path = "../../testdata/"; // The path to the directory to index
+        let path = "../testdata/"; // The path to the directory to index
         assert!(
             std::path::Path::new(path).is_dir(),
             "The provided path is not a directory or does not exist"

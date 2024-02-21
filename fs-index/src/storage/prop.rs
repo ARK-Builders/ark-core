@@ -6,8 +6,8 @@ use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use crate::id::ResourceId;
 use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
+use data_resource::ResourceId;
 
 pub fn store_properties<
     S: Serialize + DeserializeOwned + Clone + Debug,
