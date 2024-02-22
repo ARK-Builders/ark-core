@@ -80,9 +80,6 @@ impl FileStorage {
                         line.split(KEY_VALUE_SEPARATOR).collect();
                     let id = K::from_str(parts[0])?;
                     let value = V::from_str(parts[1])?;
-
-                    // TODO: neutral value check when introducing monoids
-
                     value_by_id.insert(id, value);
                 }
 
@@ -118,7 +115,6 @@ impl FileStorage {
         )?;
 
         for (id, value) in value_by_id {
-            // TODO: Is neutral check might be needed when monoids are introduced
             writer.write_all(
                 format!("{}{}{}\n", id, KEY_VALUE_SEPARATOR, value).as_bytes(),
             )?;
