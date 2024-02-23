@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use crc32fast::Hasher;
+use crc32fast::Hasher as Crc32Hasher;
 use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -84,7 +84,7 @@ impl ResourceId {
             data_size / MEGABYTE
         );
 
-        let mut hasher = Hasher::new();
+        let mut hasher = Crc32Hasher::new();
         let mut bytes_read: u32 = 0;
         loop {
             let bytes_read_iteration: usize = reader.fill_buf()?.len();
