@@ -11,6 +11,17 @@ use std::str::FromStr;
 
 use fs_utils::errors::{ArklibError, Result};
 
+pub trait Hasher {
+    type Output: Eq + Ord + PartialEq + PartialOrd + FromStr + Display;
+
+    fn compute_reader<R: Read>(
+        data_size: u64,
+        reader: &mut BufReader<R>,
+    ) -> Result<ResourceId<Self>>
+    where
+        Self: Sized;
+}
+
 #[derive(
     Eq,
     Ord,
@@ -23,30 +34,30 @@ use fs_utils::errors::{ArklibError, Result};
     Deserialize,
     Serialize,
 )]
-pub struct ResourceId {
+pub struct ResourceId<H: Hasher> {
     pub data_size: u64,
-    pub crc32: u32,
+    pub hash: H::Output,
 }
 
-impl Display for ResourceId {
+impl<H: Hasher> Display for ResourceId<H> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{}", self.data_size, self.crc32)
+        write!(f, "{}-{}", self.data_size, self.hash)
     }
 }
 
-impl FromStr for ResourceId {
+impl<H: Hasher> FromStr for ResourceId<H> {
     type Err = ArklibError;
 
     fn from_str(s: &str) -> Result<Self> {
         let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
         let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
+        let hash: H::Output = r.parse().map_err(|_| ArklibError::Parse)?;
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceId { data_size, hash })
     }
 }
 
-impl ResourceId {
+impl<H: Hasher> ResourceId<H> {
     pub fn compute<P: AsRef<Path>>(
         data_size: u64,
         file_path: P,
@@ -62,7 +73,7 @@ impl ResourceId {
             .open(file_path.as_ref())?;
 
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, source);
-        ResourceId::compute_reader(data_size, &mut reader)
+        H::compute_reader(data_size, &mut reader)
     }
 
     pub fn compute_bytes(bytes: &[u8]) -> Result<Self> {
@@ -70,13 +81,17 @@ impl ResourceId {
             ArklibError::Other(anyhow!("Can't convert usize to u64"))
         })?; //.unwrap();
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, bytes);
-        ResourceId::compute_reader(data_size, &mut reader)
+        H::compute_reader(data_size, &mut reader)
     }
+}
 
-    pub fn compute_reader<R: Read>(
+impl Hasher for Crc32Hasher {
+    type Output = u32;
+
+    fn compute_reader<R: Read>(
         data_size: u64,
         reader: &mut BufReader<R>,
-    ) -> Result<Self> {
+    ) -> Result<ResourceId<Self>> {
         assert!(reader.buffer().is_empty());
 
         log::trace!(
@@ -104,7 +119,10 @@ impl ResourceId {
         log::trace!("[compute] checksum: {:#02x}", crc32);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceId {
+            data_size,
+            hash: crc32,
+        })
     }
 }
 
@@ -132,25 +150,26 @@ mod tests {
             })
             .len();
 
-        let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.crc32, 0x342a3d4a);
+        let id1 =
+            ResourceId::<Crc32Hasher>::compute(data_size, file_path).unwrap();
+        assert_eq!(id1.hash, 0x342a3d4a);
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
-        let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.crc32, 0x342a3d4a);
+        let id2 = ResourceId::<Crc32Hasher>::compute_bytes(&raw_bytes).unwrap();
+        assert_eq!(id2.hash, 0x342a3d4a);
         assert_eq!(id2.data_size, 128760);
     }
 
     #[test]
     fn resource_id_order() {
-        let id1 = ResourceId {
+        let id1 = ResourceId::<Crc32Hasher> {
             data_size: 1,
-            crc32: 2,
+            hash: 2,
         };
-        let id2 = ResourceId {
+        let id2 = ResourceId::<Crc32Hasher> {
             data_size: 2,
-            crc32: 1,
+            hash: 1,
         };
 
         assert!(id1 < id2);
