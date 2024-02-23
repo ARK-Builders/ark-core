@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::{str::Utf8Error, time::SystemTimeError};
 
 use thiserror::Error;
@@ -41,5 +42,11 @@ impl From<SystemTimeError> for ArklibError {
 impl From<Box<dyn std::error::Error>> for ArklibError {
     fn from(e: Box<dyn std::error::Error>) -> Self {
         Self::Other(anyhow::anyhow!(e.to_string()))
+    }
+}
+
+impl From<Infallible> for ArklibError {
+    fn from(_: Infallible) -> Self {
+        Self::Parse
     }
 }
