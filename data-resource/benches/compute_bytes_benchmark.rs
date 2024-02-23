@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use fs_index::id::ResourceId;
+use data_resource::ResourceId;
 use pprof::criterion::{Output, PProfProfiler};
 use rand::prelude::*;
 use std::fs;

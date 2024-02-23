@@ -1,5 +1,10 @@
 [workspace]
-members = ["fs-atomic-versions", "fs-index", "fs-utils"]
-default-members = ["fs-atomic-versions", "fs-index", "fs-utils"]
+members = ["data-resource", "fs-atomic-versions", "fs-index", "fs-utils"]
+default-members = [
+    "data-resource",
+    "fs-atomic-versions",
+    "fs-index",
+    "fs-utils",
+]
 
 resolver = "2"

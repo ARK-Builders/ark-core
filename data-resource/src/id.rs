@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::{ArklibError, Result};
+use fs_utils::errors::{ArklibError, Result};
 
 #[derive(
     Eq,

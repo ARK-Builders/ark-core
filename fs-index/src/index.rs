@@ -12,8 +12,8 @@ use walkdir::{DirEntry, WalkDir};
 
 use log;
 
-use crate::id::ResourceId;
 use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
+use data_resource::ResourceId;
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
@@ -666,10 +666,10 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
+    use data_resource::ResourceId;
     use fs_atomic_versions::initialize;
     use std::fs::File;
     #[cfg(target_os = "linux")]
