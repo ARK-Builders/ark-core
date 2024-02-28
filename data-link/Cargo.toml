@@ -1,0 +1,27 @@
+[package]
+name = "data-link"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "data_link"
+crate-type = ["rlib"]
+bench = false
+
+[dependencies]
+fs-atomic-light = { path = "../fs-atomic-light" }
+fs-atomic-versions = { path = "../fs-atomic-versions" }
+fs-storage = { path = "../fs-storage" }
+data-resource = { path = "../data-resource" }
+data-error = { path = "../data-error" }
+
+log = { version = "0.4.17", features = ["release_max_level_off"] }
+serde_json = "1.0.82"
+serde = { version = "1.0.138", features = ["derive"] }
+url = { version = "2.2.2", features = ["serde"] }
+reqwest = "0.11.11"
+scraper = "0.13.0"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tempdir = "0.3.7"

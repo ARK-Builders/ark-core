@@ -12,13 +12,15 @@ The purpose of the library is to manage _resource index_ of folders with various
 
 <div align="center">
 
-| Package              | Description                                |
-| -------------------- | ------------------------------------------ |
-| `data-resource`      | Resource hashing and ID construction       |
-| `fs-index`           | Resource Index construction and updating   |
-| `fs-atomic-light`    | Temp file-based preventing of dirty writes |
-| `fs-atomic-versions` | Version-based preventing of dirty writes   |
-| `fs-utils`           | Utility functions and common code          |
+| Package         | Description                              |
+| --------------- | ---------------------------------------- |
+| `data-resource` | Resource hashing and ID construction     |
+| `fs-index`      | Resource Index construction and updating |
+| `fs-storage`    | Filesystem storage for resources         |
+| `data-link`     | Linking resources                        |
+| `data-pdf`      | PDF handling                             |
+| `data-error`    | Error handling                           |
+| `data-json`     | JSON serialization and deserialization   |
 
 </div>
 

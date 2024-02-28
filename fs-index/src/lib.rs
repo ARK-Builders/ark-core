@@ -3,15 +3,12 @@
 extern crate lazy_static;
 extern crate canonical_path;
 
-use fs_utils::errors::{ArklibError, Result};
+use data_error::{ArklibError, Result};
 
 pub mod index;
-pub mod link;
-pub mod pdf;
-
-mod storage;
 
 pub use fs_atomic_versions::atomic::{modify, modify_json, AtomicFile};
+pub use fs_storage::{ARK_FOLDER, INDEX_PATH};
 
 use index::ResourceIndex;
 
@@ -20,23 +17,6 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use canonical_path::CanonicalPathBuf;
-
-pub const ARK_FOLDER: &str = ".ark";
-
-// Should not be lost if possible
-pub const STATS_FOLDER: &str = "stats";
-pub const FAVORITES_FILE: &str = "favorites";
-
-// User-defined data
-pub const TAG_STORAGE_FILE: &str = "user/tags";
-pub const SCORE_STORAGE_FILE: &str = "user/scores";
-pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
-
-// Generated data
-pub const INDEX_PATH: &str = "index";
-pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
-pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
-pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";
 
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 
