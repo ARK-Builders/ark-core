@@ -1,16 +1,25 @@
 [workspace]
 members = [
+    "data-error",
+    "data-json",
+    "data-link",
+    "data-pdf",
     "data-resource",
     "fs-atomic-versions",
+    "fs-atomic-light",
     "fs-index",
-    "fs-utils"
+    "fs-storage",
 ]
 
 default-members = [
+    "data-error",
+    "data-json",
+    "data-link",
+    "data-pdf",
     "data-resource",
     "fs-atomic-versions",
     "fs-index",
-    "fs-utils",
+    "fs-storage",
 ]
 
 resolver = "2"

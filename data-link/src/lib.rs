@@ -1,10 +1,12 @@
-use crate::storage::meta::store_metadata;
-use crate::storage::prop::store_properties;
-use crate::{
-    storage::prop::load_raw_properties, AtomicFile, Result, ARK_FOLDER,
-    PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER,
-};
+use data_error::Result;
 use data_resource::ResourceId;
+use fs_atomic_versions::atomic::AtomicFile;
+use fs_storage::meta::store_metadata;
+use fs_storage::prop::load_raw_properties;
+use fs_storage::prop::store_properties;
+use fs_storage::{
+    ARK_FOLDER, PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER,
+};
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -24,20 +26,6 @@ pub struct Link {
 pub struct Properties {
     pub title: String,
     pub desc: Option<String>,
-}
-/// Write data to a tempory file and move that written file to destination
-///
-/// May failed if writing or moving failed
-fn temp_and_move(
-    data: &[u8],
-    dest_dir: impl AsRef<Path>,
-    filename: &str,
-) -> Result<()> {
-    let mut path = std::env::temp_dir();
-    path.push(filename);
-    std::fs::write(&path, data)?;
-    std::fs::copy(path, dest_dir.as_ref().join(filename))?;
-    Ok(())
 }
 
 impl Link {
@@ -62,6 +50,7 @@ impl Link {
             .join(PROPERTIES_STORAGE_FOLDER)
             .join(id.to_string());
         let file = AtomicFile::new(path)?;
+
         let current = file.load()?;
         let data = current.read_to_string()?;
         let user_meta: Properties = serde_json::from_str(&data)?;
@@ -103,7 +92,7 @@ impl Link {
 
         // Resources are stored in the folder chosen by user
         let bytes = self.url.as_str().as_bytes();
-        temp_and_move(bytes, root.as_ref(), &id_string)?;
+        fs_atomic_light::temp_and_move(bytes, root.as_ref(), &id_string)?;
         //User defined properties
         store_properties(&root, id, &self.prop)?;
 
@@ -194,6 +183,7 @@ fn select_og(html: &Html, tag: OpenGraphTag) -> Option<String> {
 
     None
 }
+
 fn select_desc(html: &Html) -> Option<String> {
     let selector = Selector::parse("meta[name=\"description\"]").unwrap();
 
@@ -205,6 +195,7 @@ fn select_desc(html: &Html) -> Option<String> {
 
     None
 }
+
 fn select_title(html: &Html) -> Option<String> {
     let selector = Selector::parse("title").unwrap();
     if let Some(element) = html.select(&selector).next() {
@@ -213,6 +204,7 @@ fn select_title(html: &Html) -> Option<String> {
 
     None
 }
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct OpenGraph {
     /// Represents the "og:title" OpenGraph meta tag.
@@ -234,6 +226,7 @@ pub struct OpenGraph {
     /// Represents the "og:locale" OpenGraph meta tag
     locale: Option<String>,
 }
+
 impl OpenGraph {
     pub async fn fetch_image(&self) -> Option<Vec<u8>> {
         if let Some(url) = &self.image {

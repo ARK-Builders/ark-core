@@ -1,5 +1,4 @@
 use std::str::Utf8Error;
-
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, ArklibError>;

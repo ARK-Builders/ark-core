@@ -9,7 +9,7 @@ crate-type = ["rlib"]
 bench = false
 
 [dependencies]
-fs-utils = { path = "../fs-utils" }
+data-error = { path = "../data-error" }
 
 log = { version = "0.4.17", features = ["release_max_level_off"] }
 anyhow = "1.0.58"
