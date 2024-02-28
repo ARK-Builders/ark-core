@@ -12,12 +12,13 @@ The purpose of the library is to manage _resource index_ of folders with various
 
 <div align="center">
 
-| Package              | Description                              |
-| -------------------- | ---------------------------------------- |
-| `fs-index`           | Resource Index construction and updating |
-| `data-resource`      | Resource hashing and ID construction     |
-| `fs-atomic-versions` | Version-based preventing of dirty writes |
-| `fs-utils`           | Utility functions and common code        |
+| Package              | Description                                |
+| -------------------- | ------------------------------------------ |
+| `data-resource`      | Resource hashing and ID construction       |
+| `fs-index`           | Resource Index construction and updating   |
+| `fs-atomic-light`    | Temp file-based preventing of dirty writes |
+| `fs-atomic-versions` | Version-based preventing of dirty writes   |
+| `fs-utils`           | Utility functions and common code          |
 
 </div>
 
@@ -61,6 +62,6 @@ cargo bench index_build
 
 Our benchmark suite includes tests on local files and directories. These benchmarks are located in the `benches/` directory of some crates. Each benchmark sets a time limit using `group.measurement_time()`, which you can adjust manually based on your requirements.
 
-You have the flexibility to benchmark specific files or folders by modifying the variables within the benchmark files. By default, the benchmarks operate on the [`testdata/`](../testdata/) directory and its contents. You can change the directory/files by setting the `DIR_PATH` and `FILE_PATHS` variables to the desired values.
+You have the flexibility to benchmark specific files or folders by modifying the variables within the benchmark files. By default, the benchmarks operate on the [`test-assets/`](../test-assets/) directory and its contents. You can change the directory/files by setting the `DIR_PATH` and `FILE_PATHS` variables to the desired values.
 
 For pre-benchmark assessment of required time to index a huge local folder, you can modify `test_build_resource_index` test case in `src/index.rs`.
