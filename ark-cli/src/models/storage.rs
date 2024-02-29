@@ -128,14 +128,13 @@ impl Storage {
     ) -> Result<(), String> {
         match self.storage_type {
             StorageType::File => {
-                let atomic_file = AtomicFile::new(&self.path)
-                    // .expect("ERROR: Could not create atomic file");
-                    .map_err(|e| {
-                        format!(
-                            "Failed to create atomic file at {} with error: {:?}",
-                            self.path.display(), e
-                        )
-                    })?;
+                let atomic_file = AtomicFile::new(&self.path).map_err(|e| {
+                    format!(
+                        "Failed to create atomic file at {} with error: {:?}",
+                        self.path.display(),
+                        e
+                    )
+                })?;
 
                 let content = match format {
                     Format::KeyValue => return Err(
