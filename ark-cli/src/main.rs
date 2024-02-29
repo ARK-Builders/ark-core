@@ -5,13 +5,7 @@ use std::str::FromStr;
 
 use arklib::id::ResourceId;
 use arklib::pdf::PDFQuality;
-use arklib::{app_id, provide_index, INDEX_PATH};
-use arklib::{
-    modify, AtomicFile, APP_ID_FILE, ARK_FOLDER, FAVORITES_FILE,
-    METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
-    PROPERTIES_STORAGE_FOLDER, SCORE_STORAGE_FILE, STATS_FOLDER,
-    TAG_STORAGE_FILE, THUMBNAILS_STORAGE_FOLDER,
-};
+use arklib::{app_id, provide_index};
 
 use chrono::prelude::DateTime;
 use chrono::Utc;
@@ -78,7 +72,7 @@ async fn main() {
                 (None, true, false) => &EntryOutput::Id,
                 (None, false, true) => &EntryOutput::Path,
                 (None, true, true) => &EntryOutput::Both,
-                (None, false, false) => &EntryOutput::Id, // default value
+                (None, false, false) => &EntryOutput::Id, // default mode
                 _ => panic!(
                     "incompatible entry output options, please choose only one"
                 ),
