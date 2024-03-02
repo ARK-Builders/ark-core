@@ -6,7 +6,6 @@ edition = "2021"
 [lib]
 name = "data_pdf"
 crate-type = ["rlib"]
-bench = false
 
 [dependencies]
 once_cell = "1.16.0"
