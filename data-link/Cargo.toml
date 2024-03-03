@@ -6,7 +6,6 @@ edition = "2021"
 [lib]
 name = "data_link"
 crate-type = ["rlib"]
-bench = false
 
 [dependencies]
 fs-atomic-light = { path = "../fs-atomic-light" }

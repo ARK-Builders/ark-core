@@ -3,7 +3,10 @@ name = "data-resource"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "data_resource"
+crate-type = ["rlib"]
+bench = false
 
 [dependencies]
 data-error = { path = "../data-error" }

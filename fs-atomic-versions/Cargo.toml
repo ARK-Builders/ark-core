@@ -6,7 +6,6 @@ edition = "2021"
 [lib]
 name = "fs_atomic_versions"
 crate-type = ["rlib"]
-bench = false
 
 [dependencies]
 data-error = { path = "../data-error" }
