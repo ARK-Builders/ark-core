@@ -8,7 +8,7 @@ members = [
     "fs-atomic-versions",
     "fs-atomic-light",
     "fs-index",
-    "fs-storage",
+    "fs-storage", "sample-cli",
 ]
 
 default-members = [
