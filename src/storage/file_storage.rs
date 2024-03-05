@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::str::FromStr;
@@ -38,13 +39,13 @@ impl FileStorage {
     /// Data is read as a key value pairs separated by a symbol and stored
     /// in a [HashMap] with a generic key K and V value. A handler
     /// is called on the data after reading it.
-    pub fn read_from_disk<K, V>(
+    pub fn read_file<K, V>(
         &self,
-        handle: impl FnOnce(HashMap<K, V>),
+        mut handle: impl FnMut(HashMap<K, V>),
     ) -> Result<()>
     where
-        K: FromStr + std::hash::Hash + std::cmp::Eq,
-        V: FromStr,
+        K: FromStr + std::hash::Hash + std::cmp::Eq + Debug,
+        V: FromStr + Debug,
         ArklibError: From<<K as FromStr>::Err>,
         ArklibError: From<<V as FromStr>::Err>,
     {
@@ -61,6 +62,21 @@ impl FileStorage {
 
         log::info!("the file was modified externally, merging");
 
+        let value_by_id = self.read_file_from_disk()?;
+        if !value_by_id.is_empty() {
+            handle(value_by_id);
+        }
+
+        Ok(())
+    }
+
+    fn read_file_from_disk<K, V>(&self) -> Result<HashMap<K, V>>
+    where
+        K: FromStr + std::hash::Hash + std::cmp::Eq + Debug,
+        V: FromStr + Debug,
+        ArklibError: From<<K as FromStr>::Err>,
+        ArklibError: From<<V as FromStr>::Err>,
+    {
         let file = fs::File::open(&self.path)?;
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
@@ -83,21 +99,20 @@ impl FileStorage {
                     value_by_id.insert(id, value);
                 }
 
-                if !value_by_id.is_empty() {
-                    handle(value_by_id);
-                }
+                Ok(value_by_id)
             }
-            Some(Err(e)) => return Err(e.into()),
-            None => (),
+            Some(Err(e)) => Err(e.into()),
+            None => Err(ArklibError::Storage(
+                self.label.clone(),
+                "Storage file is missing header".to_owned(),
+            )),
         }
-
-        Ok(())
     }
 
     /// Write data to file
     ///
     /// Data is a key-value mapping between [ResourceId] and a generic Value
-    pub fn write_to_disk<K, V>(
+    pub fn write_file<K, V>(
         &mut self,
         value_by_id: &HashMap<K, V>,
     ) -> Result<()>
@@ -170,5 +185,62 @@ impl Drop for FileStorage {
                 e
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    use crate::storage::file_storage::FileStorage;
+
+    #[test]
+    fn test_file_storage_write_read() {
+        let temp_dir =
+            TempDir::new().expect("Failed to create temporary directory");
+        let storage_path = temp_dir.path().join("test_storage.txt");
+
+        let mut file_storage =
+            FileStorage::new("TestStorage".to_string(), &storage_path);
+
+        let mut data_to_write = HashMap::new();
+        data_to_write.insert("key1".to_string(), "value1".to_string());
+        data_to_write.insert("key2".to_string(), "value2".to_string());
+
+        file_storage
+            .write_file(&data_to_write)
+            .expect("Failed to write data to disk");
+
+        let data_read: HashMap<_, _> = file_storage
+            .read_file_from_disk()
+            .expect("Failed to read data from disk");
+
+        assert_eq!(data_read, data_to_write);
+    }
+
+    #[test]
+    fn test_file_storage_auto_delete() {
+        let temp_dir =
+            TempDir::new().expect("Failed to create temporary directory");
+        let storage_path = temp_dir.path().join("test_storage.txt");
+
+        // File storage should be dropped and the file deleted after this scope
+        {
+            let mut file_storage =
+                FileStorage::new("TestStorage".to_string(), &storage_path);
+
+            let mut data_to_write = HashMap::new();
+            data_to_write.insert("key1".to_string(), "value1".to_string());
+            data_to_write.insert("key2".to_string(), "value2".to_string());
+
+            file_storage
+                .write_file(&data_to_write)
+                .expect("Failed to write data to disk");
+
+            assert_eq!(storage_path.exists(), true);
+        }
+
+        assert_eq!(storage_path.exists(), false);
     }
 }
