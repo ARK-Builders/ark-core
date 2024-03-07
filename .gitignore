@@ -1,7 +1,4 @@
-<<<<<<< HEAD
-=======
 .idea
->>>>>>> main
 target
 Cargo.lock
 **/app_id
