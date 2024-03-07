@@ -1,6 +1,6 @@
+pub mod file_storage;
 pub mod meta;
 pub mod prop;
-pub mod file_storage;
 
 pub const ARK_FOLDER: &str = ".ark";
 
