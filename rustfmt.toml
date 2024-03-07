@@ -7,8 +7,6 @@ single_line_if_else_max_width = 30
 
 force_explicit_abi = true
 
-report_todo = "Always"
-report_fixme = "Always"
 
 reorder_imports = true
 

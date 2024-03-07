@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{ArklibError, Result};
+use data_error::{ArklibError, Result};
 
 const LOG_PREFIX: &str = "[file-storage]";
 const STORAGE_VERSION: i32 = 2;
@@ -137,7 +137,7 @@ impl FileStorage {
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
         if new_timestamp == self.timestamp {
-            return Err(anyhow::anyhow!("Timestamp didn't update").into());
+            return Err("Timestamp didn't update".into());
         }
         self.timestamp = new_timestamp;
 
@@ -193,7 +193,7 @@ mod tests {
     use std::collections::HashMap;
     use tempfile::TempDir;
 
-    use crate::storage::file_storage::FileStorage;
+    use crate::file_storage::FileStorage;
 
     #[test]
     fn test_file_storage_write_read() {

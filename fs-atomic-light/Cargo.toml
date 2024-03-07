@@ -1,0 +1,11 @@
+[package]
+name = "fs-atomic-light"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "fs_atomic_light"
+crate-type = ["rlib"]
+
+[dependencies]
+data-error = { path = "../data-error" }

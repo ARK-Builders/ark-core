@@ -1,6 +1,4 @@
-use std::convert::Infallible;
-use std::{str::Utf8Error, time::SystemTimeError};
-
+use std::{convert::Infallible, str::Utf8Error};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, ArklibError>;
@@ -15,10 +13,18 @@ pub enum ArklibError {
     Collision(String),
     #[error("Parsing error")]
     Parse,
+    #[error("Networking error")]
+    Network,
     #[error("Storage error: {0} {1}")]
     Storage(String, String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<reqwest::Error> for ArklibError {
+    fn from(_: reqwest::Error) -> Self {
+        Self::Network
+    }
 }
 
 impl From<Utf8Error> for ArklibError {
@@ -33,14 +39,20 @@ impl From<serde_json::Error> for ArklibError {
     }
 }
 
-impl From<SystemTimeError> for ArklibError {
-    fn from(value: SystemTimeError) -> Self {
-        Self::Other(anyhow::anyhow!(value.to_string()))
+impl From<url::ParseError> for ArklibError {
+    fn from(_: url::ParseError) -> Self {
+        Self::Parse
     }
 }
 
 impl From<Box<dyn std::error::Error>> for ArklibError {
     fn from(e: Box<dyn std::error::Error>) -> Self {
+        Self::Other(anyhow::anyhow!(e.to_string()))
+    }
+}
+
+impl From<&str> for ArklibError {
+    fn from(e: &str) -> Self {
         Self::Other(anyhow::anyhow!(e.to_string()))
     }
 }
