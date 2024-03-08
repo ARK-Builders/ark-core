@@ -1,24 +1,22 @@
+use crate::error::AppError;
 use crate::models::{format, format::Format};
-use arklib::{modify, modify_json, AtomicFile};
+use arklib::{modify, modify_json, AtomicFile, Result as ArklibResult};
 
 pub fn file_append(
     atomic_file: &AtomicFile,
     content: &str,
     format: Format,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     match format {
-        Format::Raw => modify(&atomic_file, |current| {
+        Format::Raw => Ok(modify(atomic_file, |current| {
             let mut combined_vec: Vec<u8> = current.to_vec();
             combined_vec.extend_from_slice(content.as_bytes());
             combined_vec
-        })
-        .map_err(|_| "ERROR: Could not append string".to_string()),
+        })?),
         Format::KeyValue => {
-            let values = format::key_value_to_str(&content)
-                .map_err(|_| "ERROR: Could not parse json".to_string())?;
+            let values = format::key_value_to_str(content)?;
 
-            append_json(&atomic_file, values.to_vec())
-                .map_err(|_| "ERROR: Could not append json".to_string())
+            Ok(append_json(atomic_file, values.to_vec())?)
         }
     }
 }
@@ -27,16 +25,16 @@ pub fn file_insert(
     atomic_file: &AtomicFile,
     content: &str,
     format: Format,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     match format {
-        Format::Raw => modify(&atomic_file, |_| content.as_bytes().to_vec())
-            .map_err(|_| "ERROR: Could not insert string".to_string()),
+        Format::Raw => {
+            Ok(modify(atomic_file, |_| content.as_bytes().to_vec())?)
+        }
         Format::KeyValue => {
-            let values = format::key_value_to_str(&content)
-                .map_err(|_| "ERROR: Could not parse json".to_string())?;
+            let values = format::key_value_to_str(content)?;
 
             modify_json(
-                &atomic_file,
+                atomic_file,
                 |current: &mut Option<serde_json::Value>| {
                     let mut new = serde_json::Map::new();
                     for (key, value) in &values {
@@ -48,7 +46,7 @@ pub fn file_insert(
                     *current = Some(serde_json::Value::Object(new));
                 },
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| AppError::FileOperationError(e.to_string()))
         }
     }
 }
@@ -56,8 +54,8 @@ pub fn file_insert(
 fn append_json(
     atomic_file: &AtomicFile,
     data: Vec<(String, String)>,
-) -> arklib::Result<()> {
-    modify_json(&atomic_file, |current: &mut Option<serde_json::Value>| {
+) -> ArklibResult<()> {
+    modify_json(atomic_file, |current: &mut Option<serde_json::Value>| {
         let current_data = match current {
             Some(current) => {
                 if let Ok(value) = serde_json::to_value(current) {
@@ -74,7 +72,7 @@ fn append_json(
         };
         let mut new = serde_json::Map::new();
 
-        if let None = current_data {
+        if current_data.is_none() {
             for (key, value) in &data {
                 new.insert(
                     key.clone(),
@@ -128,7 +126,7 @@ pub fn format_file(file: &AtomicFile) -> Option<String> {
         .expect("Not a file")
         .to_str()
         .unwrap()
-        .split("_");
+        .split('_');
 
     let name = split.next().unwrap();
 

@@ -52,6 +52,9 @@ pub enum Command {
         #[clap(long, short = 'p', action)]
         entry_path: bool,
 
+        #[clap(long, short = 'l', action)]
+        entry_link: bool,
+
         #[clap(long, short, action)]
         modified: bool,
 
