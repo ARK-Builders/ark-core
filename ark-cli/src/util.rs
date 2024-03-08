@@ -15,58 +15,56 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{fs::File, path::PathBuf};
 
+use crate::error::AppError;
 use crate::models::storage::{Storage, StorageType};
 use crate::ARK_CONFIG;
 
-pub fn discover_roots(roots_cfg: &Option<PathBuf>) -> Vec<PathBuf> {
+pub fn discover_roots(
+    roots_cfg: &Option<PathBuf>,
+) -> Result<Vec<PathBuf>, AppError> {
     if let Some(path) = roots_cfg {
         println!(
             "\tRoots config provided explicitly:\n\t\t{}",
             path.display()
         );
-        let config = File::open(&path).expect("File doesn't exist!");
+        let config = File::open(path)?;
 
-        parse_roots(config)
+        Ok(parse_roots(config))
+    } else if let Ok(config) = File::open(ARK_CONFIG) {
+        println!(
+            "\tRoots config was found automatically:\n\t\t{}",
+            &ARK_CONFIG
+        );
+
+        Ok(parse_roots(config))
     } else {
-        if let Ok(config) = File::open(&ARK_CONFIG) {
-            println!(
-                "\tRoots config was found automatically:\n\t\t{}",
-                &ARK_CONFIG
-            );
+        println!("\tRoots config wasn't found.");
 
-            parse_roots(config)
+        println!("Looking for a folder containing tag storage:");
+        let path =
+            canonicalize(current_dir().expect("Can't open current directory!"))
+                .expect("Couldn't canonicalize working directory!");
+
+        let result = path.ancestors().find(|path| {
+            println!("\t{}", path.display());
+            storages_exists(path)
+        });
+
+        if let Some(root) = result {
+            println!("Root folder found:\n\t{}", root.display());
+            Ok(vec![root.to_path_buf()])
         } else {
-            println!("\tRoots config wasn't found.");
-
-            println!("Looking for a folder containing tag storage:");
-            let path = canonicalize(
-                current_dir().expect("Can't open current directory!"),
-            )
-            .expect("Couldn't canonicalize working directory!");
-
-            let result = path.ancestors().find(|path| {
-                println!("\t{}", path.display());
-                storages_exists(path)
-            });
-
-            if let Some(root) = result {
-                println!("Root folder found:\n\t{}", root.display());
-                vec![root.to_path_buf()]
-            } else {
-                println!("Root folder wasn't found.");
-                vec![]
-            }
+            println!("Root folder wasn't found.");
+            Ok(vec![])
         }
     }
 }
 
-pub fn provide_root(root_dir: &Option<PathBuf>) -> PathBuf {
+pub fn provide_root(root_dir: &Option<PathBuf>) -> Result<PathBuf, AppError> {
     if let Some(path) = root_dir {
-        path.clone()
+        Ok(path.clone())
     } else {
-        current_dir()
-            .expect("Can't open current directory!")
-            .clone()
+        Ok(current_dir()?)
     }
 }
 
@@ -78,12 +76,15 @@ pub fn provide_index(root_dir: &PathBuf) -> ResourceIndex {
     index.clone()
 }
 
-pub fn monitor_index(root_dir: &Option<PathBuf>, interval: Option<u64>) {
-    let dir_path = provide_root(root_dir);
+pub fn monitor_index(
+    root_dir: &Option<PathBuf>,
+    interval: Option<u64>,
+) -> Result<(), AppError> {
+    let dir_path = provide_root(root_dir)?;
 
     println!("Building index of folder {}", dir_path.display());
     let start = Instant::now();
-    let dir_path = provide_root(root_dir);
+
     let result = arklib::provide_index(dir_path);
     let duration = start.elapsed();
 
@@ -126,10 +127,12 @@ pub fn monitor_index(root_dir: &Option<PathBuf>, interval: Option<u64>) {
         }
         Err(err) => println!("Failure: {:?}", err),
     }
+
+    Ok(())
 }
 
 pub fn storages_exists(path: &Path) -> bool {
-    let meta = metadata(path.join(&arklib::ARK_FOLDER));
+    let meta = metadata(path.join(arklib::ARK_FOLDER));
     if let Ok(meta) = meta {
         return meta.is_dir();
     }
@@ -138,7 +141,7 @@ pub fn storages_exists(path: &Path) -> bool {
 }
 
 pub fn parse_roots(config: File) -> Vec<PathBuf> {
-    return BufReader::new(config)
+    BufReader::new(config)
         .lines()
         .filter_map(|line| match line {
             Ok(path) => Some(PathBuf::from(path)),
@@ -147,14 +150,14 @@ pub fn parse_roots(config: File) -> Vec<PathBuf> {
                 None
             }
         })
-        .collect();
+        .collect()
 }
 
 pub fn timestamp() -> Duration {
     let start = SystemTime::now();
-    return start
+    start
         .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards!");
+        .expect("Time went backwards!")
 }
 
 pub fn translate_storage(
@@ -170,42 +173,49 @@ pub fn translate_storage(
     match storage.to_lowercase().as_str() {
         "tags" => Some((
             provide_root(root)
+                .ok()?
                 .join(ARK_FOLDER)
                 .join(TAG_STORAGE_FILE),
             Some(StorageType::File),
         )),
         "scores" => Some((
             provide_root(root)
+                .ok()?
                 .join(ARK_FOLDER)
                 .join(SCORE_STORAGE_FILE),
             Some(StorageType::File),
         )),
         "stats" => Some((
             provide_root(root)
+                .ok()?
                 .join(ARK_FOLDER)
                 .join(STATS_FOLDER),
             Some(StorageType::Folder),
         )),
         "properties" => Some((
             provide_root(root)
+                .ok()?
                 .join(ARK_FOLDER)
                 .join(PROPERTIES_STORAGE_FOLDER),
             Some(StorageType::Folder),
         )),
         "metadata" => Some((
             provide_root(root)
+                .ok()?
                 .join(ARK_FOLDER)
                 .join(METADATA_STORAGE_FOLDER),
             Some(StorageType::Folder),
         )),
         "previews" => Some((
             provide_root(root)
+                .ok()?
                 .join(ARK_FOLDER)
                 .join(PREVIEWS_STORAGE_FOLDER),
             Some(StorageType::Folder),
         )),
         "thumbnails" => Some((
             provide_root(root)
+                .ok()?
                 .join(ARK_FOLDER)
                 .join(THUMBNAILS_STORAGE_FOLDER),
             Some(StorageType::Folder),
@@ -219,10 +229,10 @@ pub fn read_storage_value(
     storage: &str,
     id: &str,
     type_: &Option<String>,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let (file_path, storage_type) =
         translate_storage(&Some(root_dir.to_owned()), storage)
-            .expect("ERROR: Could not find storage folder");
+            .ok_or(AppError::StorageNotFound(storage.to_owned()))?;
 
     let storage_type = storage_type.unwrap_or(match type_ {
         Some(type_) => match type_.to_lowercase().as_str() {
@@ -233,11 +243,9 @@ pub fn read_storage_value(
         None => StorageType::File,
     });
 
-    let mut storage = Storage::new(file_path, storage_type)
-        .expect("ERROR: Could not create storage");
+    let mut storage = Storage::new(file_path, storage_type)?;
 
-    let resource_id =
-        ResourceId::from_str(id).expect("ERROR: Could not parse id");
+    let resource_id = ResourceId::from_str(id)?;
 
     storage.read(resource_id)
 }

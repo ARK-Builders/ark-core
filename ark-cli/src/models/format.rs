@@ -1,3 +1,5 @@
+use crate::error::InlineJsonParseError;
+
 #[derive(Debug, Clone, Copy)]
 pub enum Format {
     KeyValue,
@@ -16,7 +18,9 @@ impl std::str::FromStr for Format {
     }
 }
 
-pub fn key_value_to_str(s: &str) -> Result<Vec<(String, String)>, String> {
+pub fn key_value_to_str(
+    s: &str,
+) -> Result<Vec<(String, String)>, InlineJsonParseError> {
     let pairs: Vec<&str> = s.split(',').collect();
 
     let mut values = Vec::new();
@@ -28,7 +32,7 @@ pub fn key_value_to_str(s: &str) -> Result<Vec<(String, String)>, String> {
             let value = key_value[1].trim().to_string();
             values.push((key, value));
         } else {
-            return Err("Invalid key-value pair format".to_owned());
+            return Err(InlineJsonParseError::InvalidKeyValPair);
         }
     }
 

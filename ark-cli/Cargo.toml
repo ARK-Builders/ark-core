@@ -18,3 +18,5 @@ url = { version = "2.2.2", features = ["serde"] }
 serde_json = "1.0.82"
 serde = { version = "1.0.138", features = ["derive"] }
 chrono = "0.4.34"
+anyhow = "1.0.80"
+thiserror = "1.0.57"

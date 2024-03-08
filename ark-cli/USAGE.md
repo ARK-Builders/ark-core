@@ -74,7 +74,7 @@ $ ark-cli list ~/Pictures/
 ```
 
 But it's a bit boring and doesn't really tell anything, right? Various flags should be used to gain more knowledge about your collections of resources:
-* `--entry=id|path|both` to show the path,the id or both of a resource
+* `--entry=id|path|both|link` to show the path,the id or both of a resource
 * `--timestamp=true` to show or not the last modified timestamp of a resource
 * `--tags=true` to show or not the tags for every resource
 * `--scores=true` to show or not the scores for every resource
@@ -85,28 +85,40 @@ For instance, you can list files with their paths and attached tags:
 ```
 $ ark-cli list -pt
 
-30-4257856154 with tags search
-18-1909444406 with tags hello
-22-207093268 with tags search,engine
-38-103010298 with tags NO_TAGS
+30-4257856154 search
+18-1909444406 hello
+22-207093268  search,engine
+38-103010298  NO_TAGS
+```
+
+You Can list the links of the files
+
+```
+$ark-cli list -l
+
+https://google.com
+https://news.ycombinator.com
+https://youtube.com
+https://github.com
+
 ```
 
 Or, sort by score:
 ```
 $ ark-cli list -s --sort=asc
 
-30-4257856154 with score NO_SCORE
-18-1909444406 with score 2
-38-103010298 with score 10
-22-207093268 with score 15
+30-4257856154 NO_SCORE
+18-1909444406 2
+38-103010298  10
+22-207093268  15
 ```
 
 Finally, you can filter resources using their tags:
 ```
 $ /tmp/ark-cli list -t --filter=search
 
-30-4257856154 with tags search
-22-207093268 with tags search,engine
+30-4257856154 search
+22-207093268  search,engine
 ```
 
 ## :zap: Low-level utilities :zap:
