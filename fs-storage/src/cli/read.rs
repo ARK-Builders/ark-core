@@ -1,9 +1,6 @@
 use std::env;
-use fs_storage::file_storage::FileStorage; // Import FileStorage
-use std::collections::HashMap;
-use std::str::FromStr;
-use data_error::ArklibError;
-use std::fmt::Debug;
+use std::path::Path;
+use fs_storage::file_storage::FileStorage;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -14,9 +11,17 @@ fn main() {
     let storage_path = &args[1];
     let key = &args[2];
 
-    let file_storage = FileStorage::new("Storage".to_string(), storage_path);
+    println!("Storage Path: {}", storage_path);
+    println!("Key: {}", key);
 
+    if !Path::new(storage_path).exists() {
+        println!("Error: Storage file does not exist.");
+        return;
+    }
+    
+    let file_storage = FileStorage::new("our_label".to_string(), Path::new(storage_path));
     match file_storage.read_file::<String, String>(|value_by_id| {
+        println!("ruun3");
         if let Some(value) = value_by_id.get(key) {
             println!("Value for key '{}': {:?}", key, value);
         } else {

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs::{self, File};
-use std::io::{self, Write, BufWriter};
-use std::path::Path;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use fs_storage::file_storage::FileStorage;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -16,19 +17,14 @@ fn main() {
         println!("Storage already exists at {}", storage_path);
         return;
     }
-    if let Err(err) = fs::create_dir(storage_path) {
+
+    if let Err(err) = fs::create_dir_all(storage_path) {
         println!("Error creating storage directory: {}", err);
         return;
     }
-    println!("Storage created successfully at {}", storage_path);
+    println!("Storage directory created successfully at {}", storage_path);
 
     let mut kv_pairs: HashMap<String, String> = HashMap::new();
-
-    println!("Please specify the storage type:");
-    let mut storage_type = String::new();
-    io::stdin().read_line(&mut storage_type).expect("Failed to read line");
-    let storage_type = storage_type.trim();
-
     loop {
         println!("Enter a key-value pair (key=value), or enter 'done' to finish:");
         let mut input = String::new();
@@ -51,7 +47,6 @@ fn main() {
         kv_pairs.insert(key, value);
     }
 
-    println!("Storage Type: {}", storage_type);
     println!("Key-Value Pairs:");
     for (key, value) in &kv_pairs {
         println!("{}: {}", key, value);
@@ -63,6 +58,15 @@ fn main() {
 }
 
 fn write_to_file(kv_pairs: HashMap<String, String>, storage_path: &str) -> io::Result<()> {
-  let mut storage = file_storage::FileStorage::new(storage_path);
-  storage.write_file(&kv_pairs)
+    let mut storage_file = PathBuf::from(storage_path);
+    storage_file.push("storage.txt"); // Adjust the filename as needed
+
+    let mut storage = FileStorage::new("our_label".to_string(), &storage_file);
+    match storage.write_file(&kv_pairs) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let io_err = io::Error::new(io::ErrorKind::Other, format!("ArklibError: {:?}", err));
+            Err(io_err)
+        }
+    }
 }
