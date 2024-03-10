@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use fs_storage::file_storage::FileStorage;
 
 fn main() {
@@ -59,7 +59,7 @@ fn main() {
 
 fn write_to_file(kv_pairs: HashMap<String, String>, storage_path: &str) -> io::Result<()> {
     let mut storage_file = PathBuf::from(storage_path);
-    storage_file.push("storage.txt"); // Adjust the filename as needed
+    storage_file.push("storage.txt");
 
     let mut storage = FileStorage::new("our_label".to_string(), &storage_file);
     match storage.write_file(&kv_pairs) {
