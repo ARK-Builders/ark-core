@@ -5,8 +5,10 @@ use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use crate::{ARK_FOLDER, METADATA_STORAGE_FOLDER};
 use data_resource::ResourceId;
+use fs_storage::ARK_FOLDER;
+
+pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 
 pub fn store_metadata<
     S: Serialize + DeserializeOwned + Clone + Debug,

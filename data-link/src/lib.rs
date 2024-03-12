@@ -1,7 +1,7 @@
 use data_error::Result;
 use data_resource::ResourceId;
 use fs_atomic_versions::atomic::AtomicFile;
-use fs_storage::meta::store_metadata;
+use fs_metadata::store_metadata;
 use fs_storage::prop::load_raw_properties;
 use fs_storage::prop::store_properties;
 use fs_storage::{
