@@ -17,6 +17,7 @@ The purpose of the library is to manage _resource index_ of folders with various
 | `data-resource` | Resource hashing and ID construction     |
 | `fs-index`      | Resource Index construction and updating |
 | `fs-storage`    | Filesystem storage for resources         |
+| `fs-metadata`   | Metadata management                      |
 | `data-link`     | Linking resources                        |
 | `data-pdf`      | PDF handling                             |
 | `data-error`    | Error handling                           |

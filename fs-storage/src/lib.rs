@@ -1,4 +1,3 @@
-pub mod meta;
 pub mod prop;
 
 pub const ARK_FOLDER: &str = ".ark";
@@ -14,6 +13,5 @@ pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
 
 // Generated data
 pub const INDEX_PATH: &str = "index";
-pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
 pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";
