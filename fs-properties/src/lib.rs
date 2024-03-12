@@ -7,8 +7,10 @@ use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use crate::{ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
 use data_resource::ResourceId;
+use fs_storage::ARK_FOLDER;
+
+pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
 
 pub fn store_properties<
     S: Serialize + DeserializeOwned + Clone + Debug,

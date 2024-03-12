@@ -1,0 +1,19 @@
+[package]
+name = "fs-properties"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+data-error = { path = "../data-error" }
+data-json = { path = "../data-json" }
+fs-atomic-versions = { path = "../fs-atomic-versions" }
+fs-storage = { path = "../fs-storage" }
+data-resource = { path = "../data-resource" }
+
+serde_json = "1.0.82"
+serde = { version = "1.0.138", features = ["derive"] }
+
+[dev-dependencies]
+log = { version = "0.4.17", features = ["release_max_level_off"] }
+tempdir = "0.3.7"
