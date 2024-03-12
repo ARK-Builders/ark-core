@@ -1,5 +1,3 @@
-pub mod prop;
-
 pub const ARK_FOLDER: &str = ".ark";
 
 // Should not be lost if possible
@@ -9,7 +7,6 @@ pub const FAVORITES_FILE: &str = "favorites";
 // User-defined data
 pub const TAG_STORAGE_FILE: &str = "user/tags";
 pub const SCORE_STORAGE_FILE: &str = "user/scores";
-pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
 
 // Generated data
 pub const INDEX_PATH: &str = "index";

@@ -8,6 +8,7 @@ members = [
     "fs-atomic-versions",
     "fs-atomic-light",
     "fs-metadata",
+    "fs-properties",
     "fs-index",
     "fs-storage",
 ]
@@ -21,6 +22,7 @@ default-members = [
     "fs-atomic-versions",
     "fs-atomic-light",
     "fs-metadata",
+    "fs-properties",
     "fs-index",
     "fs-storage",
 ]
