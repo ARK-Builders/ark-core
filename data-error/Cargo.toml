@@ -3,6 +3,11 @@ name = "data-error"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "data_error"
+crate-type = ["rlib"]
+bench = false
+
 [dependencies]
 thiserror = "1"
 reqwest = "0.11.11"

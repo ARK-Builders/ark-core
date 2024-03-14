@@ -3,5 +3,9 @@ name = "fs-storage"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "fs_storage"
+crate-type = ["rlib"]
+bench = false
 
 [dependencies]

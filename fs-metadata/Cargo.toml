@@ -3,6 +3,10 @@ name = "fs-metadata"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "fs_metadata"
+crate-type = ["rlib"]
+bench = false
 
 [dependencies]
 data-error = { path = "../data-error" }
