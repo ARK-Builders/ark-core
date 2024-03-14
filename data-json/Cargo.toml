@@ -3,6 +3,10 @@ name = "data-json"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "data_json"
+crate-type = ["rlib"]
+bench = false
 
 [dependencies]
 serde_json = "1.0.82"
