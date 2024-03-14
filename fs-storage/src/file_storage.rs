@@ -10,39 +10,45 @@ use std::{
 };
 
 use data_error::{ArklibError, Result};
+use log::info;
 
-const LOG_PREFIX: &str = "[file-storage]";
 const STORAGE_VERSION: i32 = 2;
 const STORAGE_VERSION_PREFIX: &str = "version ";
 const KEY_VALUE_SEPARATOR: char = ':';
 
-pub struct FileStorage {
-    log_prefix: String,
-    label: String,
-    path: PathBuf,
+pub struct Mapping<K, V> {
     timestamp: SystemTime,
+    values: HashMap<K, V>,
 }
 
-impl FileStorage {
+impl<K, V> Mapping<K, V> {
+    pub fn new(timestamp: SystemTime, values: HashMap<K, V>) -> Self {
+        Self { timestamp, values }
+    }
+}
+
+pub struct Storage {
+    label: String,
+    path: PathBuf,
+    timestamp: Option<SystemTime>,
+}
+
+impl Storage {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
         Self {
             label: label.clone(),
-            log_prefix: format!("{} {}", LOG_PREFIX, label).to_string(),
             path: PathBuf::from(path),
-            timestamp: SystemTime::now(),
+            timestamp: None,
         }
     }
 
-    /// Read data from disk
+    /// Load or update latest mapping from file
     ///
     /// Data is read as a key value pairs separated by a symbol and stored
     /// in a [HashMap] with a generic key K and V value. A handler
     /// is called on the data after reading it.
-    pub fn read_file<K, V>(
-        &self,
-        mut handle: impl FnMut(HashMap<K, V>),
-    ) -> Result<()>
+    fn load<K, V>(&mut self) -> Result<Mapping<K, V>>
     where
         K: FromStr + std::hash::Hash + std::cmp::Eq + Debug,
         V: FromStr + Debug,
@@ -50,72 +56,60 @@ impl FileStorage {
         ArklibError: From<<V as FromStr>::Err>,
     {
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
+        let stale = self
+            .timestamp
+            .map(|t| t < new_timestamp)
+            .unwrap_or(true);
+
         log::info!(
-            "timestamp of storage file {:?} is {:?}",
+            "Timestamp of storage file {:?} is {:?}",
             self.path,
-            self.timestamp
+            new_timestamp
         );
 
-        if self.timestamp >= new_timestamp {
-            return Ok(());
-        }
+        if stale {
+            log::info!("Loading mapping from file...");
 
-        log::info!("the file was modified externally, merging");
+            let file = fs::File::open(&self.path)?;
+            let reader = BufReader::new(file);
+            let mut lines = reader.lines();
 
-        let value_by_id = self.read_file_from_disk()?;
-        if !value_by_id.is_empty() {
-            handle(value_by_id);
-        }
+            match lines.next() {
+                Some(Ok(header)) => {
+                    self.verify_version(&header)?;
 
-        Ok(())
-    }
+                    let mut value_by_id = HashMap::new();
+                    for line in lines {
+                        let line = line?;
+                        if line.is_empty() {
+                            continue;
+                        }
 
-    fn read_file_from_disk<K, V>(&self) -> Result<HashMap<K, V>>
-    where
-        K: FromStr + std::hash::Hash + std::cmp::Eq + Debug,
-        V: FromStr + Debug,
-        ArklibError: From<<K as FromStr>::Err>,
-        ArklibError: From<<V as FromStr>::Err>,
-    {
-        let file = fs::File::open(&self.path)?;
-        let reader = BufReader::new(file);
-        let mut lines = reader.lines();
-
-        match lines.next() {
-            Some(Ok(header)) => {
-                self.verify_version(&header)?;
-
-                let mut value_by_id = HashMap::new();
-                for line in lines {
-                    let line = line?;
-                    if line.is_empty() {
-                        continue;
+                        let parts: Vec<&str> =
+                            line.split(KEY_VALUE_SEPARATOR).collect();
+                        let id = K::from_str(parts[0])?;
+                        let value = V::from_str(parts[1])?;
+                        value_by_id.insert(id, value);
                     }
 
-                    let parts: Vec<&str> =
-                        line.split(KEY_VALUE_SEPARATOR).collect();
-                    let id = K::from_str(parts[0])?;
-                    let value = V::from_str(parts[1])?;
-                    value_by_id.insert(id, value);
+                    self.timestamp = Some(new_timestamp);
+                    Ok(Mapping::new(new_timestamp, value_by_id))
                 }
-
-                Ok(value_by_id)
+                Some(Err(e)) => Err(e.into()),
+                None => Err(ArklibError::Storage(
+                    self.label.clone(),
+                    "Storage file is missing header".to_owned(),
+                )),
             }
-            Some(Err(e)) => Err(e.into()),
-            None => Err(ArklibError::Storage(
-                self.label.clone(),
-                "Storage file is missing header".to_owned(),
-            )),
+        } else {
+            Err("Storage is latest. Load not needed".into())
         }
     }
 
     /// Write data to file
     ///
     /// Data is a key-value mapping between [ResourceId] and a generic Value
-    pub fn write_file<K, V>(
-        &mut self,
-        value_by_id: &HashMap<K, V>,
-    ) -> Result<()>
+    pub fn save<K, V>(&mut self, value_by_id: HashMap<K, V>) -> Result<()>
     where
         K: Display,
         V: Display,
@@ -129,24 +123,32 @@ impl FileStorage {
                 .as_bytes(),
         )?;
 
-        for (id, value) in value_by_id {
+        for (id, value) in &value_by_id {
             writer.write_all(
                 format!("{}{}{}\n", id, KEY_VALUE_SEPARATOR, value).as_bytes(),
             )?;
         }
 
-        let new_timestamp = fs::metadata(&self.path)?.modified()?;
-        if new_timestamp == self.timestamp {
-            return Err("Timestamp didn't update".into());
-        }
-        self.timestamp = new_timestamp;
-
         log::info!(
             "{} {} entries has been written",
-            self.log_prefix,
+            self.label,
             value_by_id.len()
         );
+
+        let new_timestamp = fs::metadata(&self.path)?.modified()?;
+        self.timestamp = Some(new_timestamp);
         Ok(())
+    }
+
+    /// Erase file at path
+    pub fn erase(&self) {
+        if let Err(e) = fs::remove_file(&self.path) {
+            log::error!(
+                "{} Failed to delete file because of error: {}",
+                self.label,
+                e
+            )
+        }
     }
 
     /// Verify the version stored in the file header
@@ -176,24 +178,12 @@ impl FileStorage {
     }
 }
 
-impl Drop for FileStorage {
-    fn drop(&mut self) {
-        if let Err(e) = fs::remove_file(&self.path) {
-            log::error!(
-                "{} Failed to delete file because of error: {}",
-                self.log_prefix,
-                e
-            )
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
     use tempfile::TempDir;
 
-    use crate::file_storage::FileStorage;
+    use crate::file_storage::{Mapping, Storage};
 
     #[test]
     fn test_file_storage_write_read() {
@@ -201,26 +191,42 @@ mod tests {
             TempDir::new().expect("Failed to create temporary directory");
         let storage_path = temp_dir.path().join("test_storage.txt");
 
-        let mut file_storage =
-            FileStorage::new("TestStorage".to_string(), &storage_path);
+        let mut file_storage_1 =
+            Storage::new("TestStorage".to_string(), &storage_path);
+        let mut file_storage_2 =
+            Storage::new("TestStorage".to_string(), &storage_path);
 
         let mut data_to_write = HashMap::new();
         data_to_write.insert("key1".to_string(), "value1".to_string());
         data_to_write.insert("key2".to_string(), "value2".to_string());
 
-        file_storage
-            .write_file(&data_to_write)
+        file_storage_1
+            .save(data_to_write.clone())
             .expect("Failed to write data to disk");
 
-        let data_read: HashMap<_, _> = file_storage
-            .read_file_from_disk()
+        let data_read: Mapping<_, _> = file_storage_2
+            .load()
             .expect("Failed to read data from disk");
 
-        assert_eq!(data_read, data_to_write);
+        assert_eq!(data_read.values, data_to_write);
+
+        // Update storage with new data and load using storage 1
+        data_to_write.insert("key3".to_string(), "value3".to_string());
+        file_storage_2
+            .save(data_to_write.clone())
+            .expect("Failed to write data to disk");
+
+        dbg!(file_storage_2.timestamp);
+        dbg!(file_storage_1.timestamp);
+        let data_read: Mapping<_, _> = file_storage_1
+            .load()
+            .expect("Failed to read data from disk");
+
+        assert_eq!(data_read.values, data_to_write);
     }
 
     #[test]
-    fn test_file_storage_auto_delete() {
+    fn test_file_storage_erase() {
         let temp_dir =
             TempDir::new().expect("Failed to create temporary directory");
         let storage_path = temp_dir.path().join("test_storage.txt");
@@ -228,17 +234,19 @@ mod tests {
         // File storage should be dropped and the file deleted after this scope
         {
             let mut file_storage =
-                FileStorage::new("TestStorage".to_string(), &storage_path);
+                Storage::new("TestStorage".to_string(), &storage_path);
 
             let mut data_to_write = HashMap::new();
             data_to_write.insert("key1".to_string(), "value1".to_string());
             data_to_write.insert("key2".to_string(), "value2".to_string());
 
             file_storage
-                .write_file(&data_to_write)
+                .save(data_to_write)
                 .expect("Failed to write data to disk");
 
             assert_eq!(storage_path.exists(), true);
+
+            file_storage.erase();
         }
 
         assert_eq!(storage_path.exists(), false);
