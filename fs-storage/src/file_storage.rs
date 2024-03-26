@@ -5,7 +5,6 @@ use std::str::FromStr;
 use std::time::SystemTime;
 use std::{
     collections::BTreeMap,
-    fmt::Display,
     path::{Path, PathBuf},
 };
 
@@ -13,7 +12,6 @@ use data_error::{ArklibError, Result};
 
 const STORAGE_VERSION: i32 = 2;
 const STORAGE_VERSION_PREFIX: &str = "version ";
-const KEY_VALUE_SEPARATOR: char = ':';
 
 pub struct FileStorage {
     label: String,
@@ -46,10 +44,14 @@ impl FileStorage {
     /// is called on the data after reading it.
     pub fn read_file<K, V>(&mut self) -> Result<BTreeMap<K, V>>
     where
-        K: FromStr + std::hash::Hash + std::cmp::Eq + Debug + std::cmp::Ord,
-        V: FromStr + Debug,
+        K: serde::de::DeserializeOwned
+            + FromStr
+            + std::hash::Hash
+            + std::cmp::Eq
+            + Debug
+            + std::cmp::Ord,
+        V: serde::de::DeserializeOwned + Debug,
         ArklibError: From<<K as FromStr>::Err>,
-        ArklibError: From<<V as FromStr>::Err>,
     {
         let file = fs::File::open(&self.path)?;
         let reader = BufReader::new(file);
@@ -60,20 +62,15 @@ impl FileStorage {
             Some(header) => {
                 let header = header?;
                 self.verify_version(&header)?;
-
-                let mut value_by_id = BTreeMap::new();
+                let mut data = String::new();
                 for line in lines {
                     let line = line?;
                     if line.is_empty() {
                         continue;
                     }
-
-                    let parts: Vec<&str> =
-                        line.split(KEY_VALUE_SEPARATOR).collect();
-                    let id = K::from_str(parts[0])?;
-                    let value = V::from_str(parts[1])?;
-                    value_by_id.insert(id, value);
+                    data.push_str(&line);
                 }
+                let value_by_id = serde_json::from_str(&data)?;
 
                 self.timestamp = new_timestamp;
                 Ok(value_by_id)
@@ -93,10 +90,16 @@ impl FileStorage {
         value_by_id: &BTreeMap<K, V>,
     ) -> Result<()>
     where
-        K: Display,
-        V: Display,
+        K: serde::Serialize,
+        V: serde::Serialize,
     {
-        fs::create_dir_all(self.path.parent().unwrap())?;
+        let parent_dir = self.path.parent().ok_or_else(|| {
+            ArklibError::Storage(
+                self.label.clone(),
+                "Failed to get parent directory".to_owned(),
+            )
+        })?;
+        fs::create_dir_all(parent_dir)?;
         let file = File::create(&self.path)?;
         let mut writer = BufWriter::new(file);
 
@@ -105,11 +108,8 @@ impl FileStorage {
                 .as_bytes(),
         )?;
 
-        for (id, value) in value_by_id {
-            writer.write_all(
-                format!("{}{}{}\n", id, KEY_VALUE_SEPARATOR, value).as_bytes(),
-            )?;
-        }
+        let data = serde_json::to_string(value_by_id)?;
+        writer.write_all(data.as_bytes())?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
         if new_timestamp == self.timestamp {
@@ -118,21 +118,21 @@ impl FileStorage {
         self.timestamp = new_timestamp;
 
         log::info!(
-            "{} {} entries has been written",
+            "{} {} entries have been written",
             self.label,
             value_by_id.len()
         );
         Ok(())
     }
 
-    pub fn erase(&self) {
+    pub fn erase(&self) -> Result<()> {
         if let Err(e) = fs::remove_file(&self.path) {
-            log::error!(
-                "{} Failed to delete file because of error: {}",
-                self.label,
-                e
-            )
+            return Err(ArklibError::Storage(
+                self.label.clone(),
+                format!("Failed to delete file because of error: {}", e),
+            ));
         }
+        Ok(())
     }
 
     /// Verify the version stored in the file header
@@ -216,8 +216,9 @@ mod tests {
 
         assert_eq!(storage_path.exists(), true);
 
-        file_storage.erase();
-
+        if let Err(err) = file_storage.erase() {
+            panic!("Failed to delete file: {:?}", err);
+        }
         assert_eq!(storage_path.exists(), false);
     }
 }

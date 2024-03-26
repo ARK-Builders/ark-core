@@ -15,6 +15,11 @@ name = "cli"
 data-error = { path = "../data-error" }
 log = { version = "0.4.17", features = ["release_max_level_off"] }
 
+serde_json = "1.0.82"
+anyhow = "1.0.81"
+itertools = "0.12.1"
+serde = { version = "1.0.138", features = ["derive"] }
+
 [dev-dependencies]
 log = { version = "0.4.17", features = ["release_max_level_off"] }
 tempdir = "0.3.7"

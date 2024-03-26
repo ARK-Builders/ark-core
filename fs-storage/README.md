@@ -27,3 +27,8 @@ cargo run --example cli read /tmp/z key1,key2
 key1: value1
 key2: value2
 ```
+
+- To get all key value pairs
+```bash
+cargo run --example cli read /tmp/z
+```
