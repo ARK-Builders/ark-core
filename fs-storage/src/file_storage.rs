@@ -147,8 +147,9 @@ impl FileStorage {
         let version = header[STORAGE_VERSION_PREFIX.len()..]
             .parse::<i32>()
             .map_err(|_err| {
-                <&str as Into<ArklibError>>::into(
-                    "Unable to parse storage version",
+                ArklibError::Storage(
+                    self.label.clone(),
+                    "Failed to parse storage version".to_owned(),
                 )
             })?;
 
