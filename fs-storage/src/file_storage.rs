@@ -125,6 +125,7 @@ impl FileStorage {
         Ok(())
     }
 
+    /// Remove file at stored path
     pub fn erase(&self) -> Result<()> {
         fs::remove_file(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
