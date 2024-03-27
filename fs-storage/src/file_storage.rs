@@ -126,13 +126,9 @@ impl FileStorage {
     }
 
     pub fn erase(&self) -> Result<()> {
-        if let Err(e) = fs::remove_file(&self.path) {
-            return Err(ArklibError::Storage(
-                self.label.clone(),
-                format!("Failed to delete file because of error: {}", e),
-            ));
-        }
-        Ok(())
+        fs::remove_file(&self.path).map_err(|err| {
+            ArklibError::Storage(self.label.clone(), err.to_string())
+        })
     }
 
     /// Verify the version stored in the file header
