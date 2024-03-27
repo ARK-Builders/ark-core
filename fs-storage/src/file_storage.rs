@@ -39,7 +39,7 @@ impl FileStorage {
 
     /// Read data from disk
     ///
-    /// Data is read as a key value pairs separated by a symbol and stored
+    /// Data is read as key value pairs separated by a symbol and stored
     /// in a [BTreeMap] with a generic key K and V value. A handler
     /// is called on the data after reading it.
     pub fn read_file<K, V>(&mut self) -> Result<BTreeMap<K, V>>
