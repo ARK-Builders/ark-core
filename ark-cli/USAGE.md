@@ -75,7 +75,7 @@ $ ark-cli list ~/Pictures/
 
 But it's a bit boring and doesn't really tell anything, right? Various flags should be used to gain more knowledge about your collections of resources:
 * `--entry=id|path|both|link` to show the path,the id or both of a resource
-* `--timestamp=true` to show or not the last modified timestamp of a resource
+* `--modified` to show or not the last modified timestamp of a resource
 * `--tags=true` to show or not the tags for every resource
 * `--scores=true` to show or not the scores for every resource
 * `--sort=asc|desc` to sort resources by asc or dsc order of scores
