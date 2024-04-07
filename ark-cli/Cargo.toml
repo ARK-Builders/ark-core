@@ -8,7 +8,7 @@ name = "ark-cli"
 
 [dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
-arklib = { git = "https://github.com/ARK-Builders/arklib", rev = "2c7ceda" }
+arklib = { git = "https://github.com/ARK-Builders/arklib", branch = "ark-rust_hot_fix" }
 clap = { version = "3.0.10", features = ["derive"] }
 env_logger = "0.9.0"
 fs_extra = "1.2.0"
