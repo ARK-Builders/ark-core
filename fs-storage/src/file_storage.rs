@@ -23,7 +23,7 @@ where
     label: String,
     path: PathBuf,
     timestamp: SystemTime,
-    value_by_id: BTreeMap<K, V>,
+    pub value_by_id: BTreeMap<K, V>,
 }
 
 impl<K, V> FileStorage<K, V>

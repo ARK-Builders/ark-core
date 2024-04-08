@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use fs_storage::base_storage::BaseStorage;
 use fs_storage::file_storage::FileStorage;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -108,8 +109,8 @@ fn write_command(args: &[String], path: &str) -> Result<()> {
     }
 
     let mut fs = FileStorage::new("cli".to_string(), Path::new(path));
-    fs.write_file(&kv_pairs)
-        .context("Failed to write file")?;
+    fs.value_by_id = kv_pairs.clone();
+    fs.write_file().context("Failed to write file")?;
 
     Ok(())
 }
