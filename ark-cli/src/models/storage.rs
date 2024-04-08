@@ -1,4 +1,5 @@
-use arklib::{id::ResourceId, AtomicFile};
+use data_resource::ResourceId;
+use fs_atomic_versions::atomic::AtomicFile;
 use std::fmt::Write;
 use std::path::PathBuf;
 

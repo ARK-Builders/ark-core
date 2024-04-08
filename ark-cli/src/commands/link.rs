@@ -1,4 +1,5 @@
-use arklib::{id::ResourceId, link::Link};
+use data_link::Link;
+use data_resource::ResourceId;
 use std::path::PathBuf;
 use url::Url;
 
@@ -50,5 +51,5 @@ pub fn load_link(
         ))?,
     }?;
 
-    Ok(arklib::link::Link::load(root, &path)?)
+    Ok(Link::load(root, &path)?)
 }
