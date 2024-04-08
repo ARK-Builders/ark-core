@@ -197,7 +197,7 @@ mod tests {
 
         let mut data_to_write = BTreeMap::new();
         data_to_write.insert("key1".to_string(), "value1".to_string());
-        data_to_write.insert("key2".to_string(), "value2".to_string());    
+        data_to_write.insert("key2".to_string(), "value2".to_string());
 
         // file_storage.set("key1".to_string(), "value1".to_string());
         // file_storage.set("key2".to_string(), "value2".to_string());
@@ -226,7 +226,7 @@ mod tests {
         let mut data_to_write = BTreeMap::new();
         data_to_write.insert("key1".to_string(), "value1".to_string());
         data_to_write.insert("key2".to_string(), "value2".to_string());
-        
+
         file_storage.value_by_id = data_to_write.clone();
 
         file_storage
