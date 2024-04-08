@@ -3,9 +3,11 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use arklib::id::ResourceId;
-use arklib::pdf::PDFQuality;
-use arklib::{app_id, provide_index};
+use data_pdf::{render_preview_page, PDFQuality};
+use data_resource::ResourceId;
+use fs_atomic_versions::app_id;
+use fs_index::provide_index;
+use fs_storage::ARK_FOLDER;
 
 use chrono::prelude::DateTime;
 use chrono::Utc;
@@ -422,7 +424,7 @@ async fn main() -> anyhow::Result<()> {
                     options.copy_inside = true;
 
                     let result = dir::copy(
-                        root.join(arklib::ARK_FOLDER),
+                        root.join(ARK_FOLDER),
                         storage_backup,
                         &options,
                     );
@@ -457,7 +459,7 @@ async fn main() -> anyhow::Result<()> {
                     .to_owned()
                     + ".png",
             );
-            let img = arklib::pdf::render_preview_page(buf, quality);
+            let img = render_preview_page(buf, quality);
             img.save(dest_path).unwrap();
         }
         Command::Link(link) => match &link {

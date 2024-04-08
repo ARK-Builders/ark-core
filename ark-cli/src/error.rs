@@ -1,4 +1,4 @@
-use arklib::ArklibError;
+use data_error::ArklibError;
 use std::io;
 use thiserror::Error;
 

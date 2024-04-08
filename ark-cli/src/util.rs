@@ -1,8 +1,9 @@
-use arklib::id::ResourceId;
-use arklib::index::ResourceIndex;
-use arklib::{
-    ARK_FOLDER, METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
-    PROPERTIES_STORAGE_FOLDER, SCORE_STORAGE_FILE, STATS_FOLDER,
+use data_resource::ResourceId;
+use fs_index::index::ResourceIndex;
+use fs_metadata::METADATA_STORAGE_FOLDER;
+use fs_properties::PROPERTIES_STORAGE_FOLDER;
+use fs_storage::{
+    ARK_FOLDER, PREVIEWS_STORAGE_FOLDER, SCORE_STORAGE_FILE, STATS_FOLDER,
     TAG_STORAGE_FILE, THUMBNAILS_STORAGE_FOLDER,
 };
 use std::env::current_dir;
@@ -71,7 +72,7 @@ pub fn provide_root(root_dir: &Option<PathBuf>) -> Result<PathBuf, AppError> {
 // Read-only structure
 pub fn provide_index(root_dir: &PathBuf) -> ResourceIndex {
     let rwlock =
-        arklib::provide_index(root_dir).expect("Failed to retrieve index");
+        fs_index::provide_index(root_dir).expect("Failed to retrieve index");
     let index = &*rwlock.read().unwrap();
     index.clone()
 }
@@ -85,7 +86,7 @@ pub fn monitor_index(
     println!("Building index of folder {}", dir_path.display());
     let start = Instant::now();
 
-    let result = arklib::provide_index(dir_path);
+    let result = fs_index::provide_index(dir_path);
     let duration = start.elapsed();
 
     match result {
@@ -132,7 +133,7 @@ pub fn monitor_index(
 }
 
 pub fn storages_exists(path: &Path) -> bool {
-    let meta = metadata(path.join(arklib::ARK_FOLDER));
+    let meta = metadata(path.join(ARK_FOLDER));
     if let Ok(meta) = meta {
         return meta.is_dir();
     }

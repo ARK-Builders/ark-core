@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use arklib::id::ResourceId;
 use clap::{Parser, Subcommand};
+use data_resource::ResourceId;
 
 use super::{
     entry::EntryOutput, format::Format, sort::Sort, storage::StorageType,

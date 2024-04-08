@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::models::{format, format::Format};
-use arklib::{modify, modify_json, AtomicFile, Result as ArklibResult};
+use data_error::Result as ArklibResult;
+use fs_atomic_versions::atomic::{modify, modify_json, AtomicFile};
 
 pub fn file_append(
     atomic_file: &AtomicFile,
