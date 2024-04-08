@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::fs::{self, File};
+use std::hash::Hash;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::str::FromStr;
 use std::time::SystemTime;
@@ -8,128 +9,36 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::base_storage::BaseStorage;
 use data_error::{ArklibError, Result};
 
 const STORAGE_VERSION: i32 = 2;
 const STORAGE_VERSION_PREFIX: &str = "version ";
 
-pub struct FileStorage {
+pub struct FileStorage<K, V>
+where
+    K: serde::Serialize,
+    V: serde::Serialize,
+{
     label: String,
     path: PathBuf,
     timestamp: SystemTime,
+    value_by_id: BTreeMap<K, V>,
 }
 
-impl FileStorage {
+impl<K, V> FileStorage<K, V>
+where
+    K: serde::Serialize,
+    V: serde::Serialize,
+{
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
         Self {
             label,
             path: PathBuf::from(path),
             timestamp: SystemTime::now(),
+            value_by_id: BTreeMap::new(),
         }
-    }
-
-    /// Check if underlying file has been updated
-    ///
-    /// This check can be used before reading the file.
-    pub fn is_file_updated(&self) -> Result<bool> {
-        let file_timestamp = fs::metadata(&self.path)?.modified()?;
-        Ok(self.timestamp < file_timestamp)
-    }
-
-    /// Read data from disk
-    ///
-    /// Data is read as key value pairs separated by a symbol and stored
-    /// in a [BTreeMap] with a generic key K and V value. A handler
-    /// is called on the data after reading it.
-    pub fn read_file<K, V>(&mut self) -> Result<BTreeMap<K, V>>
-    where
-        K: serde::de::DeserializeOwned
-            + FromStr
-            + std::hash::Hash
-            + std::cmp::Eq
-            + Debug
-            + std::cmp::Ord,
-        V: serde::de::DeserializeOwned + Debug,
-        ArklibError: From<<K as FromStr>::Err>,
-    {
-        let file = fs::File::open(&self.path)?;
-        let reader = BufReader::new(file);
-        let mut lines = reader.lines();
-
-        let new_timestamp = fs::metadata(&self.path)?.modified()?;
-        match lines.next() {
-            Some(header) => {
-                let header = header?;
-                self.verify_version(&header)?;
-                let mut data = String::new();
-                for line in lines {
-                    let line = line?;
-                    if line.is_empty() {
-                        continue;
-                    }
-                    data.push_str(&line);
-                }
-                let value_by_id = serde_json::from_str(&data)?;
-
-                self.timestamp = new_timestamp;
-                Ok(value_by_id)
-            }
-            None => Err(ArklibError::Storage(
-                self.label.clone(),
-                "Storage file is missing header".to_owned(),
-            )),
-        }
-    }
-
-    /// Write data to file
-    ///
-    /// Data is a key-value mapping between [ResourceId] and a generic Value
-    pub fn write_file<K, V>(
-        &mut self,
-        value_by_id: &BTreeMap<K, V>,
-    ) -> Result<()>
-    where
-        K: serde::Serialize,
-        V: serde::Serialize,
-    {
-        let parent_dir = self.path.parent().ok_or_else(|| {
-            ArklibError::Storage(
-                self.label.clone(),
-                "Failed to get parent directory".to_owned(),
-            )
-        })?;
-        fs::create_dir_all(parent_dir)?;
-        let file = File::create(&self.path)?;
-        let mut writer = BufWriter::new(file);
-
-        writer.write_all(
-            format!("{}{}\n", STORAGE_VERSION_PREFIX, STORAGE_VERSION)
-                .as_bytes(),
-        )?;
-
-        let data = serde_json::to_string(value_by_id)?;
-        writer.write_all(data.as_bytes())?;
-
-        let new_timestamp = fs::metadata(&self.path)?.modified()?;
-        if new_timestamp == self.timestamp {
-            return Err("Timestamp didn't update".into());
-        }
-        self.timestamp = new_timestamp;
-
-        log::info!(
-            "{} {} entries have been written",
-            self.label,
-            value_by_id.len()
-        );
-        Ok(())
-    }
-
-    /// Remove file at stored path
-    pub fn erase(&self) -> Result<()> {
-        fs::remove_file(&self.path).map_err(|err| {
-            ArklibError::Storage(self.label.clone(), err.to_string())
-        })
     }
 
     /// Verify the version stored in the file header
@@ -164,12 +73,118 @@ impl FileStorage {
     }
 }
 
+impl<K, V> BaseStorage<K, V> for FileStorage<K, V>
+where
+    K: FromStr
+        + Hash
+        + Eq
+        + Ord
+        + Debug
+        + Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned,
+    V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
+{
+    fn get(&self, id: &K) -> Option<V> {
+        self.value_by_id.get(id).cloned()
+    }
+
+    fn set(&mut self, id: K, value: V) -> Result<()> {
+        self.value_by_id.insert(id, value);
+        self.timestamp = std::time::SystemTime::now();
+        Ok(())
+    }
+
+    fn remove(&mut self, id: &K) -> Result<()> {
+        self.value_by_id.remove(id);
+        self.timestamp = std::time::SystemTime::now();
+        Ok(())
+    }
+
+    fn is_file_updated(&self) -> Result<bool> {
+        let file_timestamp = fs::metadata(&self.path)?.modified()?;
+        Ok(self.timestamp < file_timestamp)
+    }
+
+    fn read_file(&mut self) -> Result<BTreeMap<K, V>> {
+        let file = fs::File::open(&self.path)?;
+        let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+
+        let new_timestamp = fs::metadata(&self.path)?.modified()?;
+        match lines.next() {
+            Some(header) => {
+                let header = header?;
+                self.verify_version(&header)?;
+                let mut data = String::new();
+                for line in lines {
+                    let line = line?;
+                    if line.is_empty() {
+                        continue;
+                    }
+                    data.push_str(&line);
+                }
+                let value_by_id: BTreeMap<K, V> = serde_json::from_str(&data)?;
+                self.value_by_id = value_by_id.clone();
+
+                self.timestamp = new_timestamp;
+                Ok(value_by_id)
+            }
+            None => Err(ArklibError::Storage(
+                self.label.clone(),
+                "Storage file is missing header".to_owned(),
+            )),
+        }
+    }
+
+    fn write_file(&mut self) -> Result<()> {
+        let parent_dir = self.path.parent().ok_or_else(|| {
+            ArklibError::Storage(
+                self.label.clone(),
+                "Failed to get parent directory".to_owned(),
+            )
+        })?;
+        fs::create_dir_all(parent_dir)?;
+        let file = File::create(&self.path)?;
+        let mut writer = BufWriter::new(file);
+
+        writer.write_all(
+            format!("{}{}\n", STORAGE_VERSION_PREFIX, STORAGE_VERSION)
+                .as_bytes(),
+        )?;
+
+        let value_map = self.value_by_id.clone();
+        let data = serde_json::to_string(&value_map)?;
+        writer.write_all(data.as_bytes())?;
+
+        let new_timestamp = fs::metadata(&self.path)?.modified()?;
+        if new_timestamp == self.timestamp {
+            return Err("Timestamp didn't update".into());
+        }
+        self.timestamp = new_timestamp;
+
+        log::info!(
+            "{} {} entries have been written",
+            self.label,
+            value_map.len()
+        );
+        Ok(())
+    }
+
+    /// Remove file at stored path
+    fn erase(&mut self) -> Result<()> {
+        fs::remove_file(&self.path).map_err(|err| {
+            ArklibError::Storage(self.label.clone(), err.to_string())
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
     use tempdir::TempDir;
 
-    use crate::file_storage::FileStorage;
+    use crate::{base_storage::BaseStorage, file_storage::FileStorage};
 
     #[test]
     fn test_file_storage_write_read() {
@@ -182,10 +197,14 @@ mod tests {
 
         let mut data_to_write = BTreeMap::new();
         data_to_write.insert("key1".to_string(), "value1".to_string());
-        data_to_write.insert("key2".to_string(), "value2".to_string());
+        data_to_write.insert("key2".to_string(), "value2".to_string());    
+
+        // file_storage.set("key1".to_string(), "value1".to_string());
+        // file_storage.set("key2".to_string(), "value2".to_string());
+        file_storage.value_by_id = data_to_write.clone();
 
         file_storage
-            .write_file(&data_to_write)
+            .write_file()
             .expect("Failed to write data to disk");
 
         let data_read: BTreeMap<_, _> = file_storage
@@ -207,9 +226,11 @@ mod tests {
         let mut data_to_write = BTreeMap::new();
         data_to_write.insert("key1".to_string(), "value1".to_string());
         data_to_write.insert("key2".to_string(), "value2".to_string());
+        
+        file_storage.value_by_id = data_to_write.clone();
 
         file_storage
-            .write_file(&data_to_write)
+            .write_file()
             .expect("Failed to write data to disk");
 
         assert_eq!(storage_path.exists(), true);
