@@ -71,10 +71,9 @@ async fn main() -> anyhow::Result<()> {
 
     match &args.command {
         Command::List {
-            entry,
-            entry_id,
-            entry_path,
-            entry_link,
+            entry_id: _,
+            entry_path: _,
+            entry_link: _,
 
             root_dir,
             modified,
@@ -84,16 +83,7 @@ async fn main() -> anyhow::Result<()> {
             filter,
         } => {
             let root = provide_root(root_dir)?;
-
-            let entry_output = match (entry, entry_id, entry_path, entry_link) {
-                (Some(e), false, false, false) => Ok(*e),
-                (None, true, false, false) => Ok(EntryOutput::Id),
-                (None, false, true, false) => Ok(EntryOutput::Path),
-                (None, true, true, false) => Ok(EntryOutput::Both),
-                (None, false, false, false) => Ok(EntryOutput::Id),
-                (None, false, false, true) => Ok(EntryOutput::Link),
-                _ => Err(AppError::InvalidEntryOption),
-            }?;
+            let entry_output = &args.command.entry()?;
 
             let mut storage_entries: Vec<StorageEntry> = provide_index(&root)
                 .map_err(|_| {
@@ -159,7 +149,7 @@ async fn main() -> anyhow::Result<()> {
                             (Some(path.to_owned().into_path_buf()), None, None)
                         }
                         EntryOutput::Id => (None, Some(resource.id), None),
-                        EntryOutput::Link => match File::open(&path) {
+                        EntryOutput::Link => match File::open(path) {
                             Ok(mut file) => {
                                 let mut contents = String::new();
                                 match file.read_to_string(&mut contents) {
