@@ -12,22 +12,10 @@ use crate::{
     models::format::Format,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum StorageType {
     File,
     Folder,
-}
-
-impl std::str::FromStr for StorageType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "file" => Ok(StorageType::File),
-            "folder" => Ok(StorageType::Folder),
-            _ => Err(format!("Invalid storage type: {}", s)),
-        }
-    }
 }
 
 pub struct Storage {
