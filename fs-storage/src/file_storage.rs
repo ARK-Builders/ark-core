@@ -15,11 +15,7 @@ use data_error::{ArklibError, Result};
 const STORAGE_VERSION: i32 = 2;
 const STORAGE_VERSION_PREFIX: &str = "version ";
 
-pub struct FileStorage<K, V>
-where
-    K: serde::Serialize,
-    V: serde::Serialize,
-{
+pub struct FileStorage<K, V> {
     label: String,
     path: PathBuf,
     timestamp: SystemTime,
@@ -101,12 +97,22 @@ where
         Ok(())
     }
 
+    fn erase(&mut self) -> Result<()> {
+        fs::remove_file(&self.path).map_err(|err| {
+            ArklibError::Storage(self.label.clone(), err.to_string())
+        })
+    }
+
+    fn as_ref(&self) -> &BTreeMap<K, V> {
+        &self.value_by_id
+    }
+
     fn is_file_updated(&self) -> Result<bool> {
         let file_timestamp = fs::metadata(&self.path)?.modified()?;
         Ok(self.timestamp < file_timestamp)
     }
 
-    fn read_file(&mut self) -> Result<BTreeMap<K, V>> {
+    fn read_fs(&mut self) -> Result<BTreeMap<K, V>> {
         let file = fs::File::open(&self.path)?;
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
@@ -137,7 +143,7 @@ where
         }
     }
 
-    fn write_file(&mut self) -> Result<()> {
+    fn write_fs(&mut self) -> Result<()> {
         let parent_dir = self.path.parent().ok_or_else(|| {
             ArklibError::Storage(
                 self.label.clone(),
@@ -170,13 +176,6 @@ where
         );
         Ok(())
     }
-
-    /// Remove file at stored path
-    fn erase(&mut self) -> Result<()> {
-        fs::remove_file(&self.path).map_err(|err| {
-            ArklibError::Storage(self.label.clone(), err.to_string())
-        })
-    }
 }
 
 #[cfg(test)]
@@ -202,11 +201,11 @@ mod tests {
         file_storage.value_by_id = data_to_write.clone();
 
         file_storage
-            .write_file()
+            .write_fs()
             .expect("Failed to write data to disk");
 
         let data_read: BTreeMap<_, _> = file_storage
-            .read_file()
+            .read_fs()
             .expect("Failed to read data from disk");
 
         assert_eq!(data_read, data_to_write);
@@ -228,7 +227,7 @@ mod tests {
         file_storage.value_by_id = data_to_write.clone();
 
         file_storage
-            .write_file()
+            .write_fs()
             .expect("Failed to write data to disk");
 
         assert_eq!(storage_path.exists(), true);

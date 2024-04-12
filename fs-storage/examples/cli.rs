@@ -46,7 +46,7 @@ fn read_command(args: &[String], path: &str) -> Result<()> {
 
     let mut fs = FileStorage::new("cli".to_string(), Path::new(path));
     let map: BTreeMap<String, String> =
-        fs.read_file().context("Failed to read file")?;
+        fs.read_fs().context("Failed to read file")?;
 
     if keys.is_empty() {
         for (key, value) in map {
@@ -110,7 +110,7 @@ fn write_command(args: &[String], path: &str) -> Result<()> {
 
     let mut fs = FileStorage::new("cli".to_string(), Path::new(path));
     fs.value_by_id = kv_pairs.clone();
-    fs.write_file().context("Failed to write file")?;
+    fs.write_fs().context("Failed to write file")?;
 
     Ok(())
 }

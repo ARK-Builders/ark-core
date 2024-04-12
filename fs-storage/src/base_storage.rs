@@ -13,7 +13,14 @@ where
     fn get(&self, id: &K) -> Option<V>;
     fn set(&mut self, id: K, value: V) -> Result<()>;
     fn remove(&mut self, id: &K) -> Result<()>;
+
+    /// Remove file at stored path
     fn erase(&mut self) -> Result<()>;
+
+    /// Get immutable BTreeMap
+    ///
+    /// This can be used to get most immutable BtreeMap related functions for free.
+    fn as_ref(&self) -> &BTreeMap<K, V>;
 
     /// Check if underlying file has been updated
     ///
@@ -25,10 +32,10 @@ where
     /// Data is read as key value pairs separated by a symbol and stored
     /// in a [BTreeMap] with a generic key K and V value. A handler
     /// is called on the data after reading it.
-    fn read_file(&mut self) -> Result<BTreeMap<K, V>>;
+    fn read_fs(&mut self) -> Result<BTreeMap<K, V>>;
 
     /// Write data to file
     ///
     /// Data is a key-value mapping between [ResourceId] and a generic Value
-    fn write_file(&mut self) -> Result<()>;
+    fn write_fs(&mut self) -> Result<()>;
 }
