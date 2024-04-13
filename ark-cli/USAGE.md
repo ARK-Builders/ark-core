@@ -86,8 +86,8 @@ But it's a bit boring and doesn't really tell anything, right? Various flags sho
 
 - `--entry=id|path|ip|link` to show the path,the id or both of a resource
 - `--modified` to show or not the last modified timestamp of a resource
-- `--tags=true` to show or not the tags for every resource
-- `--scores=true` to show or not the scores for every resource
+- `--tags` to show or not the tags for every resource
+- `--scores` to show or not the scores for every resource
 - `--sort=asc|desc` to sort resources by asc or dsc order of scores
 - `--filter=query` to filter resources by their tags
 
