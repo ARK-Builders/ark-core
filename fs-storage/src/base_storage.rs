@@ -10,22 +10,22 @@ where
     K: FromStr + Hash + Eq + Ord + Debug + Clone,
     V: Debug + Clone,
 {
-    fn get(&self, id: &K) -> Option<V>;
-    fn set(&mut self, id: K, value: V) -> Result<()>;
+    fn get(&self, id: &K) -> Option<&V>;
+    fn set(&mut self, id: K, value: V);
     fn remove(&mut self, id: &K) -> Result<()>;
 
     /// Remove file at stored path
-    fn erase(&mut self) -> Result<()>;
+    fn erase(&self) -> Result<()>;
 
     /// Get immutable BTreeMap
     ///
     /// This can be used to get most immutable BtreeMap related functions for free.
     fn as_ref(&self) -> &BTreeMap<K, V>;
 
-    /// Check if underlying file has been updated
+    /// Check if storage is updated
     ///
     /// This check can be used before reading the file.
-    fn is_file_updated(&self) -> Result<bool>;
+    fn is_storage_updated(&self) -> Result<bool>;
 
     /// Read data from disk
     ///

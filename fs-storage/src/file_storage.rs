@@ -19,7 +19,7 @@ pub struct FileStorage<K, V> {
     label: String,
     path: PathBuf,
     timestamp: SystemTime,
-    pub value_by_id: BTreeMap<K, V>,
+    data: BTreeMap<K, V>,
 }
 
 impl<K, V> FileStorage<K, V>
@@ -33,7 +33,7 @@ where
             label,
             path: PathBuf::from(path),
             timestamp: SystemTime::now(),
-            value_by_id: BTreeMap::new(),
+            data: BTreeMap::new(),
         }
     }
 
@@ -81,33 +81,34 @@ where
         + serde::de::DeserializeOwned,
     V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
 {
-    fn get(&self, id: &K) -> Option<V> {
-        self.value_by_id.get(id).cloned()
+    fn get(&self, id: &K) -> Option<&V> {
+        self.data.get(id)
     }
 
-    fn set(&mut self, id: K, value: V) -> Result<()> {
-        self.value_by_id.insert(id, value);
+    fn set(&mut self, id: K, value: V) {
+        self.data.insert(id, value);
         self.timestamp = std::time::SystemTime::now();
-        Ok(())
     }
 
     fn remove(&mut self, id: &K) -> Result<()> {
-        self.value_by_id.remove(id);
+        self.data.remove(id).ok_or_else(|| {
+            ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
+        })?;
         self.timestamp = std::time::SystemTime::now();
         Ok(())
     }
 
-    fn erase(&mut self) -> Result<()> {
+    fn erase(&self) -> Result<()> {
         fs::remove_file(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
         })
     }
 
     fn as_ref(&self) -> &BTreeMap<K, V> {
-        &self.value_by_id
+        &self.data
     }
 
-    fn is_file_updated(&self) -> Result<bool> {
+    fn is_storage_updated(&self) -> Result<bool> {
         let file_timestamp = fs::metadata(&self.path)?.modified()?;
         Ok(self.timestamp < file_timestamp)
     }
@@ -130,11 +131,9 @@ where
                     }
                     data.push_str(&line);
                 }
-                let value_by_id: BTreeMap<K, V> = serde_json::from_str(&data)?;
-                self.value_by_id = value_by_id.clone();
-
+                let data: BTreeMap<K, V> = serde_json::from_str(&data)?;
                 self.timestamp = new_timestamp;
-                Ok(value_by_id)
+                Ok(data)
             }
             None => Err(ArklibError::Storage(
                 self.label.clone(),
@@ -159,9 +158,9 @@ where
                 .as_bytes(),
         )?;
 
-        let value_map = self.value_by_id.clone();
-        let data = serde_json::to_string(&value_map)?;
-        writer.write_all(data.as_bytes())?;
+        let value_map = self.data.clone();
+        let value_data = serde_json::to_string(&value_map)?;
+        writer.write_all(value_data.as_bytes())?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
         if new_timestamp == self.timestamp {
@@ -194,11 +193,8 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
 
-        let mut data_to_write = BTreeMap::new();
-        data_to_write.insert("key1".to_string(), "value1".to_string());
-        data_to_write.insert("key2".to_string(), "value2".to_string());
-
-        file_storage.value_by_id = data_to_write.clone();
+        file_storage.set("key1".to_string(), "value1".to_string());
+        file_storage.set("key1".to_string(), "value2".to_string());
 
         file_storage
             .write_fs()
@@ -208,7 +204,8 @@ mod tests {
             .read_fs()
             .expect("Failed to read data from disk");
 
-        assert_eq!(data_read, data_to_write);
+        assert_eq!(data_read.len(), 1);
+        assert_eq!(data_read.get("key1").map(|v| v.as_str()), Some("value2"))
     }
 
     #[test]
@@ -220,11 +217,8 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
 
-        let mut data_to_write = BTreeMap::new();
-        data_to_write.insert("key1".to_string(), "value1".to_string());
-        data_to_write.insert("key2".to_string(), "value2".to_string());
-
-        file_storage.value_by_id = data_to_write.clone();
+        file_storage.set("key1".to_string(), "value1".to_string());
+        file_storage.set("key1".to_string(), "value2".to_string());
 
         file_storage
             .write_fs()

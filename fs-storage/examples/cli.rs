@@ -77,7 +77,7 @@ fn write_command(args: &[String], path: &str) -> Result<()> {
         .extension()
         .map_or(false, |ext| ext == "json");
 
-    let mut kv_pairs = BTreeMap::new();
+    let mut fs = FileStorage::new("cli".to_string(), Path::new(path));
     if content_json {
         let content =
             fs::read_to_string(content).context("Failed to read JSON file")?;
@@ -86,7 +86,7 @@ fn write_command(args: &[String], path: &str) -> Result<()> {
         if let Value::Object(object) = json {
             for (key, value) in object {
                 if let Value::String(value_str) = value {
-                    kv_pairs.insert(key, value_str);
+                    fs.set(key, value_str);
                 } else {
                     println!(
                         "Warning: Skipping non-string value for key '{}'",
@@ -103,13 +103,11 @@ fn write_command(args: &[String], path: &str) -> Result<()> {
         for pair in pairs {
             let kv: Vec<&str> = pair.split(':').collect();
             if kv.len() == 2 {
-                kv_pairs.insert(kv[0].to_string(), kv[1].to_string());
+                fs.set(kv[0].to_string(), kv[1].to_string());
             }
         }
     }
 
-    let mut fs = FileStorage::new("cli".to_string(), Path::new(path));
-    fs.value_by_id = kv_pairs.clone();
     fs.write_fs().context("Failed to write file")?;
 
     Ok(())
