@@ -10,7 +10,6 @@ where
     K: FromStr + Hash + Eq + Ord + Debug + Clone,
     V: Debug + Clone,
 {
-    fn get(&self, id: &K) -> Option<&V>;
     fn set(&mut self, id: K, value: V);
     fn remove(&mut self, id: &K) -> Result<()>;
 

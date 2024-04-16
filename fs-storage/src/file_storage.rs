@@ -98,10 +98,6 @@ where
         + serde::de::DeserializeOwned,
     V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
 {
-    fn get(&self, id: &K) -> Option<&V> {
-        self.data.get(id)
-    }
-
     fn set(&mut self, id: K, value: V) {
         self.data.insert(id, value);
         self.timestamp = std::time::SystemTime::now();

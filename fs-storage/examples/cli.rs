@@ -50,12 +50,12 @@ fn read_command(args: &[String], path: &str) -> Result<()> {
         .read_fs()
         .expect("No Data is present on this path");
     if keys.is_empty() {
-        for (key, value) in map {
+        for (key, value) in &map {
             println!("{}: {}", key, value);
         }
     }
     for key in &keys {
-        if let Some(value) = fs.get(key) {
+        if let Some(value) = &map.get(key) {
             println!("{}: {}", key, value);
         } else {
             eprintln!("Key '{}' not found", key);
