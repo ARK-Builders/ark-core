@@ -1,8 +1,5 @@
-use std::fmt::Debug;
 use std::fs::{self, File};
-use std::hash::Hash;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::str::FromStr;
 use std::time::SystemTime;
 use std::{
     collections::BTreeMap,
@@ -24,15 +21,8 @@ pub struct FileStorage<K, V> {
 
 impl<K, V> FileStorage<K, V>
 where
-    K: FromStr
-        + Hash
-        + Eq
-        + Ord
-        + Debug
-        + Clone
-        + serde::Serialize
-        + serde::de::DeserializeOwned,
-    V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
+    K: Ord + Clone + serde::Serialize + serde::de::DeserializeOwned,
+    V: Clone + serde::Serialize + serde::de::DeserializeOwned,
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
@@ -88,15 +78,8 @@ where
 
 impl<K, V> BaseStorage<K, V> for FileStorage<K, V>
 where
-    K: FromStr
-        + Hash
-        + Eq
-        + Ord
-        + Debug
-        + Clone
-        + serde::Serialize
-        + serde::de::DeserializeOwned,
-    V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
+    K: Ord + Clone + serde::Serialize + serde::de::DeserializeOwned,
+    V: Clone + serde::Serialize + serde::de::DeserializeOwned,
 {
     fn set(&mut self, id: K, value: V) {
         self.data.insert(id, value);
@@ -190,18 +173,7 @@ where
     }
 }
 
-impl<K, V> AsRef<BTreeMap<K, V>> for FileStorage<K, V>
-where
-    K: FromStr
-        + Hash
-        + Eq
-        + Ord
-        + Debug
-        + Clone
-        + serde::Serialize
-        + serde::de::DeserializeOwned,
-    V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
-{
+impl<K, V> AsRef<BTreeMap<K, V>> for FileStorage<K, V> {
     fn as_ref(&self) -> &BTreeMap<K, V> {
         &self.data
     }

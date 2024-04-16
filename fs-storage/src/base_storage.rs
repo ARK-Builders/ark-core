@@ -1,15 +1,7 @@
-use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::str::FromStr;
-
 use data_error::Result;
+use std::collections::BTreeMap;
 
-pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>>
-where
-    K: FromStr + Hash + Eq + Ord + Debug + Clone,
-    V: Debug + Clone,
-{
+pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     fn set(&mut self, id: K, value: V);
     fn remove(&mut self, id: &K) -> Result<()>;
 
