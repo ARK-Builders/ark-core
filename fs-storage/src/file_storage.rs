@@ -24,17 +24,34 @@ pub struct FileStorage<K, V> {
 
 impl<K, V> FileStorage<K, V>
 where
-    K: serde::Serialize,
-    V: serde::Serialize,
+    K: FromStr
+        + Hash
+        + Eq
+        + Ord
+        + Debug
+        + Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned,
+    V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
-        Self {
+        let mut file_storage = Self {
             label,
             path: PathBuf::from(path),
             timestamp: SystemTime::now(),
             data: BTreeMap::new(),
-        }
+        };
+
+        // Load the data from the file
+        file_storage.data = match file_storage.read_fs() {
+            Ok(data) => data,
+            Err(err) => {
+                log::error!("Error reading storage file: {}", err);
+                BTreeMap::new()
+            }
+        };
+        file_storage
     }
 
     /// Verify the version stored in the file header
@@ -88,6 +105,8 @@ where
     fn set(&mut self, id: K, value: V) {
         self.data.insert(id, value);
         self.timestamp = std::time::SystemTime::now();
+        self.write_fs()
+            .expect("Failed to write data to disk");
     }
 
     fn remove(&mut self, id: &K) -> Result<()> {
@@ -95,6 +114,8 @@ where
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
         })?;
         self.timestamp = std::time::SystemTime::now();
+        self.write_fs()
+            .expect("Failed to remove data from disk");
         Ok(())
     }
 
@@ -102,10 +123,6 @@ where
         fs::remove_file(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
         })
-    }
-
-    fn as_ref(&self) -> &BTreeMap<K, V> {
-        &self.data
     }
 
     fn is_storage_updated(&self) -> Result<bool> {
@@ -177,6 +194,23 @@ where
     }
 }
 
+impl<K, V> AsRef<BTreeMap<K, V>> for FileStorage<K, V>
+where
+    K: FromStr
+        + Hash
+        + Eq
+        + Ord
+        + Debug
+        + Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned,
+    V: Debug + Clone + serde::Serialize + serde::de::DeserializeOwned,
+{
+    fn as_ref(&self) -> &BTreeMap<K, V> {
+        &self.data
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -195,10 +229,6 @@ mod tests {
 
         file_storage.set("key1".to_string(), "value1".to_string());
         file_storage.set("key1".to_string(), "value2".to_string());
-
-        file_storage
-            .write_fs()
-            .expect("Failed to write data to disk");
 
         let data_read: BTreeMap<_, _> = file_storage
             .read_fs()
@@ -219,10 +249,6 @@ mod tests {
 
         file_storage.set("key1".to_string(), "value1".to_string());
         file_storage.set("key1".to_string(), "value2".to_string());
-
-        file_storage
-            .write_fs()
-            .expect("Failed to write data to disk");
 
         assert_eq!(storage_path.exists(), true);
 

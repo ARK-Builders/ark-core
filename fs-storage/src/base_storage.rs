@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use data_error::Result;
 
-pub trait BaseStorage<K, V>
+pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>>
 where
     K: FromStr + Hash + Eq + Ord + Debug + Clone,
     V: Debug + Clone,
@@ -16,11 +16,6 @@ where
 
     /// Remove file at stored path
     fn erase(&self) -> Result<()>;
-
-    /// Get immutable BTreeMap
-    ///
-    /// This can be used to get most immutable BtreeMap related functions for free.
-    fn as_ref(&self) -> &BTreeMap<K, V>;
 
     /// Check if storage is updated
     ///
