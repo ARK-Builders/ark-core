@@ -196,14 +196,15 @@ mod tests {
             FileStorage::new("TestStorage".to_string(), &storage_path);
 
         file_storage.set("key1".to_string(), "value1".to_string());
-        file_storage.set("key1".to_string(), "value2".to_string());
+        file_storage.set("key2".to_string(), "value2".to_string());
 
+        assert!(file_storage.remove(&"key1".to_string()).is_ok());
         let data_read: BTreeMap<_, _> = file_storage
             .read_fs()
             .expect("Failed to read data from disk");
 
         assert_eq!(data_read.len(), 1);
-        assert_eq!(data_read.get("key1").map(|v| v.as_str()), Some("value2"))
+        assert_eq!(data_read.get("key2").map(|v| v.as_str()), Some("value2"))
     }
 
     #[test]
@@ -224,5 +225,29 @@ mod tests {
             panic!("Failed to delete file: {:?}", err);
         }
         assert_eq!(storage_path.exists(), false);
+    }
+
+    #[test]
+    fn test_file_storage_is_storage_updated() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let storage_path = temp_dir.path().join("test_storage.txt");
+
+        let mut file_storage =
+            FileStorage::new("TestStorage".to_string(), &storage_path);
+
+        file_storage.set("key1".to_string(), "value1".to_string());
+        assert_eq!(file_storage.is_storage_updated().unwrap(), false);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // External data manipulation
+        let mut file_storage1 =
+            FileStorage::new("TestStorage".to_string(), &storage_path);
+
+        file_storage1.set("key1".to_string(), "value3".to_string());
+        assert_eq!(file_storage1.is_storage_updated().unwrap(), false);
+
+        assert_eq!(file_storage.is_storage_updated().unwrap(), true);
     }
 }
