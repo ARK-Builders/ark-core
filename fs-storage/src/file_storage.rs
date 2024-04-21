@@ -36,10 +36,7 @@ where
         // Load the data from the file
         file_storage.data = match file_storage.read_fs() {
             Ok(data) => data,
-            Err(err) => {
-                log::error!("Error reading storage file: {}", err);
-                BTreeMap::new()
-            }
+            Err(_) => BTreeMap::new(),
         };
         file_storage
     }
@@ -106,7 +103,16 @@ where
 
     fn is_storage_updated(&self) -> Result<bool> {
         let file_timestamp = fs::metadata(&self.path)?.modified()?;
-        Ok(self.timestamp < file_timestamp)
+        let file_time_secs = file_timestamp
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let self_time_secs = self
+            .timestamp
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        Ok(file_time_secs > self_time_secs)
     }
 
     fn read_fs(&mut self) -> Result<BTreeMap<K, V>> {
@@ -231,7 +237,7 @@ mod tests {
     fn test_file_storage_is_storage_updated() {
         let temp_dir =
             TempDir::new("tmp").expect("Failed to create temporary directory");
-        let storage_path = temp_dir.path().join("test_storage.txt");
+        let storage_path = temp_dir.path().join("teststorage.txt");
 
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
@@ -242,11 +248,11 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(1));
 
         // External data manipulation
-        let mut file_storage1 =
+        let mut mirror_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
 
-        file_storage1.set("key1".to_string(), "value3".to_string());
-        assert_eq!(file_storage1.is_storage_updated().unwrap(), false);
+        mirror_storage.set("key1".to_string(), "value3".to_string());
+        assert_eq!(mirror_storage.is_storage_updated().unwrap(), false);
 
         assert_eq!(file_storage.is_storage_updated().unwrap(), true);
     }
