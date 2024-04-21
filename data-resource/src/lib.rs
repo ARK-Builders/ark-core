@@ -1,161 +1,62 @@
-use anyhow::anyhow;
-use crc32fast::Hasher;
-use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display, Formatter};
-use std::fs;
-use std::io::Read;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
-use std::str::FromStr;
+//! # Data Resource
+//!
+//! `data-resource` is a crate for managing resource identifiers. It provides different
+//! implementations of resource identifiers ([`ResourceId`]) based on various hash algorithms.
+//!
+//! ## Features
+//!
+//! - `non-cryptographic-hash`: Enables the use of a non-cryptographic hash function to define `ResourceId`.
+//! - `cryptographic-hash`: Enables the use of cryptographic hash functions to define `ResourceId`.
+//!
+//! By default, `cryptographic-hash` feature is enabled.
 
-use data_error::{ArklibError, Result};
+use core::{fmt::Display, str::FromStr};
+use data_error::Result;
+use serde::Serialize;
+use std::{fmt::Debug, hash::Hash, path::Path};
 
-#[derive(
-    Eq,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Hash,
-    Clone,
-    Copy,
-    Debug,
-    Deserialize,
-    Serialize,
-)]
-pub struct ResourceId {
-    pub data_size: u64,
-    pub crc32: u32,
-}
+// The `ResourceId` type is a wrapper around the hash value of the resource.
+//
+// To export another `ResourceId` type as the default for cryptographic or non-cryptographic hash,
+// implement the `ResourceIdTrait` trait for your type and re-export it here behind the
+// right feature flag.
 
-impl Display for ResourceId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{}", self.data_size, self.crc32)
-    }
-}
+#[cfg(not(feature = "non-cryptographic-hash"))]
+mod blake3;
+#[cfg(not(feature = "non-cryptographic-hash"))]
+pub use blake3::ResourceId as Resource;
+#[cfg(not(feature = "non-cryptographic-hash"))]
+pub type ResourceId = <Resource as ResourceIdTrait>::HashType;
 
-impl FromStr for ResourceId {
-    type Err = ArklibError;
+#[cfg(feature = "non-cryptographic-hash")]
+mod crc32;
+#[cfg(feature = "non-cryptographic-hash")]
+pub use crc32::ResourceId as Resource;
+#[cfg(feature = "non-cryptographic-hash")]
+pub type ResourceId = <Resource as ResourceIdTrait>::HashType;
 
-    fn from_str(s: &str) -> Result<Self> {
-        let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
-        let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
+/// This trait defines a generic type representing a resource identifier.
+///
+/// Resources are identified by a hash value, which is computed from the resource's data.
+/// The hash value is used to uniquely identify the resource.
+///
+/// Implementors of this trait must provide a way to compute the hash value from the resource's data.
+pub trait ResourceIdTrait {
+    /// Associated type representing the hash used by this resource identifier.
+    type HashType: Debug
+        + Display
+        + FromStr
+        + Clone
+        + PartialEq
+        + Eq
+        + Ord
+        + PartialOrd
+        + Hash
+        + Serialize;
 
-        Ok(ResourceId { data_size, crc32 })
-    }
-}
+    /// Computes the resource identifier from the given file path
+    fn from_path<P: AsRef<Path>>(file_path: P) -> Result<Self::HashType>;
 
-impl ResourceId {
-    pub fn compute<P: AsRef<Path>>(
-        data_size: u64,
-        file_path: P,
-    ) -> Result<Self> {
-        log::trace!(
-            "[compute] file {} with size {} mb",
-            file_path.as_ref().display(),
-            data_size / MEGABYTE
-        );
-
-        let source = fs::OpenOptions::new()
-            .read(true)
-            .open(file_path.as_ref())?;
-
-        let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, source);
-        ResourceId::compute_reader(data_size, &mut reader)
-    }
-
-    pub fn compute_bytes(bytes: &[u8]) -> Result<Self> {
-        let data_size = bytes.len().try_into().map_err(|_| {
-            ArklibError::Other(anyhow!("Can't convert usize to u64"))
-        })?; //.unwrap();
-        let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, bytes);
-        ResourceId::compute_reader(data_size, &mut reader)
-    }
-
-    pub fn compute_reader<R: Read>(
-        data_size: u64,
-        reader: &mut BufReader<R>,
-    ) -> Result<Self> {
-        assert!(reader.buffer().is_empty());
-
-        log::trace!(
-            "Calculating hash of raw bytes (given size is {} megabytes)",
-            data_size / MEGABYTE
-        );
-
-        let mut hasher = Hasher::new();
-        let mut bytes_read: u32 = 0;
-        loop {
-            let bytes_read_iteration: usize = reader.fill_buf()?.len();
-            if bytes_read_iteration == 0 {
-                break;
-            }
-            hasher.update(reader.buffer());
-            reader.consume(bytes_read_iteration);
-            bytes_read +=
-                u32::try_from(bytes_read_iteration).map_err(|_| {
-                    ArklibError::Other(anyhow!("Can't convert usize to u32"))
-                })?;
-        }
-
-        let crc32: u32 = hasher.finalize();
-        log::trace!("[compute] {} bytes has been read", bytes_read);
-        log::trace!("[compute] checksum: {:#02x}", crc32);
-        assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
-
-        Ok(ResourceId { data_size, crc32 })
-    }
-}
-
-const KILOBYTE: u64 = 1024;
-const MEGABYTE: u64 = 1024 * KILOBYTE;
-const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
-
-#[cfg(test)]
-mod tests {
-    use fs_atomic_versions::initialize;
-
-    use super::*;
-
-    #[test]
-    fn compute_id_test() {
-        initialize();
-
-        let file_path = Path::new("../test-assets/lena.jpg");
-        let data_size = fs::metadata(file_path)
-            .unwrap_or_else(|_| {
-                panic!(
-                    "Could not open image test file_path.{}",
-                    file_path.display()
-                )
-            })
-            .len();
-
-        let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.crc32, 0x342a3d4a);
-        assert_eq!(id1.data_size, 128760);
-
-        let raw_bytes = fs::read(file_path).unwrap();
-        let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.crc32, 0x342a3d4a);
-        assert_eq!(id2.data_size, 128760);
-    }
-
-    #[test]
-    fn resource_id_order() {
-        let id1 = ResourceId {
-            data_size: 1,
-            crc32: 2,
-        };
-        let id2 = ResourceId {
-            data_size: 2,
-            crc32: 1,
-        };
-
-        assert!(id1 < id2);
-        assert!(id2 > id1);
-        assert!(id1 != id2);
-        assert!(id1 == id1);
-        assert!(id2 == id2);
-    }
+    /// Computes the resource identifier from the given bytes
+    fn from_bytes(data: &[u8]) -> Result<Self::HashType>;
 }

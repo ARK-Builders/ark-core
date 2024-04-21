@@ -22,7 +22,12 @@ thiserror = "1.0.57"
 data-error = { path = "../data-error" }
 data-link = { path = "../data-link" }
 data-pdf = { path = "../data-pdf" }
-data-resource = { path = "../data-resource" }
+
+# For now we are explicitly using the non-cryptographic hash feature
+# Later, we should make this a feature of all relevant crates
+data-resource = { path = "../data-resource", features = [
+    "non-cryptographic-hash",
+] }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
 fs-metadata = { path = "../fs-metadata" }
 fs-properties = { path = "../fs-properties" }

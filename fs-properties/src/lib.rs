@@ -83,10 +83,7 @@ mod tests {
         let root = dir.path();
         log::debug!("temporary root: {}", root.display());
 
-        let id = ResourceId {
-            crc32: 0x342a3d4a,
-            data_size: 1,
-        };
+        let id = 0x342a3d4a;
 
         let mut prop = TestProperties::new();
         prop.insert("abc".to_string(), "def".to_string());
