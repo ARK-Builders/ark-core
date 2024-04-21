@@ -1,4 +1,5 @@
-use data_resource::ResourceId;
+use crate::HashType;
+
 use fs_index::index::ResourceIndex;
 use fs_metadata::METADATA_STORAGE_FOLDER;
 use fs_properties::PROPERTIES_STORAGE_FOLDER;
@@ -246,7 +247,7 @@ pub fn read_storage_value(
 
     let mut storage = Storage::new(file_path, storage_type)?;
 
-    let resource_id = ResourceId::from_str(id)?;
-
+    let resource_id =
+        HashType::from_str(id).map_err(|_| AppError::InvalidEntryOption)?;
     storage.read(resource_id)
 }

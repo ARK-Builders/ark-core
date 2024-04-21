@@ -1,4 +1,5 @@
-use data_resource::ResourceId;
+use crate::HashType;
+
 use fs_atomic_versions::atomic::AtomicFile;
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ pub enum StorageType {
 pub struct Storage {
     path: PathBuf,
     storage_type: StorageType,
-    files: Vec<ResourceId>,
+    files: Vec<HashType>,
 }
 
 impl Storage {
@@ -60,7 +61,7 @@ impl Storage {
                 for (i, line) in data.lines().enumerate() {
                     let mut line = line.split(':');
                     let id = line.next().unwrap();
-                    match id.parse::<ResourceId>().map_err(|_| {
+                    match id.parse::<HashType>().map_err(|_| {
                         AppError::IndexError(format!(
                             "Failed to parse ResourceId from line: {i}",
                         ))
@@ -90,7 +91,7 @@ impl Storage {
                     })?;
 
                     if let Some(file_name) = entry.file_name().to_str() {
-                        let id = file_name.parse::<ResourceId>().map_err(|_| {
+                        let id = file_name.parse::<HashType>().map_err(|_| {
                             AppError::IndexError(format!(
                                 "Failed to parse ResourceId from folder entry: {:?}",
                                 file_name
@@ -107,7 +108,7 @@ impl Storage {
 
     pub fn append(
         &mut self,
-        id: ResourceId,
+        id: HashType,
         content: &str,
         format: Format,
     ) -> Result<(), AppError> {
@@ -168,7 +169,7 @@ impl Storage {
         }
     }
 
-    pub fn read(&mut self, id: ResourceId) -> Result<String, AppError> {
+    pub fn read(&mut self, id: HashType) -> Result<String, AppError> {
         match self.storage_type {
             StorageType::File => {
                 let atomic_file = AtomicFile::new(&self.path).map_err(|e| {
@@ -195,7 +196,7 @@ impl Storage {
                 for (i, line) in data.lines().enumerate() {
                     let mut line = line.split(':');
                     let line_id: &str = line.next().unwrap();
-                    match line_id.parse::<ResourceId>().map_err(|_| {
+                    match line_id.parse::<HashType>().map_err(|_| {
                         AppError::IndexError(format!(
                             "Failed to parse ResourceId from line: {i}",
                         ))
@@ -254,7 +255,7 @@ impl Storage {
 
     pub fn insert(
         &mut self,
-        id: ResourceId,
+        id: HashType,
         content: &str,
         format: Format,
     ) -> Result<(), AppError> {
