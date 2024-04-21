@@ -13,7 +13,12 @@ data-error = { path = "../data-error" }
 data-json = { path = "../data-json" }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
 fs-storage = { path = "../fs-storage" }
-data-resource = { path = "../data-resource" }
+
+# For now we are explicitly using the non-cryptographic hash feature
+# Later, we should make this a feature of all relevant crates
+data-resource = { path = "../data-resource", features = [
+    "non-cryptographic-hash",
+] }
 
 serde_json = "1.0.82"
 serde = { version = "1.0.138", features = ["derive"] }

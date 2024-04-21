@@ -246,7 +246,7 @@ pub fn read_storage_value(
 
     let mut storage = Storage::new(file_path, storage_type)?;
 
-    let resource_id = ResourceId::from_str(id)?;
-
+    let resource_id =
+        ResourceId::from_str(id).map_err(|_| AppError::InvalidEntryOption)?;
     storage.read(resource_id)
 }
