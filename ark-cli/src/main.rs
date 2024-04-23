@@ -74,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
             entry_id: _,
             entry_path: _,
             entry_link: _,
+
             root_dir,
             modified,
             tags,
