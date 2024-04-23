@@ -1,7 +1,9 @@
+use crate::AppError;
+use anyhow::Result;
 use std::path::PathBuf;
 
-use arklib::id::ResourceId;
 use clap::{Parser, Subcommand};
+use data_resource::ResourceId;
 
 use super::{
     entry::EntryOutput, format::Format, sort::Sort, storage::StorageType,
@@ -43,16 +45,31 @@ pub enum Command {
         #[clap(parse(from_os_str))]
         root_dir: Option<PathBuf>,
 
-        #[clap(long)]
-        entry: Option<EntryOutput>,
-
-        #[clap(long, short = 'i', action)]
+        #[clap(
+            long,
+            short = 'i',
+            long = "id",
+            action,
+            help = "Show entries' IDs"
+        )]
         entry_id: bool,
 
-        #[clap(long, short = 'p', action)]
+        #[clap(
+            long,
+            short = 'p',
+            long = "path",
+            action,
+            help = "Show entries' paths"
+        )]
         entry_path: bool,
 
-        #[clap(long, short = 'l', action)]
+        #[clap(
+            long,
+            short = 'l',
+            long = "link",
+            action,
+            help = "Show entries' links"
+        )]
         entry_link: bool,
 
         #[clap(long, short, action)]
@@ -64,7 +81,7 @@ pub enum Command {
         #[clap(long, short, action)]
         scores: bool,
 
-        #[clap(long)]
+        #[clap(long, value_enum)]
         sort: Option<Sort>,
 
         #[clap(long)]
@@ -81,6 +98,40 @@ pub enum Command {
     Storage(StorageCommand),
 }
 
+impl Command {
+    /// Get the entry output format
+    /// Default to Id
+    pub fn entry(&self) -> Result<EntryOutput> {
+        match self {
+            Command::List {
+                entry_id,
+                entry_path,
+                entry_link,
+                ..
+            } => {
+                // Link can only be used alone
+                if *entry_link {
+                    if *entry_id || *entry_path {
+                        return Err(AppError::InvalidEntryOption)?;
+                    } else {
+                        return Ok(EntryOutput::Link);
+                    }
+                }
+
+                if *entry_id && *entry_path {
+                    Ok(EntryOutput::Both)
+                } else if *entry_path {
+                    Ok(EntryOutput::Path)
+                } else {
+                    // Default to id
+                    Ok(EntryOutput::Id)
+                }
+            }
+            _ => Ok(EntryOutput::Id),
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum StorageCommand {
     List {
@@ -92,7 +143,7 @@ pub enum StorageCommand {
         #[clap(short, long)]
         versions: Option<bool>,
 
-        #[clap(short, long)]
+        #[clap(short, long, value_enum)]
         type_: Option<StorageType>,
     },
 }
@@ -109,10 +160,10 @@ pub enum FileCommand {
 
         content: String,
 
-        #[clap(short, long)]
+        #[clap(short, long, value_enum)]
         format: Option<Format>,
 
-        #[clap(short, long)]
+        #[clap(short, long, value_enum)]
         type_: Option<StorageType>,
     },
 
@@ -126,10 +177,10 @@ pub enum FileCommand {
 
         content: String,
 
-        #[clap(short, long)]
+        #[clap(short, long, value_enum)]
         format: Option<Format>,
 
-        #[clap(short, long)]
+        #[clap(short, long, value_enum)]
         type_: Option<StorageType>,
     },
 
@@ -141,7 +192,7 @@ pub enum FileCommand {
 
         id: String,
 
-        #[clap(short, long)]
+        #[clap(short, long, value_enum)]
         type_: Option<StorageType>,
     },
 }
