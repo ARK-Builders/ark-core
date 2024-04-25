@@ -4,15 +4,12 @@
 // CRDTs can be considered later when we need to add structures that require
 // more powerful combine semantics.
 
-pub trait CRDT<V> {
+pub trait Monoid<V> {
     fn neutral() -> V;
 
     fn combine(a: &V, b: &V) -> V;
 
-    fn combine_all<I: IntoIterator<Item = V>>(values: I) -> V
-    where
-        V: Clone,
-    {
+    fn combine_all<I: IntoIterator<Item = V>>(values: I) -> V {
         values
             .into_iter()
             .fold(Self::neutral(), |acc, val| Self::combine(&acc, &val))

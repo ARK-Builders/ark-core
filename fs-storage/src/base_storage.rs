@@ -1,7 +1,9 @@
 use data_error::Result;
 use std::collections::BTreeMap;
 
-pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
+use crate::monoid::Monoid;
+
+pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> + Monoid<V> {
     fn set(&mut self, id: K, value: V);
     fn remove(&mut self, id: &K) -> Result<()>;
 

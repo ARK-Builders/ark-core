@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::base_storage::BaseStorage;
+use crate::monoid::Monoid;
 use data_error::{ArklibError, Result};
 
 const STORAGE_VERSION: i32 = 2;
@@ -22,7 +23,11 @@ pub struct FileStorage<K, V> {
 impl<K, V> FileStorage<K, V>
 where
     K: Ord + Clone + serde::Serialize + serde::de::DeserializeOwned,
-    V: Clone + serde::Serialize + serde::de::DeserializeOwned,
+    V: Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + Default
+        + std::cmp::PartialOrd,
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
@@ -76,7 +81,11 @@ where
 impl<K, V> BaseStorage<K, V> for FileStorage<K, V>
 where
     K: Ord + Clone + serde::Serialize + serde::de::DeserializeOwned,
-    V: Clone + serde::Serialize + serde::de::DeserializeOwned,
+    V: Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + Default
+        + std::cmp::PartialOrd,
 {
     fn set(&mut self, id: K, value: V) {
         self.data.insert(id, value);
@@ -182,6 +191,23 @@ where
 impl<K, V> AsRef<BTreeMap<K, V>> for FileStorage<K, V> {
     fn as_ref(&self) -> &BTreeMap<K, V> {
         &self.data
+    }
+}
+
+impl<K, V> Monoid<V> for FileStorage<K, V>
+where
+    V: Clone + std::cmp::PartialOrd + Default,
+{
+    fn neutral() -> V {
+        V::default()
+    }
+
+    fn combine(a: &V, b: &V) -> V {
+        if a > b {
+            a.clone()
+        } else {
+            b.clone()
+        }
     }
 }
 

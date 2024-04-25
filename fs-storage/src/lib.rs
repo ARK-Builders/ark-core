@@ -1,6 +1,6 @@
-pub mod crdt;
 pub mod base_storage;
 pub mod file_storage;
+pub mod monoid;
 pub const ARK_FOLDER: &str = ".ark";
 
 // Should not be lost if possible
