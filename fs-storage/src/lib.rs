@@ -1,4 +1,5 @@
 pub mod crdt;
+pub mod base_storage;
 pub mod file_storage;
 pub const ARK_FOLDER: &str = ".ark";
 
