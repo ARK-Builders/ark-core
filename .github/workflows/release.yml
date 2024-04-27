@@ -1,0 +1,26 @@
+name: Build Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  # We currently still don't have a release pipeline but we add this step to
+  # make sure to test for macOS ARM compatibility.
+  #
+  # We don't add it to the build pipeline because it's not necessary to test
+  # for macOS ARM compatibility on every push and it costs money to run
+  # on github actions.
+  mac-arm:
+    name: Test on macOS ARM
+    runs-on: macos-13-xlarge
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test --workspace --verbose --release
+
+        # FIXME: Upload Binary step
