@@ -21,7 +21,6 @@ anyhow = "1"
 [dev-dependencies]
 # benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
-pprof = { version = "0.13", features = ["criterion", "flamegraph"] }
 rand = "0.8"
 
 [[bench]]

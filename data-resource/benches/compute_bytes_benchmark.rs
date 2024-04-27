@@ -1,6 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use data_resource::ResourceId;
-use pprof::criterion::{Output, PProfProfiler};
 use rand::prelude::*;
 use std::fs;
 
@@ -66,7 +65,7 @@ fn compute_bytes_on_files_benchmark(c: &mut Criterion) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    config = Criterion::default();
     targets = compute_bytes_on_raw_data, compute_bytes_on_files_benchmark
 );
 criterion_main!(benches);
