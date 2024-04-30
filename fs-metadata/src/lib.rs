@@ -6,9 +6,6 @@ use std::io::Read;
 use std::path::Path;
 
 use data_resource::ResourceId;
-use data_resource::ResourceIdTrait;
-pub(crate) type HashType = <ResourceId as ResourceIdTrait>::HashType;
-
 use fs_storage::ARK_FOLDER;
 
 pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
@@ -18,7 +15,7 @@ pub fn store_metadata<
     P: AsRef<Path>,
 >(
     root: P,
-    id: HashType,
+    id: ResourceId,
     metadata: &S,
 ) -> Result<()> {
     let file = AtomicFile::new(
@@ -47,7 +44,7 @@ pub fn store_metadata<
 #[allow(dead_code)]
 pub fn load_raw_metadata<P: AsRef<Path>>(
     root: P,
-    id: HashType,
+    id: ResourceId,
 ) -> Result<Vec<u8>> {
     let storage = root
         .as_ref()

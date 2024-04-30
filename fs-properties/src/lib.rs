@@ -8,9 +8,6 @@ use std::io::Read;
 use std::path::Path;
 
 use data_resource::ResourceId;
-use data_resource::ResourceIdTrait;
-pub(crate) type HashType = <ResourceId as ResourceIdTrait>::HashType;
-
 use fs_storage::ARK_FOLDER;
 
 pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
@@ -20,7 +17,7 @@ pub fn store_properties<
     P: AsRef<Path>,
 >(
     root: P,
-    id: HashType,
+    id: ResourceId,
     properties: &S,
 ) -> Result<()> {
     let file = AtomicFile::new(
@@ -47,7 +44,7 @@ pub fn store_properties<
 /// The file must exist if this method is called
 pub fn load_raw_properties<P: AsRef<Path>>(
     root: P,
-    id: HashType,
+    id: ResourceId,
 ) -> Result<Vec<u8>> {
     let storage = root
         .as_ref()

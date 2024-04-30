@@ -13,29 +13,28 @@ use walkdir::{DirEntry, WalkDir};
 use log;
 
 use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
-use data_resource::ResourceId;
 use data_resource::ResourceIdTrait;
-pub(crate) type HashType = <ResourceId as ResourceIdTrait>::HashType;
+use data_resource::{Resource, ResourceId};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
     pub modified: SystemTime,
-    pub id: HashType,
+    pub id: ResourceId,
 }
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct ResourceIndex {
-    pub id2path: HashMap<HashType, CanonicalPathBuf>,
+    pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
     pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
 
-    pub collisions: HashMap<HashType, usize>,
+    pub collisions: HashMap<ResourceId, usize>,
     root: PathBuf,
 }
 
 #[derive(PartialEq, Debug)]
 pub struct IndexUpdate {
-    pub deleted: HashSet<HashType>,
-    pub added: HashMap<CanonicalPathBuf, HashType>,
+    pub deleted: HashSet<ResourceId>,
+    pub added: HashMap<CanonicalPathBuf, ResourceId>,
 }
 
 pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
@@ -99,7 +98,7 @@ impl ResourceIndex {
 
             let id = {
                 let str = parts.next().ok_or(ArklibError::Parse)?;
-                HashType::from_str(str).map_err(|_| ArklibError::Parse)?
+                ResourceId::from_str(str).map_err(|_| ArklibError::Parse)?
             };
 
             let path: String =
@@ -286,7 +285,7 @@ impl ResourceIndex {
             })
             .collect();
 
-        let mut deleted: HashSet<HashType> = HashSet::new();
+        let mut deleted: HashSet<ResourceId> = HashSet::new();
 
         // treating both deleted and updated paths as deletions
         prev_paths
@@ -338,7 +337,7 @@ impl ResourceIndex {
             self.insert_entry(path.clone(), entry.clone());
         }
 
-        let added: HashMap<CanonicalPathBuf, HashType> = added
+        let added: HashMap<CanonicalPathBuf, ResourceId> = added
             .into_iter()
             .map(|(path, entry)| (path, entry.id))
             .collect();
@@ -403,7 +402,7 @@ impl ResourceIndex {
     pub fn update_one(
         &mut self,
         path: &dyn AsRef<Path>,
-        old_id: HashType,
+        old_id: ResourceId,
     ) -> Result<IndexUpdate> {
         log::debug!("Updating a single entry in the index");
 
@@ -476,7 +475,7 @@ impl ResourceIndex {
         };
     }
 
-    pub fn forget_id(&mut self, old_id: HashType) -> Result<IndexUpdate> {
+    pub fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
         let old_path = self
             .path2id
             .drain()
@@ -521,7 +520,7 @@ impl ResourceIndex {
     fn forget_path(
         &mut self,
         path: &CanonicalPath,
-        old_id: HashType,
+        old_id: ResourceId,
     ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
 
@@ -627,7 +626,7 @@ fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
         ))?;
     }
 
-    let id = ResourceId::from_path(path)?;
+    let id = Resource::from_path(path)?;
     let modified = metadata.modified()?;
 
     Ok(IndexEntry { id, modified })

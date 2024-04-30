@@ -1,5 +1,5 @@
-use crate::HashType;
 use data_link::Link;
+use data_resource::ResourceId;
 use std::path::PathBuf;
 use url::Url;
 
@@ -23,7 +23,7 @@ pub async fn create_link(
 pub fn load_link(
     root: &PathBuf,
     file_path: &Option<PathBuf>,
-    id: &Option<HashType>,
+    id: &Option<ResourceId>,
 ) -> Result<Link, AppError> {
     let path_from_index = id.map(|id| {
         let index = provide_index(root);

@@ -25,11 +25,15 @@ use std::{fmt::Debug, hash::Hash, path::Path};
 mod blake3;
 #[cfg(not(feature = "non-cryptographic-hash"))]
 pub use blake3::ResourceId;
+#[cfg(not(feature = "non-cryptographic-hash"))]
+pub type ResourceId = <ResourceId as ResourceIdTrait>::HashType;
 
 #[cfg(feature = "non-cryptographic-hash")]
 mod crc32;
 #[cfg(feature = "non-cryptographic-hash")]
-pub use crc32::ResourceId;
+pub use crc32::ResourceId as Resource;
+#[cfg(feature = "non-cryptographic-hash")]
+pub type ResourceId = <Resource as ResourceIdTrait>::HashType;
 
 /// This trait defines a generic type representing a resource identifier.
 ///

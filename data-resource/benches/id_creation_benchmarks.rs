@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use data_resource::{ResourceId, ResourceIdTrait};
+use data_resource::{Resource, ResourceIdTrait};
 use rand::prelude::*;
 use std::path::Path;
 
@@ -34,7 +34,7 @@ fn bench_resource_id_creation(c: &mut Criterion) {
         let id = format!("compute_from_path:{}", file_path);
         group.bench_function(id, move |b| {
             b.iter(|| {
-                ResourceId::from_path(black_box(file_path))
+                Resource::from_path(black_box(file_path))
                     .expect("from_path returned an error")
             });
         });
@@ -49,7 +49,7 @@ fn bench_resource_id_creation(c: &mut Criterion) {
         let id = format!("compute_from_bytes:{}", name);
         group.bench_function(id, move |b| {
             b.iter(|| {
-                ResourceId::from_bytes(black_box(&input_data))
+                Resource::from_bytes(black_box(&input_data))
                     .expect("from_bytes returned an error")
             });
         });

@@ -5,8 +5,6 @@ use std::str::FromStr;
 
 use data_pdf::{render_preview_page, PDFQuality};
 use data_resource::ResourceId;
-use data_resource::ResourceIdTrait;
-pub(crate) type HashType = <ResourceId as ResourceIdTrait>::HashType;
 
 use fs_atomic_versions::app_id;
 use fs_index::provide_index;
@@ -45,7 +43,7 @@ const ROOTS_CFG_FILENAME: &str = "roots";
 
 struct StorageEntry {
     path: Option<PathBuf>,
-    resource: Option<HashType>,
+    resource: Option<ResourceId>,
     content: Option<String>,
     tags: Option<Vec<String>>,
     scores: Option<u32>,
@@ -523,7 +521,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut storage = Storage::new(file_path, storage_type)?;
 
-                let resource_id = HashType::from_str(id)?;
+                let resource_id = ResourceId::from_str(id)?;
 
                 storage.append(resource_id, content, format)?;
             }
@@ -549,7 +547,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut storage = Storage::new(file_path, storage_type)?;
 
-                let resource_id = HashType::from_str(id)?;
+                let resource_id = ResourceId::from_str(id)?;
 
                 storage.insert(resource_id, content, format)?;
             }
@@ -571,7 +569,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut storage = Storage::new(file_path, storage_type)?;
 
-                let resource_id = HashType::from_str(id)?;
+                let resource_id = ResourceId::from_str(id)?;
 
                 let output = storage.read(resource_id)?;
 

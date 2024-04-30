@@ -2,8 +2,8 @@ use crate::AppError;
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::HashType;
 use clap::{Parser, Subcommand};
+use data_resource::ResourceId;
 
 use super::{
     entry::EntryOutput, format::Format, sort::Sort, storage::StorageType,
@@ -215,6 +215,6 @@ pub enum Link {
         #[clap(parse(from_os_str))]
         file_path: Option<PathBuf>,
 
-        id: Option<HashType>,
+        id: Option<ResourceId>,
     },
 }

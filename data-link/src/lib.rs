@@ -1,7 +1,5 @@
 use data_error::Result;
-use data_resource::ResourceId;
-use data_resource::ResourceIdTrait;
-pub(crate) type HashType = <ResourceId as ResourceIdTrait>::HashType;
+use data_resource::{Resource, ResourceId, ResourceIdTrait};
 use fs_atomic_versions::atomic::AtomicFile;
 use fs_metadata::store_metadata;
 use fs_properties::load_raw_properties;
@@ -37,13 +35,13 @@ impl Link {
         }
     }
 
-    pub fn id(&self) -> Result<HashType> {
-        ResourceId::from_bytes(self.url.as_str().as_bytes())
+    pub fn id(&self) -> Result<ResourceId> {
+        Resource::from_bytes(self.url.as_str().as_bytes())
     }
 
     fn load_user_data<P: AsRef<Path>>(
         root: P,
-        id: &HashType,
+        id: &ResourceId,
     ) -> Result<Properties> {
         let path = root
             .as_ref()
@@ -62,7 +60,7 @@ impl Link {
     pub fn load<P: AsRef<Path>>(root: P, filename: P) -> Result<Self> {
         let p = root.as_ref().join(filename);
         let url = Self::load_url(p)?;
-        let id = ResourceId::from_bytes(url.as_str().as_bytes())?;
+        let id = Resource::from_bytes(url.as_str().as_bytes())?;
         // Load user properties first
         let user_prop = Self::load_user_data(&root, &id)?;
         let mut description = user_prop.desc;
@@ -115,7 +113,7 @@ impl Link {
         &self,
         root: P,
         image_data: Vec<u8>,
-        id: &HashType,
+        id: &ResourceId,
     ) -> Result<()> {
         let path = root
             .as_ref()
@@ -321,7 +319,7 @@ async fn test_create_link_file() {
         assert_eq!(link.prop.desc.unwrap(), "test_desc");
         assert_eq!(link.prop.title, "test_title");
 
-        let id = ResourceId::from_bytes(current_bytes.as_bytes()).unwrap();
+        let id = Resource::from_bytes(current_bytes.as_bytes()).unwrap();
         let path = Path::new(&root)
             .join(ARK_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)
