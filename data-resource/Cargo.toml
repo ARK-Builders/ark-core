@@ -36,7 +36,11 @@ anyhow = "1.0"
 # - `non-cryptographic-hash`: Uses a non-cryptographic hash functions to define `ResourceId`
 # - `cryptographic-hash`: Uses a cryptographic hash functions to define `ResourceId`
 [features]
-non-cryptographic-hash = ["crc32fast"]
-cryptographic-hash = ["blake3", "hex"]
+# Hash type specefic features:
+hash_crc32 = ["crc32fast"]
+hash_blake3 = ["blake3", "hex"]
+
+non-cryptographic-hash = ["hash_crc32"]
+cryptographic-hash = ["hash_blake3"]
 
 default = ["cryptographic-hash"]
