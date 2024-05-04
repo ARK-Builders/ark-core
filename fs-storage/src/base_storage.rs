@@ -4,26 +4,26 @@ use std::collections::BTreeMap;
 use crate::monoid::Monoid;
 
 pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> + Monoid<V> {
+    /// Create or update an entry in the internal mapping.
     fn set(&mut self, id: K, value: V);
+
+    /// Remove an entry from the internal mapping.
     fn remove(&mut self, id: &K) -> Result<()>;
 
-    /// Remove file at stored path
-    fn erase(&self) -> Result<()>;
-
-    /// Check if storage is updated
-    ///
-    /// This check can be used before reading the file.
+    /// Check if the storage is up-to-date,
+    /// i.e. that the internal mapping is consistent
+    /// with the data in the filesystem.
     fn is_storage_updated(&self) -> Result<bool>;
 
-    /// Read data from disk
-    ///
-    /// Data is read as key value pairs separated by a symbol and stored
-    /// in a [BTreeMap] with a generic key K and V value. A handler
-    /// is called on the data after reading it.
+    /// Scan and load the key-value mapping
+    /// from pre-configured location in the filesystem.
     fn read_fs(&mut self) -> Result<BTreeMap<K, V>>;
 
-    /// Write data to file
-    ///
-    /// Data is a key-value mapping between [ResourceId] and a generic Value
+    /// Persist the internal key-value mapping
+    /// to pre-configured location in the filesystem.
     fn write_fs(&mut self) -> Result<()>;
+
+    /// Remove all persisted data
+    /// by pre-configured location in the file-system.
+    fn erase(&self) -> Result<()>;
 }

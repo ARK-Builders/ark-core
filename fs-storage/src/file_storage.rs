@@ -104,12 +104,6 @@ where
         Ok(())
     }
 
-    fn erase(&self) -> Result<()> {
-        fs::remove_file(&self.path).map_err(|err| {
-            ArklibError::Storage(self.label.clone(), err.to_string())
-        })
-    }
-
     fn is_storage_updated(&self) -> Result<bool> {
         let file_timestamp = fs::metadata(&self.path)?.modified()?;
         let file_time_secs = file_timestamp
@@ -186,6 +180,12 @@ where
         );
         Ok(())
     }
+  
+      fn erase(&self) -> Result<()> {
+        fs::remove_file(&self.path).map_err(|err| {
+            ArklibError::Storage(self.label.clone(), err.to_string())
+        })
+    }
 }
 
 impl<K, V> AsRef<BTreeMap<K, V>> for FileStorage<K, V> {
@@ -208,7 +208,6 @@ where
         } else {
             b.clone()
         }
-    }
 }
 
 #[cfg(test)]
