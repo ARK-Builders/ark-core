@@ -180,8 +180,8 @@ where
         );
         Ok(())
     }
-  
-      fn erase(&self) -> Result<()> {
+
+    fn erase(&self) -> Result<()> {
         fs::remove_file(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
         })
@@ -208,6 +208,7 @@ where
         } else {
             b.clone()
         }
+    }
 }
 
 #[cfg(test)]
