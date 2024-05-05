@@ -23,6 +23,7 @@ For backward compatibility, we provide a helper function `read_version_2_fs` to 
 */
 const STORAGE_VERSION: i32 = 3;
 
+/// Represents a file storage system that persists data to disk.
 pub struct FileStorage<K, V>
 where
     K: Ord,
@@ -33,6 +34,10 @@ where
     data: FileStorageData<K, V>,
 }
 
+/// A struct that represents the data stored in a [`FileStorage`] instance.
+///
+///
+/// This is the data that is serialized and deserialized to and from disk.
 #[derive(Serialize, Deserialize)]
 pub struct FileStorageData<K, V>
 where
@@ -87,13 +92,15 @@ where
         + serde::de::DeserializeOwned
         + std::str::FromStr,
 {
-    fn set(&mut self, id: K, value: V) {
-        self.data.entries.insert(id, value);
+    /// Set a key-value pair in the storage
+    fn set(&mut self, key: K, value: V) {
+        self.data.entries.insert(key, value);
         self.timestamp = std::time::SystemTime::now();
         self.write_fs()
             .expect("Failed to write data to disk");
     }
 
+    /// Remove a key-value pair from the storage given a key
     fn remove(&mut self, id: &K) -> Result<()> {
         self.data.entries.remove(id).ok_or_else(|| {
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
@@ -104,6 +111,8 @@ where
         Ok(())
     }
 
+    /// Compare the timestamp of the storage file with the timestamp of the storage instance
+    /// to determine if the storage file has been updated.
     fn is_storage_updated(&self) -> Result<bool> {
         let file_timestamp = fs::metadata(&self.path)?.modified()?;
         let file_time_secs = file_timestamp
@@ -118,6 +127,7 @@ where
         Ok(file_time_secs > self_time_secs)
     }
 
+    /// Read the data from the storage file
     fn read_fs(&mut self) -> Result<BTreeMap<K, V>> {
         if !self.path.exists() {
             return Err(ArklibError::Storage(
@@ -165,6 +175,7 @@ where
         Ok(data.entries)
     }
 
+    /// Write the data to the storage file
     fn write_fs(&mut self) -> Result<()> {
         let parent_dir = self.path.parent().ok_or_else(|| {
             ArklibError::Storage(
@@ -192,6 +203,7 @@ where
         Ok(())
     }
 
+    /// Erase the storage file from disk
     fn erase(&self) -> Result<()> {
         fs::remove_file(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
