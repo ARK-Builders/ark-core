@@ -21,8 +21,19 @@ jobs:
         run: cargo test --workspace --verbose --release
 
   windows:
-    name: Test on Windows
+    name: Windows
     runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test --workspace --verbose --release
+
+  mac-intel:
+    name: MacOS Intel
+    runs-on: macos-11
 
     steps:
       - uses: actions/checkout@v4
