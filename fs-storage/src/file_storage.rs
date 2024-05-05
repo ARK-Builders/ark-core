@@ -39,7 +39,7 @@ where
     K: Ord,
 {
     version: i32,
-    data: BTreeMap<K, V>,
+    entries: BTreeMap<K, V>,
 }
 
 impl<K, V> FileStorage<K, V>
@@ -62,12 +62,12 @@ where
             timestamp: SystemTime::now(),
             data: FileStorageData {
                 version: STORAGE_VERSION,
-                data: BTreeMap::new(),
+                entries: BTreeMap::new(),
             },
         };
 
         // Load the data from the file
-        file_storage.data.data = match file_storage.read_fs() {
+        file_storage.data.entries = match file_storage.read_fs() {
             Ok(data) => data,
             Err(_) => BTreeMap::new(),
         };
@@ -88,14 +88,14 @@ where
         + std::str::FromStr,
 {
     fn set(&mut self, id: K, value: V) {
-        self.data.data.insert(id, value);
+        self.data.entries.insert(id, value);
         self.timestamp = std::time::SystemTime::now();
         self.write_fs()
             .expect("Failed to write data to disk");
     }
 
     fn remove(&mut self, id: &K) -> Result<()> {
-        self.data.data.remove(id).ok_or_else(|| {
+        self.data.entries.remove(id).ok_or_else(|| {
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
         })?;
         self.timestamp = std::time::SystemTime::now();
@@ -162,7 +162,7 @@ where
         }
         self.timestamp = fs::metadata(&self.path)?.modified()?;
 
-        Ok(data.data)
+        Ok(data.entries)
     }
 
     fn write_fs(&mut self) -> Result<()> {
@@ -187,7 +187,7 @@ where
         log::info!(
             "{} {} entries have been written",
             self.label,
-            self.data.data.len()
+            self.data.entries.len()
         );
         Ok(())
     }
@@ -204,7 +204,7 @@ where
     K: Ord,
 {
     fn as_ref(&self) -> &BTreeMap<K, V> {
-        &self.data.data
+        &self.data.entries
     }
 }
 
