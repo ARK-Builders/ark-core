@@ -136,24 +136,28 @@ where
             ));
         }
 
-        // Attempt to parse the file using the legacy version 2 storage format of FileStorage.
-        // If parsing fails, attempt to parse the file using the new format.
-        match read_version_2_fs(&self.path) {
-            Ok(data) => {
-                log::info!(
-                    "Version 2 storage format detected for {}",
-                    self.label
-                );
-                self.timestamp = fs::metadata(&self.path)?.modified()?;
-                return Ok(data);
-            }
-            Err(_) => {
-                log::debug!(
-                    "Failed to parse version 2 storage format for {}",
-                    self.label
-                );
-            }
-        };
+        // First check if the file starts with "version: 2"
+        let file_content = std::fs::read_to_string(&self.path)?;
+        if file_content.starts_with("version: 2") {
+            // Attempt to parse the file using the legacy version 2 storage format of FileStorage.
+            match read_version_2_fs(&self.path) {
+                Ok(data) => {
+                    log::info!(
+                        "Version 2 storage format detected for {}",
+                        self.label
+                    );
+                    self.timestamp = fs::metadata(&self.path)?.modified()?;
+                    return Ok(data);
+                }
+                Err(_) => {
+                    return Err(ArklibError::Storage(
+                        self.label.clone(),
+                        "Storage seems to be version 2, but failed to parse"
+                            .to_owned(),
+                    ));
+                }
+            };
+        }
 
         let file = fs::File::open(&self.path)?;
         let data: FileStorageData<K, V> = serde_json::from_reader(file)
