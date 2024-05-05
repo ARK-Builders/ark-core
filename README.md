@@ -86,3 +86,13 @@ To generate a flame graph for `index_build_benchmark`, use the following command
 ```bash
 cargo flamegraph --bench index_build_benchmark -o index_build_benchmark.svg -- --bench
 ```
+
+> [!NOTE]
+> Running `cargo flamegraph` on macOS requires `DTrace`. MacOS System Integrity Protection (`SIP`) is enabled by default, which restricts most uses of `dtrace`.
+>
+> To work around this issue, you have two options:
+>
+> - Boot into recovery mode and disable some SIP protections.
+> - Run as superuser to enable DTrace. This can be achieved by using `cargo flamegraph --root ...`.
+>
+> For further details, please refer to https://github.com/flamegraph-rs/flamegraph?tab=readme-ov-file#dtrace-on-macos
