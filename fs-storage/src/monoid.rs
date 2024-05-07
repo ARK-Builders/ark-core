@@ -4,11 +4,16 @@
 // CRDTs can be considered later when we need to add structures that require
 // more powerful combine semantics.
 
+// Trait defining a Monoid, which represents a mathematical structure with an identity element and an associative binary operation.
 pub trait Monoid<V> {
+    // Returns the neutral element of the monoid.
     fn neutral() -> V;
 
+    // Combines two elements of the monoid into a single element.
     fn combine(a: &V, b: &V) -> V;
 
+    // Combines multiple elements of the monoid into a single element.
+    // Default implementation uses `neutral()` as the initial accumulator and `combine()` for folding.
     fn combine_all<I: IntoIterator<Item = V>>(values: I) -> V {
         values
             .into_iter()

@@ -104,6 +104,12 @@ where
         Ok(())
     }
 
+    fn erase(&self) -> Result<()> {
+        fs::remove_file(&self.path).map_err(|err| {
+            ArklibError::Storage(self.label.clone(), err.to_string())
+        })
+    }
+
     fn is_storage_updated(&self) -> Result<bool> {
         let file_timestamp = fs::metadata(&self.path)?.modified()?;
         let file_time_secs = file_timestamp
@@ -180,12 +186,6 @@ where
         );
         Ok(())
     }
-
-    fn erase(&self) -> Result<()> {
-        fs::remove_file(&self.path).map_err(|err| {
-            ArklibError::Storage(self.label.clone(), err.to_string())
-        })
-    }
 }
 
 impl<K, V> AsRef<BTreeMap<K, V>> for FileStorage<K, V> {
@@ -216,7 +216,9 @@ mod tests {
     use std::collections::BTreeMap;
     use tempdir::TempDir;
 
-    use crate::{base_storage::BaseStorage, file_storage::FileStorage};
+    use crate::{
+        base_storage::BaseStorage, file_storage::FileStorage, monoid::Monoid,
+    };
 
     #[test]
     fn test_file_storage_write_read() {
@@ -281,5 +283,63 @@ mod tests {
         assert_eq!(mirror_storage.is_storage_updated().unwrap(), false);
 
         assert_eq!(file_storage.is_storage_updated().unwrap(), true);
+    }
+
+    #[test]
+    fn test_monoid_storage() {
+        use std::collections::HashSet;
+
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let storage_path_1 = temp_dir.path().join("storage_1.txt");
+        let storage_path_2 = temp_dir.path().join("storage_2.txt");
+
+        // Create two FileStorage instances
+        let mut file_storage_1 =
+            FileStorage::new("Storage1".to_string(), &storage_path_1);
+        let mut file_storage_2 =
+            FileStorage::new("Storage2".to_string(), &storage_path_2);
+
+        // Set data for the first FileStorage
+        let mut tags_1 = HashSet::new();
+        tags_1.insert("tag1".to_string());
+        tags_1.insert("tag2".to_string());
+
+        let mut properties_1 = HashSet::new();
+        properties_1.insert("prop1".to_string());
+
+        let score_1 = 10;
+
+        file_storage_1.set("key1".to_string(), (tags_1, properties_1, score_1));
+
+        // Set data for the second FileStorage
+        let mut tags_2 = HashSet::new();
+        tags_2.insert("tag2".to_string());
+        tags_2.insert("tag3".to_string());
+
+        let mut properties_2 = HashSet::new();
+        properties_2.insert("prop2".to_string());
+
+        let score_2 = 20;
+
+        file_storage_2.set("key1".to_string(), (tags_2, properties_2, score_2));
+
+        // Combine the two FileStorage instances
+        let combined_data =
+            FileStorage::combine(&file_storage_1, &file_storage_2);
+
+        // Check the combined data
+        let expected_tags: HashSet<String> =
+            ["tag1", "tag2", "tag3"].iter().cloned().collect();
+        let expected_properties: HashSet<String> =
+            ["prop1", "prop2"].iter().cloned().collect();
+        let expected_score = 20;
+
+        let (combined_tags, combined_properties, combined_score) =
+            combined_data.as_ref().get("key1").unwrap();
+
+        assert_eq!(combined_tags, &expected_tags);
+        assert_eq!(combined_properties, &expected_properties);
+        assert_eq!(combined_score, &expected_score);
     }
 }
