@@ -13,10 +13,10 @@ data-error = { path = "../data-error" }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
 fs-storage = { path = "../fs-storage" }
 
-# For now we are explicitly using the non-cryptographic hash feature
-# Later, we should make this a feature of all relevant crates
+# For now, we are explicitly using the non-cryptographic CRC-32 hash
+# The developer is responsible for specifying consistent hash function in other crates
 data-resource = { path = "../data-resource", features = [
-    "non-cryptographic-hash",
+    "hash_blake3",
 ] }
 
 log = { version = "0.4.17", features = ["release_max_level_off"] }

@@ -1,6 +1,4 @@
-use crate::ResourceIdTrait;
 use data_error::Result;
-use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{BufRead, BufReader},
@@ -12,24 +10,10 @@ use crc32fast::Hasher;
 /// Represents a resource identifier using the CRC32 algorithm.
 ///
 /// Uses [`crc32fast`] crate to compute the hash value.
-#[derive(
-    Eq,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Hash,
-    Clone,
-    Copy,
-    Debug,
-    Deserialize,
-    Serialize,
-)]
-pub struct ResourceId {}
+pub type ResourceId = u32;
 
-impl ResourceIdTrait for ResourceId {
-    type HashType = u32;
-
-    fn from_path<P: AsRef<Path>>(file_path: P) -> Result<Self::HashType> {
+impl crate::ResourceId for ResourceId {
+    fn from_path<P: AsRef<Path>>(file_path: P) -> Result<Self> {
         log::debug!("Computing CRC32 hash for file: {:?}", file_path.as_ref());
 
         let file = fs::File::open(file_path)?;
@@ -47,7 +31,7 @@ impl ResourceIdTrait for ResourceId {
         Ok(hasher.finalize())
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self::HashType> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
         log::debug!("Computing CRC32 hash for bytes");
 
         let mut hasher = Hasher::new();
@@ -63,12 +47,12 @@ mod tests {
     #[test]
     fn sanity_check() {
         let file_path = Path::new("../test-assets/lena.jpg");
-        let id = ResourceId::from_path(file_path)
+        let id = crate::ResourceId::from_path(file_path)
             .expect("Failed to compute resource identifier");
         assert_eq!(id, 875183434);
 
         let raw_bytes = fs::read(file_path).expect("Failed to read file");
-        let id = ResourceId::from_bytes(&raw_bytes)
+        let id = crate::ResourceId::from_bytes(&raw_bytes)
             .expect("Failed to compute resource identifier");
         assert_eq!(id, 875183434);
     }

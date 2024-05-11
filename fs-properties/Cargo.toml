@@ -14,10 +14,10 @@ data-json = { path = "../data-json" }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
 fs-storage = { path = "../fs-storage" }
 
-# For now we are explicitly using the non-cryptographic hash feature
-# Later, we should make this a feature of all relevant crates
+# For now, we are explicitly using the non-cryptographic CRC-32 hash
+# Later, we should pull the function from `fs-index` directly
 data-resource = { path = "../data-resource", features = [
-    "non-cryptographic-hash",
+    "hash_crc32",
 ] }
 
 serde_json = "1.0.82"

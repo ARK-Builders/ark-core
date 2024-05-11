@@ -15,10 +15,10 @@ fs-storage = { path = "../fs-storage" }
 fs-metadata = { path = "../fs-metadata" }
 fs-properties = { path = "../fs-properties" }
 
-# For now we are explicitly using the non-cryptographic hash feature
-# Later, we should make this a feature of all relevant crates
+# For now, we are explicitly using the non-cryptographic CRC-32 hash
+# The developer is responsible for specifying consistent hash function across the `data` crates 
 data-resource = { path = "../data-resource", features = [
-    "non-cryptographic-hash",
+    "hash_crc32",
 ] }
 data-error = { path = "../data-error" }
 
