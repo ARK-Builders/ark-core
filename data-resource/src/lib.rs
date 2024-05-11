@@ -24,9 +24,9 @@ use std::{fmt::Debug, hash::Hash, path::Path};
 #[cfg(not(feature = "non-cryptographic-hash"))]
 mod blake3;
 #[cfg(not(feature = "non-cryptographic-hash"))]
-pub use blake3::ResourceId;
+pub use blake3::ResourceId as Resource;
 #[cfg(not(feature = "non-cryptographic-hash"))]
-pub type ResourceId = <ResourceId as ResourceIdTrait>::HashType;
+pub type ResourceId = <Resource as ResourceIdTrait>::HashType;
 
 #[cfg(feature = "non-cryptographic-hash")]
 mod crc32;
