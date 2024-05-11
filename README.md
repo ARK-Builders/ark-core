@@ -70,3 +70,29 @@ Our benchmark suite includes tests on local files and directories. These benchma
 You have the flexibility to benchmark specific files or folders by modifying the variables within the benchmark files. By default, the benchmarks operate on the [`test-assets/`](test-assets/) directory and its contents. You can change the directory/files by setting the `DIR_PATH` and `FILE_PATHS` variables to the desired values.
 
 For pre-benchmark assessment of required time to index a huge local folder, you can modify `test_build_resource_index` test case in `src/index.rs`.
+
+### Generating Profiles for Benchmarks
+
+[flamegraph](https://github.com/flamegraph-rs/flamegraph) is a Cargo command that uses perf/DTrace to profile your code and then displays the results in a flame graph. It works on Linux and all platforms that support DTrace (macOS, FreeBSD, NetBSD, and possibly Windows).
+
+To install `flamegraph`, run:
+
+```bash
+cargo install flamegraph
+```
+
+To generate a flame graph for `index_build_benchmark`, use the following command:
+
+```bash
+cargo flamegraph --bench index_build_benchmark -o index_build_benchmark.svg -- --bench
+```
+
+> [!NOTE]
+> Running `cargo flamegraph` on macOS requires `DTrace`. MacOS System Integrity Protection (`SIP`) is enabled by default, which restricts most uses of `dtrace`.
+>
+> To work around this issue, you have two options:
+>
+> - Boot into recovery mode and disable some SIP protections.
+> - Run as superuser to enable DTrace. This can be achieved by using `cargo flamegraph --root ...`.
+>
+> For further details, please refer to https://github.com/flamegraph-rs/flamegraph?tab=readme-ov-file#dtrace-on-macos
