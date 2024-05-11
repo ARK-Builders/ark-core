@@ -1,4 +1,4 @@
-# ArkLib
+# ARK
 
 <div align="center">
   <img src="logo.svg" alt="ARK Logo" width="75%" />
@@ -6,17 +6,24 @@
 [![License](https://img.shields.io/github/license/ARK-Builders/ark-rust.svg)](LICENSE)
 [![Build Status](https://github.com/ARK-Builders/ark-rust/actions/workflows/build.yml/badge.svg)](https://github.com/ARK-Builders/ark-rust/actions/workflows/build.yml)
 
-**The home of core ARK library**
+**The home of the ARK framework**
 
 </div>
 
-Being implemented in Rust, it provides us capability to port all our apps to all common platforms. Right now, Android is supported by using the [arklib-android](https://github.com/arK-Builders/arklib-android) project. And for Linux/macOS/Windows, the library can be used as-is and easily embedded into an app, e.g. built with [Tauri](https://tauri.app/). Development docs will come sometime.
+Being implemented in Rust, it provides us capability to port any apps using ARK to all common platforms. Right now, Android is supported by using the [ark-android](https://github.com/ARK-Builders/ark-android) project. And for Linux/macOS/Windows, the framework can be used as-is and easily embedded into an app, e.g. built with [Tauri](https://tauri.app/).
 
-**The Concept of the library**
+Development docs will come sometime.
 
-The purpose of the library is to manage _resource index_ of folders with various _user data_, as well as to manage user-defined metadata: tags, scores, arbitrary properties like movie title or description. Such a metadata is persisted to filesystem for easier sync and backup. The _resource index_ provides us with [content addressing](https://en.wikipedia.org/wiki/Content-addressable_storage) and allows easier storage and versions tracking. We also believe it'll allow easier cross-device sync implementation.
+**The Concept of the Framework**
 
-## Packages
+The framework is supposed to help in solving the following problems:
+1. Management of user data, stored as simple files on the disk, as well as various kinds of metadata: tags, scores, arbitrary properties like movie title or description. Such a metadata is persisted to filesystem for easier sync, backup and migration by any 3rd-party tool.
+2. Sync of both user data and metadata, across all user devices in P2P fashion. Cache syncing might be implemented later, too.
+3. Version tracking for user data: not only text-files, but also images, videos etc.
+
+The core crate is `fs-index` which provides us with [content addressing](https://en.wikipedia.org/wiki/Content-addressable_storage) and allows easier storage and versions tracking. Another important crate is `fs-storage` which has the purpose of storing and transactional access to different kinds of metadata in the hidden `.ark` folder. Don't miss the `ark-cli` which is a Swiss Army Knife for flexible usage in scripts consuming data from ARK-enabled folders.
+
+## Crates
 
 <div align="center">
 
