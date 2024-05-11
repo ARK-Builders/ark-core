@@ -89,7 +89,7 @@ fn main() {
         }
         | OperatingSystem::Darwin => fs_extra::file::move_file(
             PathBuf::from(&out_dir)
-                .join("bin")
+                .join("lib")
                 .join("libpdfium.dylib"),
             PathBuf::from(&out_dir).join("libpdfium.dylib"),
             &CopyOptions::new(),

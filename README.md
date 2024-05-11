@@ -1,6 +1,14 @@
 # ArkLib
 
-This is the home of core ARK library.
+<div align="center">
+  <img src="logo.svg" alt="ARK Logo" width="75%" />
+
+[![License](https://img.shields.io/github/license/ARK-Builders/ark-rust.svg)](LICENSE)
+[![Build Status](https://github.com/ARK-Builders/ark-rust/actions/workflows/build.yml/badge.svg)](https://github.com/ARK-Builders/ark-rust/actions/workflows/build.yml)
+
+**The home of core ARK library**
+
+</div>
 
 Being implemented in Rust, it provides us capability to port all our apps to all common platforms. Right now, Android is supported by using the [arklib-android](https://github.com/arK-Builders/arklib-android) project. And for Linux/macOS/Windows, the library can be used as-is and easily embedded into an app, e.g. built with [Tauri](https://tauri.app/). Development docs will come sometime.
 
