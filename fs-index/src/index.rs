@@ -13,8 +13,13 @@ use walkdir::{DirEntry, WalkDir};
 use log;
 
 use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
-use data_resource::ResourceIdTrait;
-use data_resource::{Resource, ResourceId};
+use data_resource;
+
+//todo: this is not the way to go:
+#[cfg(feature = "hash_blake3")]
+use data_resource::blake3::ResourceId as ResourceId;
+#[cfg(not(feature = "hash_blake3"))]
+use data_resource::crc32::ResourceId as ResourceId;
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
@@ -626,7 +631,7 @@ fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
         ))?;
     }
 
-    let id = Resource::from_path(path)?;
+    let id = data_resource::ResourceId::from_path(path)?;
     let modified = metadata.modified()?;
 
     Ok(IndexEntry { id, modified })

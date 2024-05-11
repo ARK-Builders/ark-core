@@ -1,7 +1,20 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use data_resource::{Resource, ResourceIdTrait};
+use data_resource::ResourceId;
 use rand::prelude::*;
 use std::path::Path;
+
+#[cfg(feature = "hash_blake3")]
+use data_resource::blake3::ResourceId as Hash;
+#[cfg(not(feature = "hash_blake3"))]
+use data_resource::crc32::ResourceId as Hash;
+//todo: we have a problem with imports when we define more than 2 hash functions
+// https://users.rust-lang.org/t/conditional-module-import/82233
+//
+// somehow this causes a compilation problem because of clashing name `Hash`:
+// #[cfg(feature = "hash_blake3")]
+// use data_resource::blake3::ResourceId as Hash;
+// #[cfg(feature = "hash_crc32")]
+// use data_resource::crc32::ResourceId as Hash;
 
 // Add files to benchmark here
 const FILE_PATHS: [&str; 2] =
@@ -34,7 +47,7 @@ fn bench_resource_id_creation(c: &mut Criterion) {
         let id = format!("compute_from_path:{}", file_path);
         group.bench_function(id, move |b| {
             b.iter(|| {
-                Resource::from_path(black_box(file_path))
+                ResourceId::from_path(black_box(file_path))
                     .expect("from_path returned an error")
             });
         });
@@ -49,7 +62,7 @@ fn bench_resource_id_creation(c: &mut Criterion) {
         let id = format!("compute_from_bytes:{}", name);
         group.bench_function(id, move |b| {
             b.iter(|| {
-                Resource::from_bytes(black_box(&input_data))
+                ResourceId::from_bytes(black_box(&input_data))
                     .expect("from_bytes returned an error")
             });
         });

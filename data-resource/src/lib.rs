@@ -15,25 +15,11 @@ use data_error::Result;
 use serde::Serialize;
 use std::{fmt::Debug, hash::Hash, path::Path};
 
-// The `ResourceId` type is a wrapper around the hash value of the resource.
-//
-// To export another `ResourceId` type as the default for cryptographic or non-cryptographic hash,
-// implement the `ResourceIdTrait` trait for your type and re-export it here behind the
-// right feature flag.
+#[cfg(feature = "hash_blake3")]
+pub mod blake3;
 
-#[cfg(not(feature = "non-cryptographic-hash"))]
-mod blake3;
-#[cfg(not(feature = "non-cryptographic-hash"))]
-pub use blake3::ResourceId as Resource;
-#[cfg(not(feature = "non-cryptographic-hash"))]
-pub type ResourceId = <Resource as ResourceIdTrait>::HashType;
-
-#[cfg(feature = "non-cryptographic-hash")]
-mod crc32;
-#[cfg(feature = "non-cryptographic-hash")]
-pub use crc32::ResourceId as Resource;
-#[cfg(feature = "non-cryptographic-hash")]
-pub type ResourceId = <Resource as ResourceIdTrait>::HashType;
+#[cfg(feature = "hash_crc32")]
+pub mod crc32;
 
 /// This trait defines a generic type representing a resource identifier.
 ///
@@ -41,22 +27,19 @@ pub type ResourceId = <Resource as ResourceIdTrait>::HashType;
 /// The hash value is used to uniquely identify the resource.
 ///
 /// Implementors of this trait must provide a way to compute the hash value from the resource's data.
-pub trait ResourceIdTrait {
-    /// Associated type representing the hash used by this resource identifier.
-    type HashType: Debug
-        + Display
-        + FromStr
-        + Clone
-        + PartialEq
-        + Eq
-        + Ord
-        + PartialOrd
-        + Hash
-        + Serialize;
-
+pub trait ResourceId: Debug
++ Display //todo: I guess this chain of traits can be coded in a nicer way
++ FromStr
++ Clone
++ PartialEq
++ Eq
++ Ord
++ PartialOrd
++ Hash
++ Serialize {
     /// Computes the resource identifier from the given file path
-    fn from_path<P: AsRef<Path>>(file_path: P) -> Result<Self::HashType>;
+    fn from_path<P: AsRef<Path>>(file_path: P) -> Result<Self>;
 
     /// Computes the resource identifier from the given bytes
-    fn from_bytes(data: &[u8]) -> Result<Self::HashType>;
+    fn from_bytes(data: &[u8]) -> Result<Self>;
 }

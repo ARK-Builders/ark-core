@@ -40,7 +40,5 @@ anyhow = "1.0"
 hash_crc32 = ["crc32fast"]
 hash_blake3 = ["blake3", "hex"]
 
-non-cryptographic-hash = ["hash_crc32"]
-cryptographic-hash = ["hash_blake3"]
-
-default = ["cryptographic-hash"]
+default = ["hash_crc32"]
+# default = ["hash_blake3"]
