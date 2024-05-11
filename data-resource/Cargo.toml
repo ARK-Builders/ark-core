@@ -37,9 +37,15 @@ anyhow = "1.0"
 # - `cryptographic-hash`: Uses a cryptographic hash functions to define `ResourceId`
 [features]
 # Hash type specefic features:
+# For each hash type, we define a feature that contains all the dependencies required for that hash type
+# to generate the `ResourceId` and encode it if required.
+#
+# These are just helper features to group the dependencies, the actual feature to use is either
+# `non-cryptographic-hash` or `cryptographic-hash`
 hash_crc32 = ["crc32fast"]
 hash_blake3 = ["blake3", "hex"]
 
+# Features to use
 non-cryptographic-hash = ["hash_crc32"]
 cryptographic-hash = ["hash_blake3"]
 

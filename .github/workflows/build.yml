@@ -24,6 +24,10 @@ jobs:
           cargo clippy
       - name: Build Debug
         run: cargo build --verbose
+      - name: Build `data-resource` with default features
+        run: cargo build -p data-resource
+      - name: Build `data-resource` with "non-cryptographic-hash" feature
+        run: cargo build -p data-resource --no-default-features --features non-cryptographic-hash
       - name: Run tests
         run: cargo test --verbose
       - name: Build Release
