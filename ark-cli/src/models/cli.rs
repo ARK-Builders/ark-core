@@ -2,8 +2,8 @@ use crate::AppError;
 use anyhow::Result;
 use std::path::PathBuf;
 
+use crate::ResourceId;
 use clap::{Parser, Subcommand};
-use data_resource::ResourceId;
 
 use super::{
     entry::EntryOutput, format::Format, sort::Sort, storage::StorageType,

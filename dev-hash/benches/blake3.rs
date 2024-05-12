@@ -1,20 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use data_resource::ResourceId;
+use data_resource::ResourceIdTrait;
 use rand::prelude::*;
 use std::path::Path;
 
-#[cfg(feature = "hash_blake3")]
-use data_resource::blake3::ResourceId as Hash;
-#[cfg(not(feature = "hash_blake3"))]
-use data_resource::crc32::ResourceId as Hash;
-//todo: we have a problem with imports when we define more than 2 hash functions
-// https://users.rust-lang.org/t/conditional-module-import/82233
-//
-// somehow this causes a compilation problem because of clashing name `Hash`:
-// #[cfg(feature = "hash_blake3")]
-// use data_resource::blake3::ResourceId as Hash;
-// #[cfg(feature = "hash_crc32")]
-// use data_resource::crc32::ResourceId as Hash;
+use dev_hash::Blake3ResourceId as ResourceId;
 
 // Add files to benchmark here
 const FILE_PATHS: [&str; 2] =
@@ -33,7 +22,7 @@ fn generate_random_data(size: usize) -> Vec<u8> {
 /// - Measures the time taken to create a resource ID from file paths.
 /// - Measures the time taken to create a resource ID from random data.
 fn bench_resource_id_creation(c: &mut Criterion) {
-    let mut group = c.benchmark_group("resource_id_creation");
+    let mut group = c.benchmark_group("blake3_resource_id_creation");
     group.measurement_time(BENCHMARK_TIME_LIMIT);
 
     // Benchmarks for computing from file paths

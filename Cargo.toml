@@ -12,6 +12,7 @@ members = [
     "fs-properties",
     "fs-index",
     "fs-storage",
+    "dev-hash",
 ]
 
 default-members = [
@@ -27,6 +28,7 @@ default-members = [
     "fs-properties",
     "fs-index",
     "fs-storage",
+    "dev-hash",
 ]
 
 resolver = "2"

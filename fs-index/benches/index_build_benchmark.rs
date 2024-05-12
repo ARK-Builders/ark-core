@@ -1,6 +1,7 @@
 use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
 };
+use dev_hash::Crc32ResourceId as ResourceId;
 use fs_index::index::ResourceIndex;
 
 const DIR_PATH: &str = "../test-assets/"; // Set the path to the directory containing the resources here
@@ -23,7 +24,8 @@ fn index_build_benchmark(c: &mut Criterion) {
         &DIR_PATH,
         |b, path| {
             b.iter(|| {
-                let index = ResourceIndex::build(black_box(path.to_string()));
+                let index: ResourceIndex<ResourceId> =
+                    ResourceIndex::build(black_box(path.to_string()));
                 collisions_size = index.collisions.len();
             });
         },

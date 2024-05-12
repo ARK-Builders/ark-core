@@ -9,31 +9,26 @@ crate-type = ["rlib"]
 bench = false
 
 [dependencies]
-data-error = { path = "../data-error" }
-fs-atomic-versions = { path = "../fs-atomic-versions" }
-fs-storage = { path = "../fs-storage" }
-
-# For now, we are explicitly using the non-cryptographic CRC-32 hash
-# The developer is responsible for specifying consistent hash function in other crates
-data-resource = { path = "../data-resource", features = [
-    "hash_blake3",
-] }
-
 log = { version = "0.4.17", features = ["release_max_level_off"] }
 walkdir = "2.3.2"
 anyhow = "1.0.58"
-lazy_static = "1.4.0"
 canonical-path = "2.0.2"
 pathdiff = "0.2.1"
 itertools = "0.10.5"
 
+
+fs-storage = { path = "../fs-storage" }
+
+data-error = { path = "../data-error" }
+data-resource = { path = "../data-resource" }
+
 [dev-dependencies]
 uuid = { version = "1.6.1", features = ["v4"] }
-tempdir = "0.3.7"
-rstest = '0.18.2'
 # benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
+# Depending on `dev-hash` for testing
+dev-hash = { path = "../dev-hash" }
+fs-atomic-versions = { path = "../fs-atomic-versions" }
 
 [[bench]]
 name = "index_build_benchmark"

@@ -1,4 +1,4 @@
-use data_resource::ResourceId;
+use crate::ResourceId;
 use fs_index::index::ResourceIndex;
 use fs_metadata::METADATA_STORAGE_FOLDER;
 use fs_properties::PROPERTIES_STORAGE_FOLDER;
@@ -70,9 +70,9 @@ pub fn provide_root(root_dir: &Option<PathBuf>) -> Result<PathBuf, AppError> {
 }
 
 // Read-only structure
-pub fn provide_index(root_dir: &PathBuf) -> ResourceIndex {
+pub fn provide_index(root_dir: &PathBuf) -> ResourceIndex<ResourceId> {
     let rwlock =
-        fs_index::provide_index(root_dir).expect("Failed to retrieve index");
+        crate::provide_index(root_dir).expect("Failed to retrieve index");
     let index = &*rwlock.read().unwrap();
     index.clone()
 }
@@ -86,7 +86,7 @@ pub fn monitor_index(
     println!("Building index of folder {}", dir_path.display());
     let start = Instant::now();
 
-    let result = fs_index::provide_index(dir_path);
+    let result = crate::provide_index(dir_path);
     let duration = start.elapsed();
 
     match result {
