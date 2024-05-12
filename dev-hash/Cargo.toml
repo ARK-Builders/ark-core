@@ -1,0 +1,45 @@
+[package]
+name = "dev-hash"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "dev_hash"
+crate-type = ["rlib"]
+bench = false
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+
+# Hash type specefic dependencies
+# CRC32
+crc32fast = "1.3"
+# Blake3
+blake3 = "1.5"
+hex = "0.4"
+# Note: Currently, we include all dependencies for all hash types. 
+#       This is acceptable for now since we only have two hash types. 
+#       However, in the future, we should consider including only 
+#       the dependencies for the hash type being exported and 
+#       making the other dependencies optional.
+
+
+data-resource = { path = "../data-resource" }
+data-error = { path = "../data-error" }
+
+
+[dev-dependencies]
+# Benchmarks
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8"
+
+[[bench]]
+name = "crc32"
+harness = false
+path = "benches/crc32.rs"
+
+[[bench]]
+name = "blake3"
+harness = false
+path = "benches/blake3.rs"

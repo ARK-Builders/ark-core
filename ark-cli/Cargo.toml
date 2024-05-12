@@ -19,17 +19,20 @@ chrono = "0.4.34"
 anyhow = "1.0.80"
 thiserror = "1.0.57"
 
-data-error = { path = "../data-error" }
-data-link = { path = "../data-link" }
-data-pdf = { path = "../data-pdf" }
+# REGISTRAR
+log = { version = "0.4.17", features = ["release_max_level_off"] }
+lazy_static = "1.4.0"
+canonical-path = "2.0.2"
 
-# For now, we are explicitly using the non-cryptographic CRC-32 hash
-# Later, we should pull the function from `fs-index` directly
-data-resource = { path = "../data-resource", features = [
-    "hash_crc32",
-] }
+
+fs-index = { path = "../fs-index" }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
 fs-metadata = { path = "../fs-metadata" }
 fs-properties = { path = "../fs-properties" }
-fs-index = { path = "../fs-index" }
 fs-storage = { path = "../fs-storage" }
+
+data-error = { path = "../data-error" }
+data-link = { path = "../data-link" }
+data-pdf = { path = "../data-pdf" }
+# Depending on `dev-hash` to get `ResourceId` reference implementations
+dev-hash = { path = "../dev-hash" }

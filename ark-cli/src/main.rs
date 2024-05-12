@@ -3,11 +3,16 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use crate::index_registrar::provide_index;
 use data_pdf::{render_preview_page, PDFQuality};
-use data_resource::ResourceId;
+
+// This is where the `ResourceId` type is defined.
+// Change this to use another type for the resource id if needed.
+//
+// We define it globally here so that it can be easily changed.
+pub(crate) use dev_hash::Crc32ResourceId as ResourceId;
 
 use fs_atomic_versions::app_id;
-use fs_index::provide_index;
 use fs_storage::ARK_FOLDER;
 
 use chrono::prelude::DateTime;
@@ -34,6 +39,7 @@ use util::{
 
 mod commands;
 mod error;
+mod index_registrar;
 mod models;
 mod util;
 
@@ -143,13 +149,15 @@ async fn main() -> anyhow::Result<()> {
                     let (path, resource, content) = match entry_output {
                         EntryOutput::Both => (
                             Some(path.to_owned().into_path_buf()),
-                            Some(resource.id),
+                            Some(resource.clone().id),
                             None,
                         ),
                         EntryOutput::Path => {
                             (Some(path.to_owned().into_path_buf()), None, None)
                         }
-                        EntryOutput::Id => (None, Some(resource.id), None),
+                        EntryOutput::Id => {
+                            (None, Some(resource.clone().id), None)
+                        }
                         EntryOutput::Link => match File::open(path) {
                             Ok(mut file) => {
                                 let mut contents = String::new();

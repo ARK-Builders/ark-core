@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use data_resource::ResourceId;
+use data_resource::ResourceIdTrait;
 use fs_storage::ARK_FOLDER;
 
 pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
@@ -13,9 +13,10 @@ pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub fn store_metadata<
     S: Serialize + DeserializeOwned + Clone + Debug,
     P: AsRef<Path>,
+    Id: ResourceIdTrait,
 >(
     root: P,
-    id: ResourceId,
+    id: Id,
     metadata: &S,
 ) -> Result<()> {
     let file = AtomicFile::new(
@@ -42,9 +43,9 @@ pub fn store_metadata<
 
 /// The file must exist if this method is called
 #[allow(dead_code)]
-pub fn load_raw_metadata<P: AsRef<Path>>(
+pub fn load_raw_metadata<P: AsRef<Path>, Id: ResourceIdTrait>(
     root: P,
-    id: ResourceId,
+    id: Id,
 ) -> Result<Vec<u8>> {
     let storage = root
         .as_ref()
@@ -72,6 +73,8 @@ mod tests {
     use super::*;
     use tempdir::TempDir;
 
+    use dev_hash::Crc32ResourceId;
+
     use std::collections::HashMap;
     type TestMetadata = HashMap<String, String>;
 
@@ -83,13 +86,13 @@ mod tests {
         let root = dir.path();
         log::debug!("temporary root: {}", root.display());
 
-        let id = 0x342a3d4a;
+        let id = Crc32ResourceId(0x342a3d4a);
 
         let mut meta = TestMetadata::new();
         meta.insert("abc".to_string(), "def".to_string());
         meta.insert("xyz".to_string(), "123".to_string());
 
-        store_metadata(root, id, &meta).unwrap();
+        store_metadata(root, id.clone(), &meta).unwrap();
 
         let bytes = load_raw_metadata(root, id).unwrap();
         let prop2: TestMetadata = serde_json::from_slice(&bytes).unwrap();
