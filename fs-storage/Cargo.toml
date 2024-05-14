@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "fs_storage"
-crate-type = ["rlib"]
+crate-type = ["rlib", "cdylib"]
 bench = false
 
 [[example]]
@@ -15,6 +15,7 @@ name = "cli"
 log = { version = "0.4.17", features = ["release_max_level_off"] }
 serde_json = "1.0.82"
 serde = { version = "1.0.138", features = ["derive"] }
+jni = "0.21.1"
 
 
 data-error = { path = "../data-error" }

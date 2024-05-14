@@ -346,3 +346,114 @@ mod tests {
         assert_eq!(file_storage_1.as_ref().get("key3"), Some(&9));
     }
 }
+
+// This is the interface to the JVM that we'll call the majority of our
+// methods on.
+use jni::JNIEnv;
+
+// These objects are what you should use as arguments to your native
+// function. They carry extra lifetime information to prevent them escaping
+// this context and getting used after being GC'd.
+use jni::objects::{JClass, JString};
+
+// This is just a pointer. We'll be returning it from our function. We
+// can't return one of the objects with lifetime information because the
+// lifetime checker won't let us.
+use jni::sys::{jboolean, jlong, jobject};
+
+impl FileStorage<String, String> {
+    fn from_jlong<'a>(value: jlong) -> &'a mut Self {
+        unsafe { &mut *(value as *mut FileStorage<String, String>) }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_create(
+    env: &mut JNIEnv,
+    _class: JClass,
+    label: JString,
+    path: JString,
+) -> jlong {
+    let label: String = env.get_string(&label).unwrap().into();
+    let path: String = env.get_string(&path).unwrap().into();
+
+    let file_storage: FileStorage<String, String> =
+        FileStorage::new(label, Path::new(&path));
+    Box::into_raw(Box::new(file_storage)) as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_set(
+    env: &mut JNIEnv,
+    _class: JClass,
+    id: JString,
+    value: JString,
+    file_storage_ptr: jlong,
+) {
+    let id: String = env.get_string(&id).unwrap().into();
+    let value: String = env.get_string(&value).unwrap().into();
+
+    FileStorage::from_jlong(file_storage_ptr).set(id, value);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_remove(
+    env: &mut JNIEnv,
+    _class: JClass,
+    id: JString,
+    file_storage_ptr: jlong,
+) {
+    let id: String = env.get_string(&id).unwrap().into();
+
+    FileStorage::from_jlong(file_storage_ptr)
+        .remove(&id)
+        .unwrap();
+}
+
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_is_storage_updated(
+    env: &mut JNIEnv,
+    _class: JClass,
+    file_storage_ptr: jlong,
+) -> jboolean {
+    match FileStorage::from_jlong(file_storage_ptr).is_storage_updated() {
+        Ok(updated) => updated as jboolean,
+        Err(_) => 0, // handle error here
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_read_fs(
+    env: &mut JNIEnv,
+    _class: JClass,
+    file_storage_ptr: jlong,
+) -> jobject {
+    let data = FileStorage::from_jlong(file_storage_ptr)
+        .read_fs()
+        .unwrap();
+    todo!()
+}
+
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_write_fs(
+    env: &mut JNIEnv,
+    _class: JClass,
+    file_storage_ptr: jlong,
+) {
+    FileStorage::from_jlong(file_storage_ptr)
+        .write_fs()
+        .unwrap()
+}
+
+///! Safety: The FileStorage instance is dropped after this call
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_erase(
+    env: &mut JNIEnv,
+    _class: JClass,
+    file_storage_ptr: jlong,
+) {
+    let file_storage = unsafe {
+        Box::from_raw(file_storage_ptr as *mut FileStorage<String, String>)
+    };
+    file_storage.erase().unwrap();
+}
