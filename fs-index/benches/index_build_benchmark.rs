@@ -2,7 +2,6 @@ use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
 };
 use fs_index::index::ResourceIndex;
-use pprof::criterion::{Output, PProfProfiler};
 
 const DIR_PATH: &str = "../test-assets/"; // Set the path to the directory containing the resources here
 
@@ -36,7 +35,7 @@ fn index_build_benchmark(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    config = Criterion::default();
     targets = index_build_benchmark
 }
 criterion_main!(benches);
