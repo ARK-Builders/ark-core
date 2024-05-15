@@ -57,9 +57,7 @@ where
     V: Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
-        + std::str::FromStr
-        + Default
-        + std::cmp::PartialOrd,
+        + std::str::FromStr,
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
@@ -92,9 +90,7 @@ where
     V: Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
-        + std::str::FromStr
-        + Default
-        + std::cmp::PartialOrd,
+        + std::str::FromStr,
 {
     /// Set a key-value pair in the storage
     fn set(&mut self, key: K, value: V) {
