@@ -1,9 +1,7 @@
 use data_error::Result;
 use std::collections::BTreeMap;
 
-use crate::monoid::Monoid;
-
-pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> + Monoid<V> {
+pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     /// Create or update an entry in the internal mapping.
     fn set(&mut self, id: K, value: V);
 

@@ -8,7 +8,6 @@ use std::{
 };
 
 use crate::base_storage::BaseStorage;
-use crate::monoid::Monoid;
 use crate::utils::read_version_2_fs;
 use data_error::{ArklibError, Result};
 
@@ -229,20 +228,42 @@ where
     }
 }
 
-impl<K, V> Monoid<V> for FileStorage<K, V>
+/// Combine two `FileStorage` instances into a new instance.
+pub fn combine_file_storages<K, V>(
+    a: &FileStorage<K, V>,
+    b: &FileStorage<K, V>,
+) -> FileStorage<K, V>
 where
-    V: Clone + std::cmp::PartialOrd + Default,
+    K: Ord + Clone,
+    V: Clone + PartialOrd + Default,
 {
-    fn neutral() -> V {
-        V::default()
+    let mut combined_entries = BTreeMap::new();
+
+    for (key, value) in &a.data.entries {
+        combined_entries.insert(key.clone(), value.clone());
     }
 
-    fn combine(a: &V, b: &V) -> V {
-        if a > b {
-            a.clone()
+    for (key, value) in &b.data.entries {
+        if let Some(existing_value) = combined_entries.get(key) {
+            let resolved_value = if value > existing_value {
+                value.clone()
+            } else {
+                existing_value.clone()
+            };
+            combined_entries.insert(key.clone(), resolved_value);
         } else {
-            b.clone()
+            combined_entries.insert(key.clone(), value.clone());
         }
+    }
+
+    FileStorage {
+        label: a.label.clone(),
+        path: a.path.clone(),
+        timestamp: SystemTime::now(),
+        data: FileStorageData {
+            version: STORAGE_VERSION,
+            entries: combined_entries,
+        },
     }
 }
 
@@ -251,9 +272,9 @@ mod tests {
     use std::collections::BTreeMap;
     use tempdir::TempDir;
 
-    use crate::{
-        base_storage::BaseStorage, file_storage::FileStorage, monoid::Monoid,
-    };
+    use crate::{base_storage::BaseStorage, file_storage::FileStorage};
+
+    use super::combine_file_storages;
 
     #[test]
     fn test_file_storage_write_read() {
@@ -321,60 +342,28 @@ mod tests {
     }
 
     #[test]
-    fn test_monoid_storage() {
-        use std::collections::HashSet;
-
+    fn test_monoid_combine() {
         let temp_dir =
             TempDir::new("tmp").expect("Failed to create temporary directory");
-        let storage_path_1 = temp_dir.path().join("storage_1.txt");
-        let storage_path_2 = temp_dir.path().join("storage_2.txt");
+        let storage_path1 = temp_dir.path().join("teststorage1.txt");
+        let storage_path2 = temp_dir.path().join("teststorage2.txt");
 
-        // Create two FileStorage instances
         let mut file_storage_1 =
-            FileStorage::new("Storage1".to_string(), &storage_path_1);
+            FileStorage::new("TestStorage1".to_string(), &storage_path1);
+
         let mut file_storage_2 =
-            FileStorage::new("Storage2".to_string(), &storage_path_2);
+            FileStorage::new("TestStorage2".to_string(), &storage_path2);
 
-        // Set data for the first FileStorage
-        let mut tags_1 = HashSet::new();
-        tags_1.insert("tag1".to_string());
-        tags_1.insert("tag2".to_string());
+        file_storage_1.set("key1".to_string(), 2);
+        file_storage_1.set("key2".to_string(), 6);
 
-        let mut properties_1 = HashSet::new();
-        properties_1.insert("prop1".to_string());
+        file_storage_2.set("key1".to_string(), 3);
+        file_storage_2.set("key3".to_string(), 9);
 
-        let score_1 = 10;
-
-        file_storage_1.set("key1".to_string(), (tags_1, properties_1, score_1));
-
-        // Set data for the second FileStorage
-        let mut tags_2 = HashSet::new();
-        tags_2.insert("tag2".to_string());
-        tags_2.insert("tag3".to_string());
-
-        let mut properties_2 = HashSet::new();
-        properties_2.insert("prop2".to_string());
-
-        let score_2 = 20;
-
-        file_storage_2.set("key1".to_string(), (tags_2, properties_2, score_2));
-
-        // Combine the two FileStorage instances
         let combined_data =
-            FileStorage::combine(&file_storage_1, &file_storage_2);
-
-        // Check the combined data
-        let expected_tags: HashSet<String> =
-            ["tag1", "tag2", "tag3"].iter().cloned().collect();
-        let expected_properties: HashSet<String> =
-            ["prop1", "prop2"].iter().cloned().collect();
-        let expected_score = 20;
-
-        let (combined_tags, combined_properties, combined_score) =
-            combined_data.as_ref().get("key1").unwrap();
-
-        assert_eq!(combined_tags, &expected_tags);
-        assert_eq!(combined_properties, &expected_properties);
-        assert_eq!(combined_score, &expected_score);
+            combine_file_storages(&file_storage_1, &file_storage_2);
+        assert_eq!(combined_data.as_ref().get("key1"), Some(&3));
+        assert_eq!(combined_data.as_ref().get("key2"), Some(&6));
+        assert_eq!(combined_data.as_ref().get("key3"), Some(&9));
     }
 }
