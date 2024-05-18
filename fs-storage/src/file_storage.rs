@@ -30,7 +30,7 @@ where
 {
     label: String,
     path: PathBuf,
-    timestamp: SystemTime,
+    modified: SystemTime,
     data: FileStorageData<K, V>,
 }
 
@@ -64,7 +64,7 @@ where
         let mut file_storage = Self {
             label,
             path: PathBuf::from(path),
-            timestamp: SystemTime::now(),
+            modified: SystemTime::now(),
             data: FileStorageData {
                 version: STORAGE_VERSION,
                 entries: BTreeMap::new(),
@@ -72,10 +72,10 @@ where
         };
 
         // Load the data from the file
-        file_storage.data.entries = match file_storage.read_fs() {
-            Ok(data) => data,
-            Err(_) => BTreeMap::new(),
-        };
+        file_storage.data.entries = file_storage
+            .read_fs()
+            .unwrap_or_else(|_| BTreeMap::new());
+
         file_storage
     }
 }
@@ -95,7 +95,7 @@ where
     /// Set a key-value pair in the storage
     fn set(&mut self, key: K, value: V) {
         self.data.entries.insert(key, value);
-        self.timestamp = std::time::SystemTime::now();
+        self.modified = std::time::SystemTime::now();
         self.write_fs()
             .expect("Failed to write data to disk");
     }
@@ -105,26 +105,36 @@ where
         self.data.entries.remove(id).ok_or_else(|| {
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
         })?;
-        self.timestamp = std::time::SystemTime::now();
+        self.modified = std::time::SystemTime::now();
         self.write_fs()
             .expect("Failed to remove data from disk");
         Ok(())
     }
 
     /// Compare the timestamp of the storage file with the timestamp of the storage instance
-    /// to determine if the storage file has been updated.
-    fn is_storage_updated(&self) -> Result<bool> {
-        let file_timestamp = fs::metadata(&self.path)?.modified()?;
-        let file_time_secs = file_timestamp
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let self_time_secs = self
-            .timestamp
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        Ok(file_time_secs > self_time_secs)
+    /// to determine if the storage file is up-to-date.
+    fn is_outdated(&self) -> Result<bool> {
+        match fs::metadata(&self.path) {
+            Ok(metadata) => {
+                let fs_modified = metadata
+                    .modified()?
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                let self_modified = self
+                    .modified
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                Ok(fs_modified != self_modified)
+            },
+            Err(e) => {
+                //todo: log the error
+                return Ok(true);
+            }
+        }
     }
 
     /// Read the data from the storage file
@@ -146,7 +156,7 @@ where
                         "Version 2 storage format detected for {}",
                         self.label
                     );
-                    self.timestamp = fs::metadata(&self.path)?.modified()?;
+                    self.modified = fs::metadata(&self.path)?.modified()?;
                     return Ok(data);
                 }
                 Err(_) => {
@@ -174,7 +184,7 @@ where
                 ),
             ));
         }
-        self.timestamp = fs::metadata(&self.path)?.modified()?;
+        self.modified = fs::metadata(&self.path)?.modified()?;
 
         Ok(data.entries)
     }
@@ -194,10 +204,10 @@ where
         writer.write_all(value_data.as_bytes())?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
-        if new_timestamp == self.timestamp {
+        if new_timestamp == self.modified {
             return Err("Timestamp has not been updated".into());
         }
-        self.timestamp = new_timestamp;
+        self.modified = new_timestamp;
 
         log::info!(
             "{} {} entries have been written",
@@ -255,7 +265,7 @@ where
     FileStorage {
         label: a.label.clone(),
         path: a.path.clone(),
-        timestamp: SystemTime::now(),
+        modified: SystemTime::now(),
         data: FileStorageData {
             version: STORAGE_VERSION,
             entries: combined_entries,
@@ -321,20 +331,33 @@ mod tests {
 
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
+        file_storage.write_fs().unwrap();
+        assert_eq!(file_storage.is_outdated().unwrap(), false);
 
         file_storage.set("key1".to_string(), "value1".to_string());
-        assert_eq!(file_storage.is_storage_updated().unwrap(), false);
+        //todo: we need to add 1ms delays to make the test pass
+        assert_eq!(file_storage.is_outdated().unwrap(), true);
+        file_storage.write_fs().unwrap();
+        assert_eq!(file_storage.is_outdated().unwrap(), false);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
         // External data manipulation
         let mut mirror_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
+        assert_eq!(mirror_storage.is_outdated().unwrap(), true);
+        file_storage.read_fs().unwrap();
+        assert_eq!(mirror_storage.is_outdated().unwrap(), false);
 
         mirror_storage.set("key1".to_string(), "value3".to_string());
-        assert_eq!(mirror_storage.is_storage_updated().unwrap(), false);
+        assert_eq!(mirror_storage.is_outdated().unwrap(), true);
+        mirror_storage.write_fs().unwrap();
+        assert_eq!(mirror_storage.is_outdated().unwrap(), false);
 
-        assert_eq!(file_storage.is_storage_updated().unwrap(), true);
+        assert_eq!(file_storage.is_outdated().unwrap(), true);
+        file_storage.read_fs().unwrap();
+        assert_eq!(file_storage.is_outdated().unwrap(), false);
+        assert_eq!(mirror_storage.is_outdated().unwrap(), false);
     }
 
     #[test]

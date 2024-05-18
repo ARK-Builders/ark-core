@@ -11,7 +11,7 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     /// Check if the storage is up-to-date,
     /// i.e. that the internal mapping is consistent
     /// with the data in the filesystem.
-    fn is_storage_updated(&self) -> Result<bool>;
+    fn is_outdated(&self) -> Result<bool>;
 
     /// Scan and load the key-value mapping
     /// from pre-configured location in the filesystem.
