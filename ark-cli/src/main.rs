@@ -26,7 +26,10 @@ use fs_extra::dir::{self, CopyOptions};
 use home::home_dir;
 
 use crate::cli::Cli;
+use crate::commands::file::File::{Append, Insert, Read};
+use crate::commands::link::Link::{Create, Load};
 use crate::commands::Commands::Link;
+use crate::commands::Commands::Storage;
 use crate::commands::Commands::*;
 use crate::models::EntryOutput;
 use crate::models::Format;
@@ -69,15 +72,15 @@ async fn run() -> Result<()> {
         Render(render) => render.run()?,
         List(list) => list.run()?,
         Link { subcommand } => match subcommand {
-            crate::commands::link::Link::Create(create) => create.run().await?,
-            crate::commands::link::Link::Load(load) => load.run()?,
+            Create(create) => create.run().await?,
+            Load(load) => load.run()?,
         },
         crate::commands::Commands::File { subcommand } => match subcommand {
-            crate::commands::file::File::Append(append) => append.run()?,
-            crate::commands::file::File::Insert(insert) => insert.run()?,
-            crate::commands::file::File::Read(read) => read.run()?,
+            Append(append) => append.run()?,
+            Insert(insert) => insert.run()?,
+            Read(read) => read.run()?,
         },
-        crate::commands::Commands::Storage { subcommand } => match subcommand {
+        Storage { subcommand } => match subcommand {
             crate::commands::storage::Storage::List(list) => list.run()?,
         },
     };
