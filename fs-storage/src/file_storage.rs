@@ -347,150 +347,160 @@ mod tests {
     }
 }
 
-use jni::signature::{JavaType, ReturnType};
-// This is the interface to the JVM that we'll call the majority of our
-// methods on.
-use jni::JNIEnv;
+#[cfg(feature = "jni-bindings")]
+pub mod jni_bindings {
+    use std::collections::BTreeMap;
+    use std::path::Path;
 
-// These objects are what you should use as arguments to your native
-// function. They carry extra lifetime information to prevent them escaping
-// this context and getting used after being GC'd.
-use jni::objects::{JClass, JObject, JString, JValue};
+    use jni::signature::ReturnType;
+    // This is the interface to the JVM that we'll call the majority of our
+    // methods on.
+    use jni::JNIEnv;
 
-// This is just a pointer. We'll be returning it from our function. We
-// can't return one of the objects with lifetime information because the
-// lifetime checker won't let us.
-use jni::sys::{jboolean, jlong, jobject, jvalue};
+    // These objects are what you should use as arguments to your native
+    // function. They carry extra lifetime information to prevent them escaping
+    // this context and getting used after being GC'd.
+    use jni::objects::{JClass, JString, JValue};
 
-impl FileStorage<String, String> {
-    fn from_jlong<'a>(value: jlong) -> &'a mut Self {
-        unsafe { &mut *(value as *mut FileStorage<String, String>) }
+    // This is just a pointer. We'll be returning it from our function. We
+    // can't return one of the objects with lifetime information because the
+    // lifetime checker won't let us.
+    use jni::sys::{jboolean, jlong, jobject};
+
+    use crate::base_storage::BaseStorage;
+
+    use super::FileStorage;
+
+    impl FileStorage<String, String> {
+        fn from_jlong<'a>(value: jlong) -> &'a mut Self {
+            unsafe { &mut *(value as *mut FileStorage<String, String>) }
+        }
     }
-}
 
-#[no_mangle]
-pub extern "system" fn Java_FileStorage_create(
-    env: &mut JNIEnv,
-    _class: JClass,
-    label: JString,
-    path: JString,
-) -> jlong {
-    let label: String = env.get_string(&label).unwrap().into();
-    let path: String = env.get_string(&path).unwrap().into();
+    #[no_mangle]
+    pub extern "system" fn Java_FileStorage_create(
+        env: &mut JNIEnv,
+        _class: JClass,
+        label: JString,
+        path: JString,
+    ) -> jlong {
+        let label: String = env.get_string(&label).unwrap().into();
+        let path: String = env.get_string(&path).unwrap().into();
 
-    let file_storage: FileStorage<String, String> =
-        FileStorage::new(label, Path::new(&path));
-    Box::into_raw(Box::new(file_storage)) as jlong
-}
-
-#[no_mangle]
-pub extern "system" fn Java_FileStorage_set(
-    env: &mut JNIEnv,
-    _class: JClass,
-    id: JString,
-    value: JString,
-    file_storage_ptr: jlong,
-) {
-    let id: String = env.get_string(&id).unwrap().into();
-    let value: String = env.get_string(&value).unwrap().into();
-
-    FileStorage::from_jlong(file_storage_ptr).set(id, value);
-}
-
-#[no_mangle]
-pub extern "system" fn Java_FileStorage_remove(
-    env: &mut JNIEnv,
-    _class: JClass,
-    id: JString,
-    file_storage_ptr: jlong,
-) {
-    let id: String = env.get_string(&id).unwrap().into();
-
-    FileStorage::from_jlong(file_storage_ptr)
-        .remove(&id)
-        .unwrap()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_FileStorage_is_storage_updated(
-    _env: &mut JNIEnv,
-    _class: JClass,
-    file_storage_ptr: jlong,
-) -> jboolean {
-    match FileStorage::from_jlong(file_storage_ptr).is_storage_updated() {
-        Ok(updated) => updated as jboolean,
-        Err(_) => 0, // handle error here
+        let file_storage: FileStorage<String, String> =
+            FileStorage::new(label, Path::new(&path));
+        Box::into_raw(Box::new(file_storage)) as jlong
     }
-}
 
-#[no_mangle]
-pub extern "system" fn Java_FileStorage_read_fs(
-    env: &mut JNIEnv,
-    _class: JClass,
-    file_storage_ptr: jlong,
-) -> jobject {
-    let data: BTreeMap<String, String> =
+    #[no_mangle]
+    pub extern "system" fn Java_FileStorage_set(
+        env: &mut JNIEnv,
+        _class: JClass,
+        id: JString,
+        value: JString,
+        file_storage_ptr: jlong,
+    ) {
+        let id: String = env.get_string(&id).unwrap().into();
+        let value: String = env.get_string(&value).unwrap().into();
+
+        FileStorage::from_jlong(file_storage_ptr).set(id, value);
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_FileStorage_remove(
+        env: &mut JNIEnv,
+        _class: JClass,
+        id: JString,
+        file_storage_ptr: jlong,
+    ) {
+        let id: String = env.get_string(&id).unwrap().into();
+
         FileStorage::from_jlong(file_storage_ptr)
-            .read_fs()
+            .remove(&id)
+            .unwrap()
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_FileStorage_is_storage_updated(
+        _env: &mut JNIEnv,
+        _class: JClass,
+        file_storage_ptr: jlong,
+    ) -> jboolean {
+        match FileStorage::from_jlong(file_storage_ptr).is_storage_updated() {
+            Ok(updated) => updated as jboolean,
+            Err(_) => 0, // handle error here
+        }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_FileStorage_read_fs(
+        env: &mut JNIEnv,
+        _class: JClass,
+        file_storage_ptr: jlong,
+    ) -> jobject {
+        let data: BTreeMap<String, String> =
+            FileStorage::from_jlong(file_storage_ptr)
+                .read_fs()
+                .unwrap();
+
+        // Create a new LinkedHashMap object
+        let linked_hash_map_class =
+            env.find_class("java/util/LinkedHashMap").unwrap();
+        let linked_hash_map = env
+            .new_object(linked_hash_map_class, "()V", &[])
             .unwrap();
 
-    // Create a new LinkedHashMap object
-    let linked_hash_map_class =
-        env.find_class("java/util/LinkedHashMap").unwrap();
-    let linked_hash_map = env
-        .new_object(linked_hash_map_class, "()V", &[])
-        .unwrap();
-
-    // Get the put method ID
-    let put_method_id = env
-        .get_method_id(
-            "java/util/LinkedHashMap",
-            "put",
-            "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
-        )
-        .unwrap();
-
-    // Insert each key-value pair from the BTreeMap into the LinkedHashMap
-    for (key, value) in data {
-        let j_key = env.new_string(key).unwrap();
-        let j_value = env.new_string(value).unwrap();
-        let j_key = JValue::from(&j_key).as_jni();
-        let j_value = JValue::from(&j_value).as_jni();
-        unsafe {
-            env.call_method_unchecked(
-                &linked_hash_map,
-                put_method_id,
-                ReturnType::Object,
-                &[j_key, j_value],
+        // Get the put method ID
+        let put_method_id = env
+            .get_method_id(
+                "java/util/LinkedHashMap",
+                "put",
+                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
             )
-            .unwrap()
-        };
+            .unwrap();
+
+        // Insert each key-value pair from the BTreeMap into the LinkedHashMap
+        for (key, value) in data {
+            let j_key = env.new_string(key).unwrap();
+            let j_value = env.new_string(value).unwrap();
+            let j_key = JValue::from(&j_key).as_jni();
+            let j_value = JValue::from(&j_value).as_jni();
+            unsafe {
+                env.call_method_unchecked(
+                    &linked_hash_map,
+                    put_method_id,
+                    ReturnType::Object,
+                    &[j_key, j_value],
+                )
+                .unwrap()
+            };
+        }
+
+        // Return the LinkedHashMap as a raw pointer
+        linked_hash_map.as_raw()
     }
 
-    // Return the LinkedHashMap as a raw pointer
-    linked_hash_map.as_raw()
-}
+    #[no_mangle]
+    pub extern "system" fn Java_FileStorage_write_fs(
+        _env: &mut JNIEnv,
+        _class: JClass,
+        file_storage_ptr: jlong,
+    ) {
+        FileStorage::from_jlong(file_storage_ptr)
+            .write_fs()
+            .unwrap()
+    }
 
-#[no_mangle]
-pub extern "system" fn Java_FileStorage_write_fs(
-    _env: &mut JNIEnv,
-    _class: JClass,
-    file_storage_ptr: jlong,
-) {
-    FileStorage::from_jlong(file_storage_ptr)
-        .write_fs()
-        .unwrap()
-}
-
-///! Safety: The FileStorage instance is dropped after this call
-#[no_mangle]
-pub extern "system" fn Java_FileStorage_erase(
-    _env: &mut JNIEnv,
-    _class: JClass,
-    file_storage_ptr: jlong,
-) {
-    let file_storage = unsafe {
-        Box::from_raw(file_storage_ptr as *mut FileStorage<String, String>)
-    };
-    file_storage.erase().unwrap();
+    ///! Safety: The FileStorage instance is dropped after this call
+    #[no_mangle]
+    pub extern "system" fn Java_FileStorage_erase(
+        _env: &mut JNIEnv,
+        _class: JClass,
+        file_storage_ptr: jlong,
+    ) {
+        let file_storage = unsafe {
+            Box::from_raw(file_storage_ptr as *mut FileStorage<String, String>)
+        };
+        file_storage.erase().unwrap();
+    }
 }
