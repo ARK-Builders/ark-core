@@ -1,7 +1,9 @@
 use data_error::Result;
 use std::collections::BTreeMap;
 
-pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
+use crate::monoid::Monoid;
+
+pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> + Monoid<V> {
     /// Create or update an entry in the internal mapping.
     fn set(&mut self, id: K, value: V);
 
@@ -24,4 +26,8 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     /// Remove all persisted data
     /// by pre-configured location in the file-system.
     fn erase(&self) -> Result<()>;
+
+    /// Merge two storages instances
+    /// and write the result to the filesystem.
+    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>;
 }

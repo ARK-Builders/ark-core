@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::base_storage::BaseStorage;
+use crate::monoid::Monoid;
 use crate::utils::read_version_2_fs;
 use data_error::{ArklibError, Result};
 
@@ -57,7 +58,10 @@ where
     V: Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
-        + std::str::FromStr,
+        + std::str::FromStr
+        + std::default::Default
+        + std::cmp::PartialEq
+        + std::cmp::PartialOrd,
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
@@ -90,7 +94,10 @@ where
     V: Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
-        + std::str::FromStr,
+        + std::str::FromStr
+        + std::default::Default
+        + std::cmp::PartialEq
+        + std::cmp::PartialOrd,
 {
     /// Set a key-value pair in the storage
     fn set(&mut self, key: K, value: V) {
@@ -129,10 +136,13 @@ where
                     .as_secs();
 
                 Ok(fs_modified != self_modified)
-            },
+            }
             Err(e) => {
-                //todo: log the error
-                return Ok(true);
+                log::error!(
+                    "Failed to check file storage is updated or not : {}",
+                    e
+                );
+                Ok(true)
             }
         }
     }
@@ -223,6 +233,33 @@ where
             ArklibError::Storage(self.label.clone(), err.to_string())
         })
     }
+
+    /// Merge the data from another storage instance into this storage instance
+    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()> {
+        let other_entries = other.as_ref();
+        for (key, value) in other_entries {
+            if let Some(existing_value) = self.data.entries.get(key) {
+                if value != existing_value {
+                    let resolved_value =
+                        <FileStorage<K, V> as Monoid<V>>::combine(
+                            existing_value,
+                            value,
+                        );
+                    self.data
+                        .entries
+                        .insert(key.clone(), resolved_value);
+                };
+            } else {
+                self.data
+                    .entries
+                    .insert(key.clone(), value.clone());
+            }
+        }
+        self.modified = std::time::SystemTime::now();
+        self.write_fs()
+            .expect("Failed to write data to disk");
+        Ok(())
+    }
 }
 
 impl<K, V> AsRef<BTreeMap<K, V>> for FileStorage<K, V>
@@ -231,6 +268,23 @@ where
 {
     fn as_ref(&self) -> &BTreeMap<K, V> {
         &self.data.entries
+    }
+}
+
+impl<K, V> Monoid<V> for FileStorage<K, V>
+where
+    V: Clone + PartialOrd + Default,
+    K: std::cmp::Ord,
+{
+    fn neutral() -> V {
+        V::default()
+    }
+    fn combine(a: &V, b: &V) -> V {
+        if a > b {
+            a.clone()
+        } else {
+            b.clone()
+        }
     }
 }
 
@@ -279,8 +333,6 @@ mod tests {
     use tempdir::TempDir;
 
     use crate::{base_storage::BaseStorage, file_storage::FileStorage};
-
-    use super::combine_file_storages;
 
     #[test]
     fn test_file_storage_write_read() {
@@ -379,10 +431,11 @@ mod tests {
         file_storage_2.set("key1".to_string(), 3);
         file_storage_2.set("key3".to_string(), 9);
 
-        let combined_data =
-            combine_file_storages(&file_storage_1, &file_storage_2);
-        assert_eq!(combined_data.as_ref().get("key1"), Some(&3));
-        assert_eq!(combined_data.as_ref().get("key2"), Some(&6));
-        assert_eq!(combined_data.as_ref().get("key3"), Some(&9));
+        file_storage_1
+            .merge_from(&file_storage_2)
+            .unwrap();
+        assert_eq!(file_storage_1.as_ref().get("key1"), Some(&3));
+        assert_eq!(file_storage_1.as_ref().get("key2"), Some(&6));
+        assert_eq!(file_storage_1.as_ref().get("key3"), Some(&9));
     }
 }
