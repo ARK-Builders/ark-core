@@ -59,9 +59,7 @@ where
         + serde::Serialize
         + serde::de::DeserializeOwned
         + std::str::FromStr
-        + std::default::Default
-        + std::cmp::PartialEq
-        + std::cmp::PartialOrd,
+        + Monoid<V>,
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
@@ -95,9 +93,7 @@ where
         + serde::Serialize
         + serde::de::DeserializeOwned
         + std::str::FromStr
-        + std::default::Default
-        + std::cmp::PartialEq
-        + std::cmp::PartialOrd,
+        + Monoid<V>,
 {
     /// Set a key-value pair in the storage
     fn set(&mut self, key: K, value: V) {
@@ -235,20 +231,17 @@ where
     }
 
     /// Merge the data from another storage instance into this storage instance
-    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()> {
+    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>
+    where
+        V: Monoid<V>,
+    {
         let other_entries = other.as_ref();
         for (key, value) in other_entries {
             if let Some(existing_value) = self.data.entries.get(key) {
-                if value != existing_value {
-                    let resolved_value =
-                        <FileStorage<K, V> as Monoid<V>>::combine(
-                            existing_value,
-                            value,
-                        );
-                    self.data
-                        .entries
-                        .insert(key.clone(), resolved_value);
-                };
+                let resolved_value = V::combine(existing_value, value);
+                self.data
+                    .entries
+                    .insert(key.clone(), resolved_value);
             } else {
                 self.data
                     .entries
@@ -268,62 +261,6 @@ where
 {
     fn as_ref(&self) -> &BTreeMap<K, V> {
         &self.data.entries
-    }
-}
-
-impl<K, V> Monoid<V> for FileStorage<K, V>
-where
-    V: Clone + PartialOrd + Default,
-    K: std::cmp::Ord,
-{
-    fn neutral() -> V {
-        V::default()
-    }
-    fn combine(a: &V, b: &V) -> V {
-        if a > b {
-            a.clone()
-        } else {
-            b.clone()
-        }
-    }
-}
-
-/// Combine two `FileStorage` instances into a new instance.
-pub fn combine_file_storages<K, V>(
-    a: &FileStorage<K, V>,
-    b: &FileStorage<K, V>,
-) -> FileStorage<K, V>
-where
-    K: Ord + Clone,
-    V: Clone + PartialOrd + Default,
-{
-    let mut combined_entries = BTreeMap::new();
-
-    for (key, value) in &a.data.entries {
-        combined_entries.insert(key.clone(), value.clone());
-    }
-
-    for (key, value) in &b.data.entries {
-        if let Some(existing_value) = combined_entries.get(key) {
-            let resolved_value = if value > existing_value {
-                value.clone()
-            } else {
-                existing_value.clone()
-            };
-            combined_entries.insert(key.clone(), resolved_value);
-        } else {
-            combined_entries.insert(key.clone(), value.clone());
-        }
-    }
-
-    FileStorage {
-        label: a.label.clone(),
-        path: a.path.clone(),
-        modified: SystemTime::now(),
-        data: FileStorageData {
-            version: STORAGE_VERSION,
-            entries: combined_entries,
-        },
     }
 }
 

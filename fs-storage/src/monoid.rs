@@ -20,3 +20,27 @@ pub trait Monoid<V> {
             .fold(Self::neutral(), |acc, val| Self::combine(&acc, &val))
     }
 }
+
+impl Monoid<i32> for i32 {
+    fn neutral() -> i32 {
+        0
+    }
+
+    fn combine(a: &i32, b: &i32) -> i32 {
+        if a > b {
+            *a
+        } else {
+            *b
+        }
+    }
+}
+
+impl Monoid<String> for String {
+    fn neutral() -> String {
+        "".to_string()
+    }
+
+    fn combine(a: &String, b: &String) -> String {
+        format!("{}{}", a, b)
+    }
+}
