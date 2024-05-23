@@ -6,7 +6,7 @@ use std::path::Path;
 
 use data_error::Result;
 use data_json::merge;
-use data_resource::ResourceIdTrait;
+use data_resource::ResourceId;
 use fs_atomic_versions::atomic::{modify_json, AtomicFile};
 use fs_storage::ARK_FOLDER;
 
@@ -15,7 +15,7 @@ pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
 pub fn store_properties<
     S: Serialize + DeserializeOwned + Clone + Debug,
     P: AsRef<Path>,
-    Id: ResourceIdTrait,
+    Id: ResourceId,
 >(
     root: P,
     id: Id,
@@ -43,7 +43,7 @@ pub fn store_properties<
 }
 
 /// The file must exist if this method is called
-pub fn load_raw_properties<P: AsRef<Path>, Id: ResourceIdTrait>(
+pub fn load_raw_properties<P: AsRef<Path>, Id: ResourceId>(
     root: P,
     id: Id,
 ) -> Result<Vec<u8>> {
@@ -76,7 +76,7 @@ mod tests {
     use std::collections::HashMap;
     type TestProperties = HashMap<String, String>;
 
-    use dev_hash::Crc32ResourceId;
+    use dev_hash::Crc32;
 
     #[test]
     fn test_store_and_load() {
@@ -86,7 +86,7 @@ mod tests {
         let root = dir.path();
         log::debug!("temporary root: {}", root.display());
 
-        let id = Crc32ResourceId(0x342a3d4a);
+        let id = Crc32(0x342a3d4a);
 
         let mut prop = TestProperties::new();
         prop.insert("abc".to_string(), "def".to_string());

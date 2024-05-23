@@ -1,10 +1,10 @@
 # `dev-hash`
 
-`dev-hash` is a crate that provides example implementations of `ResourceIdTrait`. It can be extended to include additional hash function implementations. The crate also includes benchmarks for the defined `ResourceId` types.
+`dev-hash` contains reference implementations of `ResourceId` trait and should be used only as an example, or as a dependency in test cases. It will be extended to include additional hash function implementations. The crate also includes benchmarks for the defined `ResourceId` types.
 
 ## Defined Types
 
-| Type               | Description                                         |
-| ------------------ | --------------------------------------------------- |
-| `Blake3ResourceId` | Uses the Blake3 cryptographic hash function         |
-| `Crc32ResourceId`  | Uses the CRC32 fast non-cryptographic hash function |
+| Type     | Description                                                                 |
+|----------|-----------------------------------------------------------------------------|
+| `Blake3` | Impl of `ResourceId` that uses the Blake3 cryptographic hash function       |
+| `Crc32`  | Impl of `ResourceId` that uses the CRC32 non-cryptographic hash function |

@@ -1,4 +1,4 @@
-name: Main Branch Workflow
+name: Weekly testing
 
 on:
   push:
@@ -15,8 +15,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
       - name: Run tests
         run: cargo test --workspace --verbose --release
 
@@ -26,8 +28,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
       - name: Run tests
         run: cargo test --workspace --verbose --release
 
@@ -37,8 +41,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
       - name: Run tests
         run: cargo test --workspace --verbose --release
 
@@ -48,7 +54,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
       - name: Run tests
         run: cargo test --workspace --verbose --release

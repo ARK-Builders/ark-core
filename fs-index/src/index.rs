@@ -12,17 +12,17 @@ use walkdir::{DirEntry, WalkDir};
 use log;
 
 use data_error::{ArklibError, Result};
-use data_resource::ResourceIdTrait;
+use data_resource::ResourceId;
 use fs_storage::{ARK_FOLDER, INDEX_PATH};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
-pub struct IndexEntry<Id: ResourceIdTrait> {
+pub struct IndexEntry<Id: ResourceId> {
     pub modified: SystemTime,
     pub id: Id,
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct ResourceIndex<Id: ResourceIdTrait> {
+pub struct ResourceIndex<Id: ResourceId> {
     pub id2path: HashMap<Id, CanonicalPathBuf>,
     pub path2id: HashMap<CanonicalPathBuf, IndexEntry<Id>>,
 
@@ -31,7 +31,7 @@ pub struct ResourceIndex<Id: ResourceIdTrait> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct IndexUpdate<Id: ResourceIdTrait> {
+pub struct IndexUpdate<Id: ResourceId> {
     pub deleted: HashSet<Id>,
     pub added: HashMap<CanonicalPathBuf, Id>,
 }
@@ -40,7 +40,7 @@ pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
 
 pub type Paths = HashSet<CanonicalPathBuf>;
 
-impl<Id: ResourceIdTrait> ResourceIndex<Id> {
+impl<Id: ResourceId> ResourceIndex<Id> {
     pub fn size(&self) -> usize {
         //the actual size is lower in presence of collisions
         self.path2id.len()
@@ -621,7 +621,7 @@ fn scan_entry<Id>(
     metadata: Metadata,
 ) -> Result<IndexEntry<Id>>
 where
-    Id: ResourceIdTrait,
+    Id: ResourceId,
 {
     if metadata.is_dir() {
         return Err(ArklibError::Path("Path is expected to be a file".into()));
@@ -645,7 +645,7 @@ fn scan_entries<Id>(
     entries: HashMap<CanonicalPathBuf, DirEntry>,
 ) -> HashMap<CanonicalPathBuf, IndexEntry<Id>>
 where
-    Id: ResourceIdTrait,
+    Id: ResourceId,
 {
     entries
         .into_iter()
@@ -682,7 +682,7 @@ mod tests {
     use crate::index::{discover_paths, IndexEntry};
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
-    use dev_hash::Crc32ResourceId as ResourceId;
+    use dev_hash::Crc32;
     use fs_atomic_versions::initialize;
     use std::fs::File;
     #[cfg(target_os = "linux")]
@@ -701,8 +701,8 @@ mod tests {
     const FILE_NAME_2: &str = "test2.txt";
     const FILE_NAME_3: &str = "test3.txt";
 
-    const CRC32_1: ResourceId = ResourceId(3817498742);
-    const CRC32_2: ResourceId = ResourceId(1804055020);
+    const CRC32_1: Crc32 = Crc32(3817498742);
+    const CRC32_2: Crc32 = Crc32(1804055020);
 
     fn get_temp_dir() -> PathBuf {
         create_dir_at(std::env::temp_dir())
@@ -755,7 +755,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
-            let actual: ResourceIndex<ResourceId> =
+            let actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
@@ -773,7 +773,7 @@ mod tests {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
-            let actual: ResourceIndex<ResourceId> =
+            let actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
@@ -793,7 +793,7 @@ mod tests {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
             create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
 
-            let mut actual: ResourceIndex<ResourceId> =
+            let mut actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             assert_eq!(actual.collisions.len(), 0);
@@ -823,7 +823,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
 
-            let mut actual: ResourceIndex<ResourceId> =
+            let mut actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             let (_, expected_path) =
@@ -861,7 +861,7 @@ mod tests {
     fn index_new_should_index_new_file_successfully() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            let mut index: ResourceIndex<ResourceId> =
+            let mut index: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             let (_, new_path) =
@@ -947,7 +947,7 @@ mod tests {
                 Some(FILE_NAME_2),
             );
 
-            let mut actual: ResourceIndex<ResourceId> =
+            let mut actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             assert_eq!(actual.collisions.len(), 0);
@@ -975,14 +975,14 @@ mod tests {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
             let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId(2);
+            let old_id = Crc32(2);
             let result = actual
                 .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
 
-            assert_eq!(result, Some(ResourceId(2)));
+            assert_eq!(result, Some(Crc32(2)));
         })
     }
 
@@ -992,14 +992,14 @@ mod tests {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
             let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId(2);
+            let old_id = Crc32(2);
             let result = actual
                 .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
 
-            assert_eq!(result, Some(ResourceId(2)));
+            assert_eq!(result, Some(Crc32(2)));
         })
     }
 
@@ -1007,7 +1007,7 @@ mod tests {
     fn should_not_index_empty_file() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(0), None);
-            let actual: ResourceIndex<ResourceId> =
+            let actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
@@ -1021,7 +1021,7 @@ mod tests {
     fn should_not_index_hidden_file() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(".hidden"));
-            let actual: ResourceIndex<ResourceId> =
+            let actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
@@ -1036,7 +1036,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             create_dir_at(path.clone());
 
-            let actual: ResourceIndex<ResourceId> =
+            let actual: ResourceIndex<Crc32> =
                 ResourceIndex::build(path.clone());
 
             assert_eq!(actual.root, path.clone());
@@ -1059,20 +1059,20 @@ mod tests {
     #[test]
     fn index_entry_order() {
         let old1 = IndexEntry {
-            id: ResourceId(2),
+            id: Crc32(2),
             modified: SystemTime::UNIX_EPOCH,
         };
         let old2 = IndexEntry {
-            id: ResourceId(1),
+            id: Crc32(1),
             modified: SystemTime::UNIX_EPOCH,
         };
 
         let new1 = IndexEntry {
-            id: ResourceId(1),
+            id: Crc32(1),
             modified: SystemTime::now(),
         };
         let new2 = IndexEntry {
-            id: ResourceId(2),
+            id: Crc32(2),
             modified: SystemTime::now(),
         };
 
@@ -1108,7 +1108,7 @@ mod tests {
         );
 
         let start_time = Instant::now();
-        let index: ResourceIndex<ResourceId> =
+        let index: ResourceIndex<Crc32> =
             ResourceIndex::build(path.to_string());
         let elapsed_time = start_time.elapsed();
 

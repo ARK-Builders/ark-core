@@ -13,7 +13,7 @@ use std::{fmt::Debug, hash::Hash, path::Path};
 /// The hash value is used to uniquely identify the resource.
 ///
 /// Implementors of this trait must provide a way to compute the hash value from the resource's data.
-pub trait ResourceIdTrait:
+pub trait ResourceId:
     Debug
     + Display
     + FromStr

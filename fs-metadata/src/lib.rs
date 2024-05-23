@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use data_resource::ResourceIdTrait;
+use data_resource::ResourceId;
 use fs_storage::ARK_FOLDER;
 
 pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
@@ -13,7 +13,7 @@ pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub fn store_metadata<
     S: Serialize + DeserializeOwned + Clone + Debug,
     P: AsRef<Path>,
-    Id: ResourceIdTrait,
+    Id: ResourceId,
 >(
     root: P,
     id: Id,
@@ -43,7 +43,7 @@ pub fn store_metadata<
 
 /// The file must exist if this method is called
 #[allow(dead_code)]
-pub fn load_raw_metadata<P: AsRef<Path>, Id: ResourceIdTrait>(
+pub fn load_raw_metadata<P: AsRef<Path>, Id: ResourceId>(
     root: P,
     id: Id,
 ) -> Result<Vec<u8>> {
@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use tempdir::TempDir;
 
-    use dev_hash::Crc32ResourceId;
+    use dev_hash::Crc32;
 
     use std::collections::HashMap;
     type TestMetadata = HashMap<String, String>;
@@ -86,7 +86,7 @@ mod tests {
         let root = dir.path();
         log::debug!("temporary root: {}", root.display());
 
-        let id = Crc32ResourceId(0x342a3d4a);
+        let id = Crc32(0x342a3d4a);
 
         let mut meta = TestMetadata::new();
         meta.insert("abc".to_string(), "def".to_string());

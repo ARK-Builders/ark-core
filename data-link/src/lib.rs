@@ -1,5 +1,5 @@
 use data_error::Result;
-use data_resource::ResourceIdTrait;
+use data_resource::ResourceId;
 use fs_atomic_versions::atomic::AtomicFile;
 use fs_metadata::store_metadata;
 use fs_properties::load_raw_properties;
@@ -17,7 +17,7 @@ use std::{io::Write, path::PathBuf};
 use url::Url;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Link<Id: ResourceIdTrait> {
+pub struct Link<Id: ResourceId> {
     pub url: Url,
     pub prop: Properties,
     // We need `_marker` to indicate that `Link` is generic over Id
@@ -30,7 +30,7 @@ pub struct Properties {
     pub desc: Option<String>,
 }
 
-impl<Id: ResourceIdTrait> Link<Id> {
+impl<Id: ResourceId> Link<Id> {
     pub fn new(url: Url, title: String, desc: Option<String>) -> Self {
         Self {
             url,
@@ -293,7 +293,7 @@ impl OpenGraphTag {
 async fn test_create_link_file() {
     fs_atomic_versions::initialize();
 
-    use dev_hash::Crc32ResourceId as ResourceId;
+    use dev_hash::Crc32;
     use tempdir::TempDir;
 
     let dir = TempDir::new("arklib_test").unwrap();
@@ -301,7 +301,7 @@ async fn test_create_link_file() {
     let root: &Path = dir.path();
     println!("temporary root: {}", root.display());
     let url = Url::parse("https://kaydee.net/blog/open-graph-image/").unwrap();
-    let link: Link<ResourceId> = Link::new(
+    let link: Link<Crc32> = Link::new(
         url,
         String::from("test_title"),
         Some(String::from("test_desc")),
@@ -317,12 +317,12 @@ async fn test_create_link_file() {
             Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
                 .unwrap();
         assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
-        let link: Link<ResourceId> = Link::load(root, &path).unwrap();
+        let link: Link<Crc32> = Link::load(root, &path).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.prop.desc.unwrap(), "test_desc");
         assert_eq!(link.prop.title, "test_title");
 
-        let id = ResourceId::from_bytes(current_bytes.as_bytes()).unwrap();
+        let id = Crc32::from_bytes(current_bytes.as_bytes()).unwrap();
         let path = Path::new(&root)
             .join(ARK_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)
