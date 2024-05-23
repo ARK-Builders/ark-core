@@ -63,7 +63,7 @@ where
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
-        let mut file_storage = Self {
+        Self {
             label,
             path: PathBuf::from(path),
             modified: SystemTime::now(),
@@ -71,14 +71,7 @@ where
                 version: STORAGE_VERSION,
                 entries: BTreeMap::new(),
             },
-        };
-
-        // Load the data from the file
-        file_storage.data.entries = file_storage
-            .read_fs()
-            .unwrap_or_else(|_| BTreeMap::new());
-
-        file_storage
+        }
     }
 }
 
@@ -99,8 +92,6 @@ where
     fn set(&mut self, key: K, value: V) {
         self.data.entries.insert(key, value);
         self.modified = std::time::SystemTime::now();
-        self.write_fs()
-            .expect("Failed to write data to disk");
     }
 
     /// Remove a key-value pair from the storage given a key
@@ -303,7 +294,7 @@ mod tests {
 
         file_storage.set("key1".to_string(), "value1".to_string());
         file_storage.set("key1".to_string(), "value2".to_string());
-
+        assert!(file_storage.write_fs().is_ok());
         assert_eq!(storage_path.exists(), true);
 
         if let Err(err) = file_storage.erase() {
@@ -322,9 +313,8 @@ mod tests {
             FileStorage::new("TestStorage".to_string(), &storage_path);
         file_storage.write_fs().unwrap();
         assert_eq!(file_storage.is_outdated().unwrap(), false);
-
+        std::thread::sleep(std::time::Duration::from_secs(1));
         file_storage.set("key1".to_string(), "value1".to_string());
-        //todo: we need to add 1ms delays to make the test pass
         assert_eq!(file_storage.is_outdated().unwrap(), true);
         file_storage.write_fs().unwrap();
         assert_eq!(file_storage.is_outdated().unwrap(), false);
@@ -335,7 +325,8 @@ mod tests {
         let mut mirror_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
         assert_eq!(mirror_storage.is_outdated().unwrap(), true);
-        file_storage.read_fs().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        mirror_storage.read_fs().unwrap();
         assert_eq!(mirror_storage.is_outdated().unwrap(), false);
 
         mirror_storage.set("key1".to_string(), "value3".to_string());

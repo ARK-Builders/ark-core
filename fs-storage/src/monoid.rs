@@ -37,10 +37,12 @@ impl Monoid<i32> for i32 {
 
 impl Monoid<String> for String {
     fn neutral() -> String {
-        "".to_string()
+        String::new()
     }
 
     fn combine(a: &String, b: &String) -> String {
-        format!("{}{}", a, b)
+        let mut result = a.clone();
+        result.push_str(b);
+        result
     }
 }
