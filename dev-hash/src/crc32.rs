@@ -9,7 +9,7 @@ use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 
 use data_error::Result;
-use data_resource::ResourceIdTrait;
+use data_resource::ResourceId;
 
 /// Represents a resource identifier using the CRC32 algorithm.
 ///
@@ -17,23 +17,23 @@ use data_resource::ResourceIdTrait;
 #[derive(
     Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Serialize, Deserialize,
 )]
-pub struct ResourceId(pub u32);
+pub struct Crc32(pub u32);
 
-impl FromStr for ResourceId {
+impl FromStr for Crc32 {
     type Err = std::num::ParseIntError;
 
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
-        Ok(ResourceId(u32::from_str(s)?))
+        Ok(Crc32(u32::from_str(s)?))
     }
 }
 
-impl Display for ResourceId {
+impl Display for Crc32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl ResourceIdTrait for ResourceId {
+impl ResourceId for Crc32 {
     fn from_path<P: AsRef<Path>>(file_path: P) -> Result<Self> {
         log::debug!("Computing CRC32 hash for file: {:?}", file_path.as_ref());
 
@@ -49,7 +49,7 @@ impl ResourceIdTrait for ResourceId {
             hasher.update(&buffer);
             buffer.clear();
         }
-        Ok(ResourceId(hasher.finalize()))
+        Ok(Crc32(hasher.finalize()))
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -57,7 +57,7 @@ impl ResourceIdTrait for ResourceId {
 
         let mut hasher = Hasher::new();
         hasher.update(bytes);
-        Ok(ResourceId(hasher.finalize()))
+        Ok(Crc32(hasher.finalize()))
     }
 }
 
@@ -68,13 +68,13 @@ mod tests {
     #[test]
     fn sanity_check() {
         let file_path = Path::new("../test-assets/lena.jpg");
-        let id = ResourceId::from_path(file_path)
+        let id = Crc32::from_path(file_path)
             .expect("Failed to compute resource identifier");
-        assert_eq!(id, ResourceId(875183434));
+        assert_eq!(id, Crc32(875183434));
 
         let raw_bytes = fs::read(file_path).expect("Failed to read file");
-        let id = ResourceId::from_bytes(&raw_bytes)
+        let id = <Crc32 as ResourceId>::from_bytes(&raw_bytes)
             .expect("Failed to compute resource identifier");
-        assert_eq!(id, ResourceId(875183434));
+        assert_eq!(id, Crc32(875183434));
     }
 }

@@ -10,7 +10,7 @@ use data_pdf::{render_preview_page, PDFQuality};
 // Change this to use another type for the resource id if needed.
 //
 // We define it globally here so that it can be easily changed.
-pub(crate) use dev_hash::Crc32ResourceId as ResourceId;
+pub(crate) use dev_hash::Crc32 as ResourceId;
 
 use fs_atomic_versions::app_id;
 use fs_storage::ARK_FOLDER;

@@ -1,9 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use data_resource::ResourceIdTrait;
+use data_resource::ResourceId;
 use rand::prelude::*;
 use std::path::Path;
 
-use dev_hash::Blake3ResourceId as ResourceId;
+use dev_hash::Blake3;
 
 // Add files to benchmark here
 const FILE_PATHS: [&str; 2] =
@@ -36,7 +36,7 @@ fn bench_resource_id_creation(c: &mut Criterion) {
         let id = format!("compute_from_path:{}", file_path);
         group.bench_function(id, move |b| {
             b.iter(|| {
-                ResourceId::from_path(black_box(file_path))
+                <Blake3 as ResourceId>::from_path(black_box(file_path))
                     .expect("from_path returned an error")
             });
         });
@@ -51,7 +51,7 @@ fn bench_resource_id_creation(c: &mut Criterion) {
         let id = format!("compute_from_bytes:{}", name);
         group.bench_function(id, move |b| {
             b.iter(|| {
-                ResourceId::from_bytes(black_box(&input_data))
+                <Blake3 as ResourceId>::from_bytes(black_box(&input_data))
                     .expect("from_bytes returned an error")
             });
         });
