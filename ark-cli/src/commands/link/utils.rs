@@ -38,6 +38,7 @@ pub fn load_link(
                 Err(AppError::LinkLoadError(format!(
                     "Path {:?} was requested. But id {} maps to path {:?}",
                     path,
+                    // FIXME: If `load_link` needs id, then it shouldn't be an optional parameter
                     id.clone().unwrap(),
                     path2,
                 )))

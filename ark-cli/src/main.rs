@@ -105,6 +105,8 @@ async fn main() -> anyhow::Result<()> {
     let _ = app_id::load(ark_dir)
         .map_err(|e| AppError::AppIdLoadError(e.to_string()))?;
 
+    // Having a separate function for the main logic allows for easier
+    // error handling and testing.
     if let Err(err) = run().await {
         eprintln!("Error: {:#}", err);
         std::process::exit(1);

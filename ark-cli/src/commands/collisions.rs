@@ -14,6 +14,7 @@ pub struct Collisions {
 
 impl Collisions {
     pub fn run(&self) -> Result<(), AppError> {
+        // FIXME: How does `monitor_index` handle `ark-cli collisions`?
         monitor_index(&self.root_dir, None)
     }
 }

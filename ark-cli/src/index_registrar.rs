@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 extern crate canonical_path;
 
-use data_error::Result;
+use data_error::{ArklibError, Result};
 use fs_index::ResourceIndex;
 
 use std::collections::HashMap;
@@ -25,7 +25,7 @@ pub fn provide_index<P: AsRef<Path>>(
     let root_path = CanonicalPathBuf::canonicalize(root_path)?;
 
     {
-        let registrar = REGISTRAR.read().unwrap();
+        let registrar = REGISTRAR.read().map_err(|_| ArklibError::Parse)?;
 
         if let Some(index) = registrar.get(&root_path) {
             log::info!("Index has been registered before");
@@ -36,7 +36,9 @@ pub fn provide_index<P: AsRef<Path>>(
     log::info!("Index has not been registered before");
     match ResourceIndex::provide(&root_path) {
         Ok(index) => {
-            let mut registrar = REGISTRAR.write().unwrap();
+            let mut registrar = REGISTRAR.write().map_err(|_| {
+                ArklibError::Other(anyhow::anyhow!("Failed to lock registrar"))
+            })?;
             let arc = Arc::new(RwLock::new(index));
             registrar.insert(root_path, arc.clone());
 
