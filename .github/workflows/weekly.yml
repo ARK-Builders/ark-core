@@ -37,7 +37,7 @@ jobs:
 
   mac-intel:
     name: MacOS Intel
-    runs-on: macos-11
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
