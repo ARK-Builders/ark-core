@@ -125,13 +125,13 @@ impl List {
                 let (path, resource, content) = match entry_output {
                     EntryOutput::Both => (
                         Some(path.to_owned().into_path_buf()),
-                        Some(resource.id),
+                        Some(resource.clone().id),
                         None,
                     ),
                     EntryOutput::Path => {
                         (Some(path.to_owned().into_path_buf()), None, None)
                     }
-                    EntryOutput::Id => (None, Some(resource.id), None),
+                    EntryOutput::Id => (None, Some(resource.clone().id), None),
                     EntryOutput::Link => match File::open(path) {
                         Ok(mut file) => {
                             let mut contents = String::new();
@@ -171,7 +171,7 @@ impl List {
                 entry
                     .tags
                     .as_ref()
-                    .map(|tags| tags.contains(&filter))
+                    .map(|tags| tags.contains(filter))
                     .unwrap_or(false)
             });
         }

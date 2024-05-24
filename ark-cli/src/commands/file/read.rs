@@ -6,6 +6,8 @@ use crate::{
     AppError, ResourceId,
 };
 
+use data_error::ArklibError;
+
 #[derive(Clone, Debug, clap::Args)]
 #[clap(name = "read", about = "Read content from a resource")]
 pub struct Read {
@@ -36,7 +38,8 @@ impl Read {
 
         let mut storage = Storage::new(file_path, storage_type)?;
 
-        let resource_id = ResourceId::from_str(&self.id)?;
+        let resource_id = ResourceId::from_str(&self.id)
+            .map_err(|_e| AppError::ArklibError(ArklibError::Parse))?;
 
         let output = storage.read(resource_id)?;
 

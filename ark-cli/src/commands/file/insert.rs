@@ -6,6 +6,8 @@ use crate::{
     AppError, Format, ResourceId,
 };
 
+use data_error::ArklibError;
+
 #[derive(Clone, Debug, clap::Args)]
 #[clap(name = "insert", about = "Insert content into a resource")]
 pub struct Insert {
@@ -42,7 +44,8 @@ impl Insert {
 
         let mut storage = Storage::new(file_path, storage_type)?;
 
-        let resource_id = ResourceId::from_str(&self.id)?;
+        let resource_id = ResourceId::from_str(&self.id)
+            .map_err(|_e| AppError::ArklibError(ArklibError::Parse))?;
 
         storage.insert(resource_id, &self.content, format)?;
 

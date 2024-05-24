@@ -6,6 +6,8 @@ use crate::{
     AppError, Format, ResourceId,
 };
 
+use data_error::ArklibError;
+
 #[derive(Clone, Debug, clap::Args)]
 #[clap(name = "append", about = "Append content to a resource")]
 pub struct Append {
@@ -42,7 +44,8 @@ impl Append {
 
         let mut storage = Storage::new(file_path, storage_type)?;
 
-        let resource_id = ResourceId::from_str(&self.id)?;
+        let resource_id = ResourceId::from_str(&self.id)
+            .map_err(|_e| AppError::ArklibError(ArklibError::Parse))?;
 
         storage.append(resource_id, &self.content, format)?;
 
