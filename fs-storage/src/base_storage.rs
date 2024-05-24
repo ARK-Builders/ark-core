@@ -11,6 +11,12 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     /// Check if the storage is up-to-date,
     /// i.e. that the internal mapping is consistent
     /// with the data in the filesystem.
+    /// Returns:
+    /// - `Ok(true)` if the on-disk data is outdated compared to the in-memory data.
+    /// - `Ok(false)` if the on-disk data is up-to-date with the in-memory data.
+    /// If there is an error retrieving the file metadata (e.g., the file doesn't
+    /// exist), `Ok(true)` is returned, indicating that the on-disk data is outdated
+    /// or non-existent.
     fn is_outdated(&self) -> Result<bool>;
 
     /// Scan and load the key-value mapping

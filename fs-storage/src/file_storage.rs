@@ -110,17 +110,15 @@ where
     fn is_outdated(&self) -> Result<bool> {
         match fs::metadata(&self.path) {
             Ok(metadata) => {
-                let fs_modified = metadata
-                    .modified()?
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+                let get_duration_since_epoch = |time: SystemTime| {
+                    time.duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                };
 
-                let self_modified = self
-                    .modified
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+                let fs_modified =
+                    get_duration_since_epoch(metadata.modified()?);
+                let self_modified = get_duration_since_epoch(self.modified);
 
                 Ok(fs_modified != self_modified)
             }
@@ -240,8 +238,6 @@ where
             }
         }
         self.modified = std::time::SystemTime::now();
-        self.write_fs()
-            .expect("Failed to write data to disk");
         Ok(())
     }
 }
