@@ -228,13 +228,9 @@ where
         for (key, value) in other_entries {
             if let Some(existing_value) = self.data.entries.get(key) {
                 let resolved_value = V::combine(existing_value, value);
-                self.data
-                    .entries
-                    .insert(key.clone(), resolved_value);
+                self.set(key.clone(), resolved_value);
             } else {
-                self.data
-                    .entries
-                    .insert(key.clone(), value.clone());
+                self.set(key.clone(), value.clone())
             }
         }
         self.modified = std::time::SystemTime::now();
