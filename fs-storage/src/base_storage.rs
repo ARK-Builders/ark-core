@@ -8,15 +8,16 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     /// Remove an entry from the internal mapping.
     fn remove(&mut self, id: &K) -> Result<()>;
 
-    /// Check if the storage is up-to-date,
-    /// i.e. that the internal mapping is consistent
-    /// with the data in the filesystem.
+    /// Determine if in-memory model
+    /// or the underlying storage requires syncing.
+    /// This is a quick method checking timestamps
+    /// of modification of both model and storage.
+    ///
     /// Returns:
-    /// - `Ok(true)` if the on-disk data is outdated compared to the in-memory data.
-    /// - `Ok(false)` if the on-disk data is up-to-date with the in-memory data.
-    /// - `Err(ArklibError::Storage)` if the file doesn't exist.
-    /// - `Ok(true)` if there is any other error retrieving the file metadata.
-    fn is_outdated(&self) -> Result<bool>;
+    /// - `Ok(true)` if the on-disk data and in-memory data are not in sync.
+    /// - `Ok(false)` if the on-disk data and in-memory data are in sync.
+    /// - `Err(ArklibError::Storage)` in case of any error retrieving the file metadata.
+    fn needs_syncing(&self) -> Result<bool>;
 
     /// Scan and load the key-value mapping
     /// from pre-configured location in the filesystem.

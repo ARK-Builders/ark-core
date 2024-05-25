@@ -105,9 +105,10 @@ where
         Ok(())
     }
 
-    /// Compare the timestamp of the storage file with the timestamp of the storage instance
-    /// to determine if the storage file is up-to-date.
-    fn is_outdated(&self) -> Result<bool> {
+    /// Compare the timestamp of the storage file
+    /// with the timestamp of the in-memory storage update
+    /// to determine if either of the two requires syncing.
+    fn needs_syncing(&self) -> Result<bool> {
         match fs::metadata(&self.path) {
             Ok(metadata) => {
                 let get_duration_since_epoch = |time: SystemTime| {
@@ -123,18 +124,7 @@ where
                 Ok(fs_modified != self_modified)
             }
             Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    Err(ArklibError::Storage(
-                        self.label.clone(),
-                        "File does not exist".to_owned(),
-                    ))
-                } else {
-                    log::error!(
-                        "Failed to check file storage is updated or not : {}",
-                        e
-                    );
-                    Ok(true)
-                }
+                Err(ArklibError::Storage(self.label.clone(), e.to_string()))
             }
         }
     }
@@ -311,32 +301,32 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
         file_storage.write_fs().unwrap();
-        assert_eq!(file_storage.is_outdated().unwrap(), false);
+        assert_eq!(file_storage.needs_syncing().unwrap(), false);
         std::thread::sleep(std::time::Duration::from_secs(1));
         file_storage.set("key1".to_string(), "value1".to_string());
-        assert_eq!(file_storage.is_outdated().unwrap(), true);
+        assert_eq!(file_storage.needs_syncing().unwrap(), true);
         file_storage.write_fs().unwrap();
-        assert_eq!(file_storage.is_outdated().unwrap(), false);
+        assert_eq!(file_storage.needs_syncing().unwrap(), false);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
         // External data manipulation
         let mut mirror_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path);
-        assert_eq!(mirror_storage.is_outdated().unwrap(), true);
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), true);
         std::thread::sleep(std::time::Duration::from_secs(1));
         mirror_storage.read_fs().unwrap();
-        assert_eq!(mirror_storage.is_outdated().unwrap(), false);
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), false);
 
         mirror_storage.set("key1".to_string(), "value3".to_string());
-        assert_eq!(mirror_storage.is_outdated().unwrap(), true);
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), true);
         mirror_storage.write_fs().unwrap();
-        assert_eq!(mirror_storage.is_outdated().unwrap(), false);
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), false);
 
-        assert_eq!(file_storage.is_outdated().unwrap(), true);
+        assert_eq!(file_storage.needs_syncing().unwrap(), true);
         file_storage.read_fs().unwrap();
-        assert_eq!(file_storage.is_outdated().unwrap(), false);
-        assert_eq!(mirror_storage.is_outdated().unwrap(), false);
+        assert_eq!(file_storage.needs_syncing().unwrap(), false);
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), false);
     }
 
     #[test]
