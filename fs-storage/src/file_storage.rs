@@ -118,12 +118,12 @@ where
         let file_time_secs = file_timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_millis();
+            .as_nanos();
         let self_time_secs = self
             .timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_millis();
+            .as_nanos();
         Ok(file_time_secs > self_time_secs)
     }
 
