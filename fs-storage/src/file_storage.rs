@@ -123,11 +123,18 @@ where
                 Ok(fs_modified != self_modified)
             }
             Err(e) => {
-                log::error!(
-                    "Failed to check file storage is updated or not : {}",
-                    e
-                );
-                Ok(true)
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Err(ArklibError::Storage(
+                        self.label.clone(),
+                        "File does not exist".to_owned(),
+                    ))
+                } else {
+                    log::error!(
+                        "Failed to check file storage is updated or not : {}",
+                        e
+                    );
+                    Ok(true)
+                }
             }
         }
     }
