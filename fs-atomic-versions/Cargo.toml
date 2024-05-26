@@ -9,8 +9,6 @@ crate-type = ["rlib"]
 bench = false
 
 [dependencies]
-data-error = { path = "../data-error" }
-
 log = { version = "0.4.17", features = ["release_max_level_off"] }
 anyhow = "1.0.58"
 lazy_static = "1.4.0"
@@ -18,6 +16,9 @@ serde_json = "1.0.82"
 serde = { version = "1.0.138", features = ["derive"] }
 fastrand = "2"
 uuid = { version = "1.6.1", features = ["v4"] }
+
+
+data-error = { path = "../data-error" }
 
 [dev-dependencies]
 tempdir = "0.3.7"

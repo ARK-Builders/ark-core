@@ -10,20 +10,4 @@ bench = false
 
 [dependencies]
 data-error = { path = "../data-error" }
-fs-atomic-versions = { path = "../fs-atomic-versions" }
-
-log = { version = "0.4.17", features = ["release_max_level_off"] }
-serde = { version = "1.0.138", features = ["derive"] }
-crc32fast = "1.3.2"
-anyhow = "1"
-
-
-[dev-dependencies]
-# benchmarking
-criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
-
-[[bench]]
-name = "compute_bytes_benchmark"
-harness = false
-path = "benches/compute_bytes_benchmark.rs"
+serde = { version = "1.0", features = ["derive"] }

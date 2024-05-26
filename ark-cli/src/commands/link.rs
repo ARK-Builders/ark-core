@@ -1,5 +1,5 @@
+use crate::ResourceId;
 use data_link::Link;
-use data_resource::ResourceId;
 use std::path::PathBuf;
 use url::Url;
 
@@ -14,7 +14,8 @@ pub async fn create_link(
 ) -> Result<(), AppError> {
     let url = Url::parse(url)
         .map_err(|_| AppError::LinkCreationError("Invalid url".to_owned()))?;
-    let link: Link = Link::new(url, title.to_owned(), desc.to_owned());
+    let link: Link<ResourceId> =
+        Link::new(url, title.to_owned(), desc.to_owned());
     link.save(root, true)
         .await
         .map_err(|e| AppError::LinkCreationError(e.to_string()))
@@ -24,8 +25,8 @@ pub fn load_link(
     root: &PathBuf,
     file_path: &Option<PathBuf>,
     id: &Option<ResourceId>,
-) -> Result<Link, AppError> {
-    let path_from_index = id.map(|id| {
+) -> Result<Link<ResourceId>, AppError> {
+    let path_from_index = id.clone().map(|id| {
         let index = provide_index(root);
         index.id2path[&id].as_path().to_path_buf()
     });
@@ -37,7 +38,7 @@ pub fn load_link(
                 Err(AppError::LinkLoadError(format!(
                     "Path {:?} was requested. But id {} maps to path {:?}",
                     path,
-                    id.unwrap(),
+                    id.clone().unwrap(),
                     path2,
                 )))
             } else {

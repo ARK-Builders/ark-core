@@ -10,15 +10,18 @@ use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::marker::PhantomData;
 use std::path::Path;
 use std::str::{self, FromStr};
 use std::{io::Write, path::PathBuf};
 use url::Url;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Link {
+pub struct Link<Id: ResourceId> {
     pub url: Url,
     pub prop: Properties,
+    // We need `_marker` to indicate that `Link` is generic over Id
+    pub _marker: PhantomData<Id>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -27,22 +30,20 @@ pub struct Properties {
     pub desc: Option<String>,
 }
 
-impl Link {
+impl<Id: ResourceId> Link<Id> {
     pub fn new(url: Url, title: String, desc: Option<String>) -> Self {
         Self {
             url,
             prop: Properties { title, desc },
+            _marker: PhantomData,
         }
     }
 
-    pub fn id(&self) -> Result<ResourceId> {
-        ResourceId::compute_bytes(self.url.as_str().as_bytes())
+    pub fn id(&self) -> Result<Id> {
+        Id::from_bytes(self.url.as_str().as_bytes())
     }
 
-    fn load_user_data<P: AsRef<Path>>(
-        root: P,
-        id: &ResourceId,
-    ) -> Result<Properties> {
+    fn load_user_data<P: AsRef<Path>>(root: P, id: &Id) -> Result<Properties> {
         let path = root
             .as_ref()
             .join(ARK_FOLDER)
@@ -60,7 +61,7 @@ impl Link {
     pub fn load<P: AsRef<Path>>(root: P, filename: P) -> Result<Self> {
         let p = root.as_ref().join(filename);
         let url = Self::load_url(p)?;
-        let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
+        let id = Id::from_bytes(url.as_str().as_bytes())?;
         // Load user properties first
         let user_prop = Self::load_user_data(&root, &id)?;
         let mut description = user_prop.desc;
@@ -78,6 +79,7 @@ impl Link {
                 title: user_prop.title,
                 desc: description,
             },
+            _marker: PhantomData,
         })
     }
 
@@ -93,13 +95,13 @@ impl Link {
         let bytes = self.url.as_str().as_bytes();
         fs_atomic_light::temp_and_move(bytes, root.as_ref(), &id_string)?;
         //User defined properties
-        store_properties(&root, id, &self.prop)?;
+        store_properties(&root, id.clone(), &self.prop)?;
 
         // Generated data
         if let Ok(graph) = self.get_preview().await {
             log::debug!("Trying to save: {with_preview} with {graph:?}");
 
-            store_metadata(&root, id, &graph)?;
+            store_metadata(&root, id.clone(), &graph)?;
             if with_preview {
                 if let Some(preview_data) = graph.fetch_image().await {
                     self.save_preview(root, preview_data, &id)?;
@@ -113,7 +115,7 @@ impl Link {
         &self,
         root: P,
         image_data: Vec<u8>,
-        id: &ResourceId,
+        id: &Id,
     ) -> Result<()> {
         let path = root
             .as_ref()
@@ -291,6 +293,7 @@ impl OpenGraphTag {
 async fn test_create_link_file() {
     fs_atomic_versions::initialize();
 
+    use dev_hash::Crc32;
     use tempdir::TempDir;
 
     let dir = TempDir::new("arklib_test").unwrap();
@@ -298,7 +301,7 @@ async fn test_create_link_file() {
     let root: &Path = dir.path();
     println!("temporary root: {}", root.display());
     let url = Url::parse("https://kaydee.net/blog/open-graph-image/").unwrap();
-    let link = Link::new(
+    let link: Link<Crc32> = Link::new(
         url,
         String::from("test_title"),
         Some(String::from("test_desc")),
@@ -314,12 +317,12 @@ async fn test_create_link_file() {
             Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
                 .unwrap();
         assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
-        let link = Link::load(root, &path).unwrap();
+        let link: Link<Crc32> = Link::load(root, &path).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.prop.desc.unwrap(), "test_desc");
         assert_eq!(link.prop.title, "test_title");
 
-        let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
+        let id = Crc32::from_bytes(current_bytes.as_bytes()).unwrap();
         let path = Path::new(&root)
             .join(ARK_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)

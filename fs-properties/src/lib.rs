@@ -1,13 +1,13 @@
-use data_error::Result;
-use data_json::merge;
-use fs_atomic_versions::atomic::{modify_json, AtomicFile};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
+use data_error::Result;
+use data_json::merge;
 use data_resource::ResourceId;
+use fs_atomic_versions::atomic::{modify_json, AtomicFile};
 use fs_storage::ARK_FOLDER;
 
 pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
@@ -15,9 +15,10 @@ pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
 pub fn store_properties<
     S: Serialize + DeserializeOwned + Clone + Debug,
     P: AsRef<Path>,
+    Id: ResourceId,
 >(
     root: P,
-    id: ResourceId,
+    id: Id,
     properties: &S,
 ) -> Result<()> {
     let file = AtomicFile::new(
@@ -42,9 +43,9 @@ pub fn store_properties<
 }
 
 /// The file must exist if this method is called
-pub fn load_raw_properties<P: AsRef<Path>>(
+pub fn load_raw_properties<P: AsRef<Path>, Id: ResourceId>(
     root: P,
-    id: ResourceId,
+    id: Id,
 ) -> Result<Vec<u8>> {
     let storage = root
         .as_ref()
@@ -75,6 +76,8 @@ mod tests {
     use std::collections::HashMap;
     type TestProperties = HashMap<String, String>;
 
+    use dev_hash::Crc32;
+
     #[test]
     fn test_store_and_load() {
         initialize();
@@ -83,16 +86,13 @@ mod tests {
         let root = dir.path();
         log::debug!("temporary root: {}", root.display());
 
-        let id = ResourceId {
-            crc32: 0x342a3d4a,
-            data_size: 1,
-        };
+        let id = Crc32(0x342a3d4a);
 
         let mut prop = TestProperties::new();
         prop.insert("abc".to_string(), "def".to_string());
         prop.insert("xyz".to_string(), "123".to_string());
 
-        store_properties(root, id, &prop).unwrap();
+        store_properties(root, id.clone(), &prop).unwrap();
 
         let bytes = load_raw_properties(root, id).unwrap();
         let prop2: TestProperties = serde_json::from_slice(&bytes).unwrap();
