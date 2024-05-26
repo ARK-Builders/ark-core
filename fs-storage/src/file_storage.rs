@@ -114,7 +114,7 @@ where
                 let get_duration_since_epoch = |time: SystemTime| {
                     time.duration_since(SystemTime::UNIX_EPOCH)
                         .unwrap()
-                        .as_secs()
+                        .as_micros()
                 };
 
                 let fs_modified =
