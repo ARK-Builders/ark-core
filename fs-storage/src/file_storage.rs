@@ -421,12 +421,12 @@ pub mod jni_bindings {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_FileStorage_is_storage_updated(
+    pub extern "system" fn Java_FileStorage_needs_syncing(
         _env: &mut JNIEnv,
         _class: JClass,
         file_storage_ptr: jlong,
     ) -> jboolean {
-        match FileStorage::from_jlong(file_storage_ptr).is_storage_updated() {
+        match FileStorage::from_jlong(file_storage_ptr).needs_syncing() {
             Ok(updated) => updated as jboolean,
             Err(_) => 0, // handle error here
         }
