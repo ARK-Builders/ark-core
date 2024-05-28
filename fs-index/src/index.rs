@@ -204,144 +204,23 @@ impl<Id: ResourceId> ResourceIndex<Id> {
         log::debug!("Updating the index");
         log::trace!("[update] known paths: {:?}", self.path2id.keys());
 
-        let curr_entries = discover_paths(self.root.clone());
+        let mut added = HashMap::new();
+        let mut deleted = HashSet::new();
 
-        //assuming that collections manipulation is
-        // quicker than asking `path.exists()` for every path
-        let curr_paths: Paths = curr_entries.keys().cloned().collect();
-        let prev_paths: Paths = self.path2id.keys().cloned().collect();
-        let preserved_paths: Paths = curr_paths
-            .intersection(&prev_paths)
-            .cloned()
-            .collect();
-
-        let created_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
-            .iter()
-            .filter_map(|(path, entry)| {
-                if !preserved_paths.contains(path.as_canonical_path()) {
-                    Some((path.clone(), entry.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        log::debug!("Checking updated paths");
-        let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
-            .into_iter()
-            .filter(|(path, dir_entry)| {
-                if !preserved_paths.contains(path.as_canonical_path()) {
-                    false
-                } else {
-                    let our_entry = &self.path2id[path];
-                    let prev_modified = our_entry.modified;
-
-                    let result = dir_entry.metadata();
-                    match result {
-                        Err(msg) => {
-                            log::error!(
-                                "Couldn't retrieve metadata for {}: {}",
-                                &path.display(),
-                                msg
-                            );
-                            false
-                        }
-                        Ok(metadata) => match metadata.modified() {
-                            Err(msg) => {
-                                log::error!(
-                                    "Couldn't retrieve timestamp for {}: {}",
-                                    &path.display(),
-                                    msg
-                                );
-                                false
-                            }
-                            Ok(curr_modified) => {
-                                let elapsed = curr_modified
-                                    .duration_since(prev_modified)
-                                    .unwrap();
-
-                                let was_updated =
-                                    elapsed >= RESOURCE_UPDATED_THRESHOLD;
-                                if was_updated {
-                                    log::trace!(
-                                        "[update] modified {} by path {}
-                                        \twas {:?}
-                                        \tnow {:?}
-                                        \telapsed {:?}",
-                                        our_entry.id,
-                                        path.display(),
-                                        prev_modified,
-                                        curr_modified,
-                                        elapsed
-                                    );
-                                }
-
-                                was_updated
-                            }
-                        },
-                    }
-                }
-            })
-            .collect();
-
-        let mut deleted: HashSet<Id> = HashSet::new();
-
-        // treating both deleted and updated paths as deletions
-        prev_paths
-            .difference(&preserved_paths)
-            .cloned()
-            .chain(updated_paths.keys().cloned())
-            .for_each(|path| {
-                if let Some(entry) =
-                    self.path2id.remove(path.as_canonical_path())
-                {
-                    let k = self.collisions.remove(&entry.id).unwrap_or(1);
-                    if k > 1 {
-                        self.collisions.insert(entry.id, k - 1);
-                    } else {
-                        log::trace!(
-                            "[delete] {} by path {}",
-                            entry.id,
-                            path.display()
-                        );
-                        self.id2path.remove(&entry.id);
-                        deleted.insert(entry.id);
-                    }
-                } else {
-                    log::warn!("Path {} was not known", path.display());
-                }
-            });
-
-        let added: HashMap<CanonicalPathBuf, IndexEntry<Id>> =
-            scan_entries(updated_paths)
-                .into_iter()
-                .chain({
-                    log::debug!("Checking added paths");
-                    scan_entries(created_paths).into_iter()
-                })
-                .filter(|(_, entry)| !self.id2path.contains_key(&entry.id))
-                .collect();
-
-        for (path, entry) in added.iter() {
-            if deleted.contains(&entry.id) {
-                // emitting the resource as both deleted and added
-                // (renaming a duplicate might remain undetected)
-                log::trace!(
-                    "[update] moved {} to path {}",
-                    entry.id,
-                    path.display()
-                );
+        let new_index: ResourceIndex<Id> = ResourceIndex::build(&self.root);
+        for (path, entry) in new_index.path2id.iter() {
+            if !self.path2id.contains_key(path) {
+                added.insert(path.clone(), entry.id.clone());
             }
-
-            self.insert_entry(path.clone(), entry.clone());
+        }
+        for (path, entry) in self.path2id.iter() {
+            if !new_index.path2id.contains_key(path) {
+                deleted.insert(entry.id.clone());
+            }
         }
 
-        let added: HashMap<CanonicalPathBuf, Id> = added
-            .into_iter()
-            .map(|(path, entry)| (path, entry.id))
-            .collect();
-
-        Ok(IndexUpdate { deleted, added })
+        *self = new_index;
+        Ok(IndexUpdate { added, deleted })
     }
 
     // the caller must ensure that:
