@@ -23,7 +23,13 @@ pub struct Append {
     id: String,
     #[clap(help = "Content to append to the resource")]
     content: String,
-    #[clap(short, long, value_enum, help = "Format of the resource")]
+    #[clap(
+        short,
+        long,
+        value_enum,
+        default_value = "raw",
+        help = "Format of the resource"
+    )]
     format: Option<Format>,
     #[clap(short, long, value_enum, help = "Storage kind of the resource")]
     kind: Option<StorageType>,
@@ -35,12 +41,13 @@ impl Append {
             translate_storage(&Some(self.root_dir.to_owned()), &self.storage)
                 .ok_or(AppError::StorageNotFound(self.storage.to_owned()))?;
 
+        // FIXME: Why do we have `self.kind` and `self.storage`? Both are used to determine the storage type
         let storage_type = storage_type.unwrap_or(match self.kind {
             Some(t) => t,
             None => StorageType::File,
         });
 
-        let format = self.format.unwrap_or(Format::Raw);
+        let format = self.format.unwrap();
 
         let mut storage = Storage::new(file_path, storage_type)?;
 

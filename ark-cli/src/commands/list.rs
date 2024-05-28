@@ -179,9 +179,6 @@ impl List {
         let no_tags = "NO_TAGS";
         let no_scores = "NO_SCORE";
 
-        // FIXME: We should use a table library to print this.
-        //        probably `comfy-table`
-
         let longest_path = storage_entries
             .iter()
             .map(|entry| {

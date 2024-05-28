@@ -7,16 +7,17 @@ use crate::{monitor_index, AppError};
 pub struct Monitor {
     #[clap(value_parser, help = "Path to the root directory")]
     root_dir: Option<PathBuf>,
-    // FIXME: help message should specify what metric the interval is in
-    #[clap(help = "Interval to check for changes")]
+    #[clap(
+        default_value = "1000",
+        help = "Interval to check for changes in milliseconds"
+    )]
     interval: Option<u64>,
 }
 
 impl Monitor {
     pub fn run(&self) -> Result<(), AppError> {
-        // FIXME: 1000 should be the default value in clap configuration
-        //        so users know
-        let millis = self.interval.unwrap_or(1000);
+        // SAFETY: interval is always Some since it has a default value in clap
+        let millis = self.interval.unwrap();
         monitor_index(&self.root_dir, Some(millis))
     }
 }

@@ -12,8 +12,9 @@ pub struct List {
     root_dir: Option<PathBuf>,
     #[clap(help = "Storage name")]
     storage: Option<String>,
-    #[clap(short, long, help = "TODO: what is this flag for?")]
-    versions: Option<bool>,
+    // TODO: What is the purpose of this field? Add a help message to clarify.
+    #[clap(short, long, action = clap::ArgAction::SetTrue)]
+    versions: bool,
     #[clap(short, long, value_enum, help = "Storage kind of the resource")]
     kind: Option<StorageType>,
 }
@@ -27,7 +28,7 @@ impl List {
                     "Storage was not provided".to_owned(),
                 ))?;
 
-        let versions = self.versions.unwrap_or(false);
+        let versions = self.versions;
 
         let (file_path, storage_type) =
             translate_storage(&self.root_dir, storage)
