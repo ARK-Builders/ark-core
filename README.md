@@ -17,6 +17,7 @@ Development docs will come sometime.
 **The Concept of the Framework**
 
 The framework is supposed to help in solving the following problems:
+
 1. Management of user data, stored as simple files on the disk, as well as various kinds of metadata: tags, scores, arbitrary properties like movie title or description. Such a metadata is persisted to filesystem for easier sync, backup and migration by any 3rd-party tool.
 2. Sync of both user data and metadata, across all user devices in P2P fashion. Cache syncing might be implemented later, too.
 3. Version tracking for user data: not only text-files, but also images, videos etc.
@@ -75,7 +76,7 @@ cargo bench
 This command runs all benchmarks and generates a report in HTML format located at `target/criterion/report`. If you wish to run a specific benchmark, you can specify its name as an argument as in:
 
 ```bash
-cargo bench index_build
+cargo bench resource_index
 ```
 
 ### Benchmarking Local Files
@@ -96,10 +97,10 @@ To install `flamegraph`, run:
 cargo install flamegraph
 ```
 
-To generate a flame graph for `index_build_benchmark`, use the following command:
+To generate a flame graph for `resource_index_benchmark`, use the following command:
 
 ```bash
-cargo flamegraph --bench index_build_benchmark -o index_build_benchmark.svg -- --bench
+cargo flamegraph --bench resource_index_benchmark -o resource_index_benchmark.svg -- --bench
 ```
 
 > [!NOTE]

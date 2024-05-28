@@ -29,8 +29,9 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # Depending on `dev-hash` for testing
 dev-hash = { path = "../dev-hash" }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
+tempfile = "3.10"
 
 [[bench]]
-name = "index_build_benchmark"
+name = "resource_index_benchmark"
 harness = false
-path = "benches/index_build_benchmark.rs"
+path = "benches/resource_index_benchmark.rs"
