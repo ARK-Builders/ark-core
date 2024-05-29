@@ -289,7 +289,7 @@ mod tests {
         if let Err(err) = file_storage.erase() {
             panic!("Failed to delete file: {:?}", err);
         }
-        assert_eq!(storage_path.exists(), false);
+        assert!(!storage_path.exists());
     }
 
     #[test]
