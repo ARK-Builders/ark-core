@@ -378,14 +378,14 @@ pub mod jni_bindings {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_FileStorage_create(
-        env: &mut JNIEnv,
+    pub extern "system" fn Java_FileStorage_create<'local>(
+        mut env: JNIEnv<'local>,
         _class: JClass,
-        label: JString,
-        path: JString,
+        label: JString<'local>,
+        path: JString<'local>,
     ) -> jlong {
-        let label: String = env.get_string(&label).unwrap().into();
-        let path: String = env.get_string(&path).unwrap().into();
+        let label: String = env.get_string(&label).expect("Couldn't get label!").into();
+        let path: String = env.get_string(&path).expect("Couldn't get path!").into();
 
         let file_storage: FileStorage<String, String> =
             FileStorage::new(label, Path::new(&path));
@@ -393,24 +393,24 @@ pub mod jni_bindings {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_FileStorage_set(
-        env: &mut JNIEnv,
+    pub extern "system" fn Java_FileStorage_set<'local>(
+        mut env: JNIEnv<'local>,
         _class: JClass,
-        id: JString,
-        value: JString,
+        id: JString<'local>,
+        value: JString<'local>,
         file_storage_ptr: jlong,
     ) {
-        let id: String = env.get_string(&id).unwrap().into();
-        let value: String = env.get_string(&value).unwrap().into();
+        let id: String = env.get_string(&id).expect("msg").into();
+        let value: String = env.get_string(&value).expect("msg").into();
 
         FileStorage::from_jlong(file_storage_ptr).set(id, value);
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_FileStorage_remove(
-        env: &mut JNIEnv,
+    pub extern "system" fn Java_FileStorage_remove<'local>(
+        mut env: JNIEnv<'local>,
         _class: JClass,
-        id: JString,
+        id: JString<'local>,
         file_storage_ptr: jlong,
     ) {
         let id: String = env.get_string(&id).unwrap().into();
