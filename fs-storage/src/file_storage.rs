@@ -510,4 +510,6 @@ pub mod jni_bindings {
         };
         file_storage.erase().unwrap();
     }
+
+    // TODO: Implement mergeFrom
 }
