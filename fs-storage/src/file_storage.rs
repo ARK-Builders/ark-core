@@ -196,15 +196,25 @@ where
     fn needs_syncing(&self) -> Result<SyncStatus> {
         let file_updated = fs::metadata(&self.path)?.modified()?;
 
-        match (
-            self.modified > self.written_to_disk,
-            self.written_to_disk == file_updated,
-            file_updated > self.written_to_disk,
-        ) {
-            (true, true, _) => Ok(SyncStatus::DownSync),
-            (true, false, _) => Ok(SyncStatus::FullSync),
-            (_, _, true) => Ok(SyncStatus::UpSync),
-            _ => Ok(SyncStatus::NoSync),
+        // mapping updated
+        if self.modified > self.written_to_disk {
+            // file updated since last write
+            if file_updated > self.written_to_disk {
+                // both updated
+                return Ok(SyncStatus::FullSync);
+            } else {
+                // only mapping updated
+                return Ok(SyncStatus::DownSync);
+            }
+        } else {
+            // file updated since last write
+            if file_updated > self.written_to_disk {
+                // only file updated
+                return Ok(SyncStatus::UpSync);
+            } else {
+                // no change
+                return Ok(SyncStatus::NoSync);
+            }
         }
     }
 
