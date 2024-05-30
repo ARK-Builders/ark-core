@@ -45,7 +45,14 @@ key2: value2
 cargo run --example cli read /tmp/z
 ```
 
-## Steps to test File Storage's Java Wrapper
+## Java Wrapper
+```java
+javac -h . FileStorage.java
+javac FileStorage.java  
+LD_LIBRARY_PATH=<project-root-path>/target/debug && java FileStorage.java
+```
+
+## Steps to test Java Wrapper
 ```bash
-cd tests && make all
+cd tests && make test
 ```
