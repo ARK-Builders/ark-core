@@ -49,6 +49,15 @@ where
     entries: BTreeMap<K, V>,
 }
 
+impl<K, V> AsRef<BTreeMap<K, V>> for FileStorageData<K, V>
+where
+    K: Ord,
+{
+    fn as_ref(&self) -> &BTreeMap<K, V> {
+        &self.entries
+    }
+}
+
 impl<K, V> FileStorage<K, V>
 where
     K: Ord
@@ -81,6 +90,22 @@ where
         }
 
         Ok(storage)
+    }
+
+    pub fn full_sync(&mut self) -> Result<()> {
+        let data = self.load_fs_data()?;
+        self.merge_from(&data)?;
+        self.write_fs()?;
+        Ok(())
+    }
+
+    pub fn sync(&mut self) -> Result<()> {
+        match self.needs_syncing()? {
+            SyncStatus::NoSync => Ok(()),
+            SyncStatus::DownSync => self.read_fs().map(|_| ()),
+            SyncStatus::UpSync => self.write_fs(),
+            SyncStatus::FullSync => self.full_sync(),
+        }
     }
 
     fn load_fs_data(&self) -> Result<FileStorageData<K, V>> {
