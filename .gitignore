@@ -2,3 +2,4 @@
 target
 Cargo.lock
 **/app_id
+*.class

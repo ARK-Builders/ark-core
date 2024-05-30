@@ -50,5 +50,5 @@ cargo run --example cli read /tmp/z
 javac -h . FileStorage.java
 javac FileStorage.java  
 // will remove it later, sorry    
-LD_LIBRARY_PATH=/home/pushkarm029/ark-rust/fs-storage/src && java FileStorage.java
+LD_LIBRARY_PATH=<project-root-path>/target/debug && java FileStorage.java
 ```
