@@ -82,6 +82,59 @@ where
 
         Ok(storage)
     }
+
+    fn load_fs_data(&self) -> Result<FileStorageData<K, V>> {
+        if !self.path.exists() {
+            return Err(ArklibError::Storage(
+                self.label.clone(),
+                "File does not exist".to_owned(),
+            ));
+        }
+
+        // First check if the file starts with "version: 2"
+        let file_content = std::fs::read_to_string(&self.path)?;
+        if file_content.starts_with("version: 2") {
+            // Attempt to parse the file using the legacy version 2 storage format of FileStorage.
+            match read_version_2_fs(&self.path) {
+                Ok(data) => {
+                    log::info!(
+                        "Version 2 storage format detected for {}",
+                        self.label
+                    );
+                    let data = FileStorageData {
+                        version: 2,
+                        entries: data,
+                    };
+                    return Ok(data);
+                }
+                Err(_) => {
+                    return Err(ArklibError::Storage(
+                        self.label.clone(),
+                        "Storage seems to be version 2, but failed to parse"
+                            .to_owned(),
+                    ));
+                }
+            };
+        }
+
+        let file = fs::File::open(&self.path)?;
+        let data: FileStorageData<K, V> = serde_json::from_reader(file)
+            .map_err(|err| {
+                ArklibError::Storage(self.label.clone(), err.to_string())
+            })?;
+        let version = data.version;
+        if version != STORAGE_VERSION {
+            return Err(ArklibError::Storage(
+                self.label.clone(),
+                format!(
+                    "Storage version mismatch: expected {}, got {}",
+                    STORAGE_VERSION, version
+                ),
+            ));
+        }
+
+        Ok(data)
+    }
 }
 
 impl<K, V> BaseStorage<K, V> for FileStorage<K, V>
@@ -132,56 +185,7 @@ where
 
     /// Read the data from the storage file
     fn read_fs(&mut self) -> Result<&BTreeMap<K, V>> {
-        if !self.path.exists() {
-            return Err(ArklibError::Storage(
-                self.label.clone(),
-                "File does not exist".to_owned(),
-            ));
-        }
-
-        // First check if the file starts with "version: 2"
-        let file_content = std::fs::read_to_string(&self.path)?;
-        if file_content.starts_with("version: 2") {
-            // Attempt to parse the file using the legacy version 2 storage format of FileStorage.
-            match read_version_2_fs(&self.path) {
-                Ok(data) => {
-                    log::info!(
-                        "Version 2 storage format detected for {}",
-                        self.label
-                    );
-                    self.modified = fs::metadata(&self.path)?.modified()?;
-                    self.written_to_disk = self.modified;
-                    self.data = FileStorageData {
-                        version: 2,
-                        entries: data,
-                    };
-                    return Ok(&self.data.entries);
-                }
-                Err(_) => {
-                    return Err(ArklibError::Storage(
-                        self.label.clone(),
-                        "Storage seems to be version 2, but failed to parse"
-                            .to_owned(),
-                    ));
-                }
-            };
-        }
-
-        let file = fs::File::open(&self.path)?;
-        let data: FileStorageData<K, V> = serde_json::from_reader(file)
-            .map_err(|err| {
-                ArklibError::Storage(self.label.clone(), err.to_string())
-            })?;
-        let version = data.version;
-        if version != STORAGE_VERSION {
-            return Err(ArklibError::Storage(
-                self.label.clone(),
-                format!(
-                    "Storage version mismatch: expected {}, got {}",
-                    STORAGE_VERSION, version
-                ),
-            ));
-        }
+        let data = self.load_fs_data()?;
 
         // Update file storage with loaded data
         self.modified = fs::metadata(&self.path)?.modified()?;
