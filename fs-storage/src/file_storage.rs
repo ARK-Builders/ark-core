@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::base_storage::BaseStorage;
+use crate::base_storage::{BaseStorage, SyncStatus};
 use crate::monoid::Monoid;
 use crate::utils::read_version_2_fs;
 use data_error::{ArklibError, Result};
@@ -32,6 +32,7 @@ where
     label: String,
     path: PathBuf,
     modified: SystemTime,
+    written_to_disk: SystemTime,
     data: FileStorageData<K, V>,
 }
 
@@ -62,16 +63,24 @@ where
         + Monoid<V>,
 {
     /// Create a new file storage with a diagnostic label and file path
-    pub fn new(label: String, path: &Path) -> Self {
-        Self {
+    pub fn new(label: String, path: &Path) -> Result<Self> {
+        let time = SystemTime::now();
+        let mut storage = Self {
             label,
             path: PathBuf::from(path),
-            modified: SystemTime::now(),
+            modified: time,
+            written_to_disk: time,
             data: FileStorageData {
                 version: STORAGE_VERSION,
                 entries: BTreeMap::new(),
             },
+        };
+
+        if Path::exists(path) {
+            let _ = storage.read_fs();
         }
+
+        Ok(storage)
     }
 }
 
@@ -100,37 +109,29 @@ where
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
         })?;
         self.modified = std::time::SystemTime::now();
-        self.write_fs()
-            .expect("Failed to remove data from disk");
         Ok(())
     }
 
     /// Compare the timestamp of the storage file
-    /// with the timestamp of the in-memory storage update
-    /// to determine if either of the two requires syncing.
-    fn needs_syncing(&self) -> Result<bool> {
-        match fs::metadata(&self.path) {
-            Ok(metadata) => {
-                let get_duration_since_epoch = |time: SystemTime| {
-                    time.duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_micros()
-                };
+    /// with the timestamp of the in-memory storage and the last written
+    /// to time to determine if either of the two requires syncing.
+    fn needs_syncing(&self) -> Result<SyncStatus> {
+        let file_updated = fs::metadata(&self.path)?.modified()?;
 
-                let fs_modified =
-                    get_duration_since_epoch(metadata.modified()?);
-                let self_modified = get_duration_since_epoch(self.modified);
-
-                Ok(fs_modified != self_modified)
-            }
-            Err(e) => {
-                Err(ArklibError::Storage(self.label.clone(), e.to_string()))
-            }
+        match (
+            self.modified > self.written_to_disk,
+            self.written_to_disk == file_updated,
+            file_updated > self.written_to_disk,
+        ) {
+            (true, true, _) => Ok(SyncStatus::DownSync),
+            (true, false, _) => Ok(SyncStatus::FullSync),
+            (_, _, true) => Ok(SyncStatus::UpSync),
+            _ => Ok(SyncStatus::NoSync),
         }
     }
 
     /// Read the data from the storage file
-    fn read_fs(&mut self) -> Result<BTreeMap<K, V>> {
+    fn read_fs(&mut self) -> Result<&BTreeMap<K, V>> {
         if !self.path.exists() {
             return Err(ArklibError::Storage(
                 self.label.clone(),
@@ -149,7 +150,12 @@ where
                         self.label
                     );
                     self.modified = fs::metadata(&self.path)?.modified()?;
-                    return Ok(data);
+                    self.written_to_disk = self.modified;
+                    self.data = FileStorageData {
+                        version: 2,
+                        entries: data,
+                    };
+                    return Ok(&self.data.entries);
                 }
                 Err(_) => {
                     return Err(ArklibError::Storage(
@@ -176,9 +182,13 @@ where
                 ),
             ));
         }
-        self.modified = fs::metadata(&self.path)?.modified()?;
 
-        Ok(data.entries)
+        // Update file storage with loaded data
+        self.modified = fs::metadata(&self.path)?.modified()?;
+        self.written_to_disk = self.modified;
+        self.data = data;
+
+        Ok(&self.data.entries)
     }
 
     /// Write the data to the storage file
@@ -200,6 +210,7 @@ where
             return Err("Timestamp has not been updated".into());
         }
         self.modified = new_timestamp;
+        self.written_to_disk = self.modified;
 
         log::info!(
             "{} {} entries have been written",
@@ -249,7 +260,10 @@ mod tests {
     use std::collections::BTreeMap;
     use tempdir::TempDir;
 
-    use crate::{base_storage::BaseStorage, file_storage::FileStorage};
+    use crate::{
+        base_storage::{BaseStorage, SyncStatus},
+        file_storage::FileStorage,
+    };
 
     #[test]
     fn test_file_storage_write_read() {
@@ -258,13 +272,16 @@ mod tests {
         let storage_path = temp_dir.path().join("test_storage.txt");
 
         let mut file_storage =
-            FileStorage::new("TestStorage".to_string(), &storage_path);
+            FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
 
         file_storage.set("key1".to_string(), "value1".to_string());
         file_storage.set("key2".to_string(), "value2".to_string());
 
         assert!(file_storage.remove(&"key1".to_string()).is_ok());
-        let data_read: BTreeMap<_, _> = file_storage
+        file_storage
+            .write_fs()
+            .expect("Failed to write data to disk");
+        let data_read: &BTreeMap<_, _> = file_storage
             .read_fs()
             .expect("Failed to read data from disk");
 
@@ -279,7 +296,7 @@ mod tests {
         let storage_path = temp_dir.path().join("test_storage.txt");
 
         let mut file_storage =
-            FileStorage::new("TestStorage".to_string(), &storage_path);
+            FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
 
         file_storage.set("key1".to_string(), "value1".to_string());
         file_storage.set("key1".to_string(), "value2".to_string());
@@ -299,34 +316,35 @@ mod tests {
         let storage_path = temp_dir.path().join("teststorage.txt");
 
         let mut file_storage =
-            FileStorage::new("TestStorage".to_string(), &storage_path);
+            FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
-        assert_eq!(file_storage.needs_syncing().unwrap(), false);
+        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
         std::thread::sleep(std::time::Duration::from_secs(1));
         file_storage.set("key1".to_string(), "value1".to_string());
-        assert_eq!(file_storage.needs_syncing().unwrap(), true);
+        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::DownSync);
         file_storage.write_fs().unwrap();
-        assert_eq!(file_storage.needs_syncing().unwrap(), false);
+        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
         // External data manipulation
         let mut mirror_storage =
-            FileStorage::new("TestStorage".to_string(), &storage_path);
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), true);
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        mirror_storage.read_fs().unwrap();
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), false);
+            FileStorage::new("MirrorTestStorage".to_string(), &storage_path)
+                .unwrap();
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
 
         mirror_storage.set("key1".to_string(), "value3".to_string());
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), true);
+        assert_eq!(
+            mirror_storage.needs_syncing().unwrap(),
+            SyncStatus::DownSync
+        );
         mirror_storage.write_fs().unwrap();
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), false);
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
 
-        assert_eq!(file_storage.needs_syncing().unwrap(), true);
+        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::UpSync);
         file_storage.read_fs().unwrap();
-        assert_eq!(file_storage.needs_syncing().unwrap(), false);
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), false);
+        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
+        assert_eq!(mirror_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
     }
 
     #[test]
@@ -337,10 +355,12 @@ mod tests {
         let storage_path2 = temp_dir.path().join("teststorage2.txt");
 
         let mut file_storage_1 =
-            FileStorage::new("TestStorage1".to_string(), &storage_path1);
+            FileStorage::new("TestStorage1".to_string(), &storage_path1)
+                .unwrap();
 
         let mut file_storage_2 =
-            FileStorage::new("TestStorage2".to_string(), &storage_path2);
+            FileStorage::new("TestStorage2".to_string(), &storage_path2)
+                .unwrap();
 
         file_storage_1.set("key1".to_string(), 2);
         file_storage_1.set("key2".to_string(), 6);
