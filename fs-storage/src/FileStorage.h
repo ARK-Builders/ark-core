@@ -33,26 +33,26 @@ JNIEXPORT void JNICALL Java_FileStorage_remove
 
 /*
  * Class:     FileStorage
- * Method:    needs_syncing
+ * Method:    needsSyncing
  * Signature: (J)Z
  */
-JNIEXPORT jboolean JNICALL Java_FileStorage_needs_1syncing
+JNIEXPORT jboolean JNICALL Java_FileStorage_needsSyncing
   (JNIEnv *, jclass, jlong);
 
 /*
  * Class:     FileStorage
- * Method:    read_fs
+ * Method:    readFS
  * Signature: (J)Ljava/lang/Object;
  */
-JNIEXPORT jobject JNICALL Java_FileStorage_read_1fs
+JNIEXPORT jobject JNICALL Java_FileStorage_readFS
   (JNIEnv *, jclass, jlong);
 
 /*
  * Class:     FileStorage
- * Method:    write_fs
+ * Method:    writeFS
  * Signature: (J)V
  */
-JNIEXPORT void JNICALL Java_FileStorage_write_1fs
+JNIEXPORT void JNICALL Java_FileStorage_writeFS
   (JNIEnv *, jclass, jlong);
 
 /*

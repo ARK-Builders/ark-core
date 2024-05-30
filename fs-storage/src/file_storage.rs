@@ -384,8 +384,14 @@ pub mod jni_bindings {
         label: JString<'local>,
         path: JString<'local>,
     ) -> jlong {
-        let label: String = env.get_string(&label).expect("Couldn't get label!").into();
-        let path: String = env.get_string(&path).expect("Couldn't get path!").into();
+        let label: String = env
+            .get_string(&label)
+            .expect("Couldn't get label!")
+            .into();
+        let path: String = env
+            .get_string(&path)
+            .expect("Couldn't get path!")
+            .into();
 
         let file_storage: FileStorage<String, String> =
             FileStorage::new(label, Path::new(&path));
@@ -421,7 +427,7 @@ pub mod jni_bindings {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_FileStorage_needs_syncing(
+    pub extern "system" fn Java_FileStorage_needsSyncing(
         _env: &mut JNIEnv,
         _class: JClass,
         file_storage_ptr: jlong,
@@ -433,8 +439,8 @@ pub mod jni_bindings {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_FileStorage_read_fs(
-        env: &mut JNIEnv,
+    pub extern "system" fn Java_FileStorage_readFS(
+        mut env: JNIEnv<'_>,
         _class: JClass,
         file_storage_ptr: jlong,
     ) -> jobject {
@@ -481,14 +487,15 @@ pub mod jni_bindings {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_FileStorage_write_fs(
+    pub extern "system" fn Java_FileStorage_writeFS(
         _env: &mut JNIEnv,
         _class: JClass,
         file_storage_ptr: jlong,
     ) {
-        FileStorage::from_jlong(file_storage_ptr)
-            .write_fs()
-            .unwrap()
+        match FileStorage::from_jlong(file_storage_ptr).write_fs() {
+            Ok(_) => {}
+            Err(_) => {} // handle error here
+        }
     }
 
     ///! Safety: The FileStorage instance is dropped after this call

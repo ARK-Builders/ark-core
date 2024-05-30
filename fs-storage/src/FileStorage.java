@@ -8,11 +8,11 @@ public class FileStorage {
 
     private static native void remove(String id, long file_storage_ptr);
 
-    private static native boolean needs_syncing(long file_storage_ptr);
+    private static native boolean needsSyncing(long file_storage_ptr);
 
-    private static native Object read_fs(long file_storage_ptr);
+    private static native Object readFS(long file_storage_ptr);
 
-    private static native void write_fs(long file_storage_ptr);
+    private static native void writeFS(long file_storage_ptr);
 
     private static native void erase(long file_storage_ptr);
 
@@ -27,10 +27,10 @@ public class FileStorage {
         set("key", "value1", file_storage_ptr);
         set("key1", "value", file_storage_ptr);
         remove("key", file_storage_ptr);
-        System.out.println(needs_syncing(file_storage_ptr));
-        write_fs(file_storage_ptr);
-        System.out.println(needs_syncing(file_storage_ptr));
-        System.out.println(read_fs(file_storage_ptr));
+        System.out.println(needsSyncing(file_storage_ptr));
+        writeFS(file_storage_ptr);
+        System.out.println(needsSyncing(file_storage_ptr));
+        System.out.println(readFS(file_storage_ptr));
         erase(file_storage_ptr);
     }
 }
