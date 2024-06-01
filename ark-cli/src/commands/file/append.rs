@@ -41,7 +41,6 @@ impl Append {
             translate_storage(&Some(self.root_dir.to_owned()), &self.storage)
                 .ok_or(AppError::StorageNotFound(self.storage.to_owned()))?;
 
-        // FIXME: Why do we have `self.kind` and `self.storage`? Both are used to determine the storage type
         let storage_type = storage_type.unwrap_or(match self.kind {
             Some(t) => t,
             None => StorageType::File,
