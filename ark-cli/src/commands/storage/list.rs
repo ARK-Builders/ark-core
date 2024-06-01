@@ -12,8 +12,7 @@ pub struct List {
     root_dir: Option<PathBuf>,
     #[clap(help = "Storage name")]
     storage: Option<String>,
-    // TODO: What is the purpose of this field? Add a help message to clarify.
-    #[clap(short, long, action = clap::ArgAction::SetTrue)]
+    #[clap(short, long, action = clap::ArgAction::SetTrue, help = "Whether or not to use atomatic versioning")]
     versions: bool,
     #[clap(short, long, value_enum, help = "Storage kind of the resource")]
     kind: Option<StorageType>,

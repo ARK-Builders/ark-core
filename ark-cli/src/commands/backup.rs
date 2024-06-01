@@ -15,8 +15,6 @@ pub struct Backup {
 }
 
 impl Backup {
-    // FIXME: The logic for backup should be moved out of `ark-cli`
-    //        so that it can be used by other applications
     pub fn run(&self) -> Result<(), AppError> {
         let timestamp = timestamp().as_secs();
         let backup_dir = home_dir()
