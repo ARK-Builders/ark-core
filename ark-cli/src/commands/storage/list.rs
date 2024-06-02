@@ -12,7 +12,7 @@ pub struct List {
     root_dir: Option<PathBuf>,
     #[clap(help = "Storage name")]
     storage: Option<String>,
-    #[clap(short, long, action = clap::ArgAction::SetTrue, help = "Whether or not to use atomatic versioning")]
+    #[clap(short, long, action = clap::ArgAction::SetTrue, help = "Print previous versions of the list")]
     versions: bool,
     #[clap(short, long, value_enum, help = "Storage kind of the resource")]
     kind: Option<StorageType>,
