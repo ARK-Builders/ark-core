@@ -86,28 +86,14 @@ where
         };
 
         if Path::exists(path) {
-            let _ = storage.read_fs();
+            storage.read_fs()?;
         }
 
         Ok(storage)
     }
 
-    pub fn full_sync(&mut self) -> Result<()> {
-        let data = self.load_fs_data()?;
-        self.merge_from(&data)?;
-        self.write_fs()?;
-        Ok(())
-    }
 
-    pub fn sync(&mut self) -> Result<()> {
-        match self.needs_syncing()? {
-            SyncStatus::NoSync => Ok(()),
-            SyncStatus::DownSync => self.read_fs().map(|_| ()),
-            SyncStatus::UpSync => self.write_fs(),
-            SyncStatus::FullSync => self.full_sync(),
-        }
-    }
-
+    /// Load mapping from file
     fn load_fs_data(&self) -> Result<FileStorageData<K, V>> {
         if !self.path.exists() {
             return Err(ArklibError::Storage(
@@ -193,32 +179,52 @@ where
     /// Compare the timestamp of the storage file
     /// with the timestamp of the in-memory storage and the last written
     /// to time to determine if either of the two requires syncing.
-    fn needs_syncing(&self) -> Result<SyncStatus> {
+    fn sync_status(&self) -> Result<SyncStatus> {
         let file_updated = fs::metadata(&self.path)?.modified()?;
 
         // mapping updated
-        if self.modified > self.written_to_disk {
+        let status = if self.modified > self.written_to_disk {
             // file updated since last write
             if file_updated > self.written_to_disk {
                 // both updated
-                return Ok(SyncStatus::FullSync);
+                SyncStatus::Diverge
             } else {
                 // only mapping updated
-                return Ok(SyncStatus::DownSync);
+                SyncStatus::StorageStale
             }
-        } else {
+        }
+        // mapping not updated
+        else {
             // file updated since last write
             if file_updated > self.written_to_disk {
                 // only file updated
-                return Ok(SyncStatus::UpSync);
+                SyncStatus::MappingStale
             } else {
                 // no change
-                return Ok(SyncStatus::NoSync);
+                SyncStatus::InSync
+            }
+        };
+
+        log::info!("{} sync status is {}", self.label, status);
+        Ok(status)
+    }
+
+    /// Sync the in-memory storage with the storage on disk
+    fn sync(&mut self) -> Result<()> {
+        match self.sync_status()? {
+            SyncStatus::InSync => Ok(()),
+            SyncStatus::MappingStale => self.read_fs().map(|_| ()),
+            SyncStatus::StorageStale => self.write_fs(),
+            SyncStatus::Diverge => {
+                let data = self.load_fs_data()?;
+                self.merge_from(&data)?;
+                self.write_fs()?;
+                Ok(())
             }
         }
     }
 
-    /// Read the data from the storage file
+    /// Read the data from file
     fn read_fs(&mut self) -> Result<&BTreeMap<K, V>> {
         let data = self.load_fs_data()?;
 
@@ -230,7 +236,7 @@ where
         Ok(&self.data.entries)
     }
 
-    /// Write the data to the storage file
+    /// Write the data to file
     fn write_fs(&mut self) -> Result<()> {
         let parent_dir = self.path.parent().ok_or_else(|| {
             ArklibError::Storage(
@@ -259,7 +265,7 @@ where
         Ok(())
     }
 
-    /// Erase the storage file from disk
+    /// Erase the file from disk
     fn erase(&self) -> Result<()> {
         fs::remove_file(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
@@ -357,12 +363,15 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
-        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
+        assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
         std::thread::sleep(std::time::Duration::from_secs(1));
         file_storage.set("key1".to_string(), "value1".to_string());
-        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::DownSync);
+        assert_eq!(
+            file_storage.sync_status().unwrap(),
+            SyncStatus::StorageStale
+        );
         file_storage.write_fs().unwrap();
-        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
+        assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -370,20 +379,23 @@ mod tests {
         let mut mirror_storage =
             FileStorage::new("MirrorTestStorage".to_string(), &storage_path)
                 .unwrap();
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         mirror_storage.set("key1".to_string(), "value3".to_string());
         assert_eq!(
-            mirror_storage.needs_syncing().unwrap(),
-            SyncStatus::DownSync
+            mirror_storage.sync_status().unwrap(),
+            SyncStatus::StorageStale
         );
         mirror_storage.write_fs().unwrap();
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
-        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::UpSync);
+        assert_eq!(
+            file_storage.sync_status().unwrap(),
+            SyncStatus::MappingStale
+        );
         file_storage.read_fs().unwrap();
-        assert_eq!(file_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
-        assert_eq!(mirror_storage.needs_syncing().unwrap(), SyncStatus::NoSync);
+        assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
     }
 
     #[test]
