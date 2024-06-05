@@ -1,5 +1,5 @@
 use data_error::Result;
-use std::{collections::BTreeMap, path::Display};
+use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
 /// Represents the synchronization status of the storage.
