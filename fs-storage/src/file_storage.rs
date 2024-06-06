@@ -180,7 +180,7 @@ where
     /// to time to determine if either of the two requires syncing.
     fn sync_status(&self) -> Result<SyncStatus> {
         let file_updated = fs::metadata(&self.path)?.modified()?;
-        println!("File updated: {:?}", file_updated);
+
         // mapping updated
         let status = if self.modified > self.written_to_disk {
             // file updated since last write
@@ -303,12 +303,10 @@ where
 mod tests {
     use std::collections::BTreeMap;
     use tempdir::TempDir;
-    use std::fs::{self, File};
 
     use crate::{
         base_storage::{BaseStorage, SyncStatus},
-        file_storage::{self, FileStorage},
-        
+        file_storage::FileStorage,
     };
 
     #[test]
@@ -360,47 +358,43 @@ mod tests {
         let temp_dir =
             TempDir::new("tmp").expect("Failed to create temporary directory");
         let storage_path = temp_dir.path().join("teststorage.txt");
+
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
-        let new_timestamp = fs::metadata(&file_storage.path).unwrap().modified().unwrap();
-        println!("timestamp: {:?}", new_timestamp);
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        println!("fsmodif: {:?}", file_storage.modified);
-        println!("wtd: {:?}", file_storage.written_to_disk);
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
-        // std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(1));
         file_storage.set("key1".to_string(), "value1".to_string());
-        // assert_eq!(
-        //     file_storage.sync_status().unwrap(),
-        //     SyncStatus::StorageStale
-        // );
-        // file_storage.write_fs().unwrap();
-        // assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
+        assert_eq!(
+            file_storage.sync_status().unwrap(),
+            SyncStatus::StorageStale
+        );
+        file_storage.write_fs().unwrap();
+        assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
 
-        // std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(1));
 
-        // // External data manipulation
-        // let mut mirror_storage =
-        //     FileStorage::new("MirrorTestStorage".to_string(), &storage_path)
-        //         .unwrap();
-        // assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
+        // External data manipulation
+        let mut mirror_storage =
+            FileStorage::new("MirrorTestStorage".to_string(), &storage_path)
+                .unwrap();
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
-        // mirror_storage.set("key1".to_string(), "value3".to_string());
-        // assert_eq!(
-        //     mirror_storage.sync_status().unwrap(),
-        //     SyncStatus::StorageStale
-        // );
-        // mirror_storage.write_fs().unwrap();
-        // assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
+        mirror_storage.set("key1".to_string(), "value3".to_string());
+        assert_eq!(
+            mirror_storage.sync_status().unwrap(),
+            SyncStatus::StorageStale
+        );
+        mirror_storage.write_fs().unwrap();
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
-        // assert_eq!(
-        //     file_storage.sync_status().unwrap(),
-        //     SyncStatus::MappingStale
-        // );
-        // file_storage.read_fs().unwrap();
-        // assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
-        // assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
+        assert_eq!(
+            file_storage.sync_status().unwrap(),
+            SyncStatus::MappingStale
+        );
+        file_storage.read_fs().unwrap();
+        assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
     }
 
     #[test]
