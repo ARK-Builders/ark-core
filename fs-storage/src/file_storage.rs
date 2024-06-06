@@ -92,7 +92,6 @@ where
         Ok(storage)
     }
 
-
     /// Load mapping from file
     fn load_fs_data(&self) -> Result<FileStorageData<K, V>> {
         if !self.path.exists() {
@@ -363,6 +362,7 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
         std::thread::sleep(std::time::Duration::from_secs(1));
         file_storage.set("key1".to_string(), "value1".to_string());
