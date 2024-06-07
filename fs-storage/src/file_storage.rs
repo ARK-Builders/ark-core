@@ -50,8 +50,16 @@ where
 
 impl<K, V> FileStorage<K, V>
 where
-    K: Ord + serde::Serialize + serde::de::DeserializeOwned,
-    V: serde::Serialize + serde::de::DeserializeOwned,
+    K: Ord
+        + Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + std::str::FromStr,
+    V: Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + std::str::FromStr
+        + Monoid<V>,
 {
     /// Create a new file storage with a diagnostic label and file path
     pub fn new(label: String, path: &Path) -> Self {
@@ -69,8 +77,16 @@ where
 
 impl<K, V> BaseStorage<K, V> for FileStorage<K, V>
 where
-    K: Ord + serde::Serialize + serde::de::DeserializeOwned,
-    V: serde::Serialize + serde::de::DeserializeOwned,
+    K: Ord
+        + Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + std::str::FromStr,
+    V: Clone
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + std::str::FromStr
+        + Monoid<V>,
 {
     /// Set a key-value pair in the storage
     fn set(&mut self, key: K, value: V) {
@@ -176,13 +192,7 @@ where
         fs::create_dir_all(parent_dir)?;
         let file = File::create(&self.path)?;
         let mut writer = BufWriter::new(file);
-
-        writer.write_all(
-            format!("{}{}\n", STORAGE_VERSION_PREFIX, STORAGE_VERSION)
-                .as_bytes(),
-        )?;
-
-        let value_data = serde_json::to_string(&self.data)?;
+        let value_data = serde_json::to_string_pretty(&self.data)?;
         writer.write_all(value_data.as_bytes())?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
@@ -194,7 +204,7 @@ where
         log::info!(
             "{} {} entries have been written",
             self.label,
-            self.data.len()
+            self.data.entries.len()
         );
         Ok(())
     }
