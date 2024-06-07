@@ -19,6 +19,8 @@ public class FileStorage {
 
     private static native void erase(long file_storage_ptr);
 
+    private static native void merge(long file_storage_ptr, long other_file_storage_ptr);
+
     public FileStorage(String label, String path) {
         this.fileStoragePtr = create(label, path);
     }
@@ -45,6 +47,10 @@ public class FileStorage {
 
     public void erase() {
         erase(this.fileStoragePtr);
+    }
+
+    public void merge(FileStorage other) {
+        merge(this.fileStoragePtr, other.fileStoragePtr);
     }
 
     public static void main(String[] args) {

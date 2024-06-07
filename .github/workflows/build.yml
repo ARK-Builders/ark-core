@@ -41,6 +41,17 @@ jobs:
       - name: Build Release
         run: cargo build --verbose --release
 
+      - name: Install JDK
+        uses: actions/setup-java@v4.2.1
+        with:
+          distribution: 'temurin'
+          java-version: '22'
+
+      - name: Java tests
+        run: |
+          cd fs-storage
+          make test-linux
+
   windows:
     name: Test on Windows
     runs-on: windows-latest
@@ -54,6 +65,17 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --verbose
 
+      - name: Install JDK
+        uses: actions/setup-java@v4.2.1
+        with:
+          distribution: 'temurin'
+          java-version: '22'
+
+      - name: Java tests
+        run: |
+          cd fs-storage
+          make test-windows
+
   mac-intel:
     name: Test on macOS Intel
     runs-on: macos-14
@@ -66,3 +88,14 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --verbose
+
+      - name: Install JDK
+        uses: actions/setup-java@v4.2.1
+        with:
+          distribution: 'temurin'
+          java-version: '22'
+
+      - name: Java tests
+        run: |
+          cd fs-storage
+          make test-mac
