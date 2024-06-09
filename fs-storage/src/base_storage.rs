@@ -1,5 +1,5 @@
 use data_error::Result;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::SystemTime};
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
 /// Represents the synchronization status of the storage.
@@ -54,7 +54,7 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
 
     /// Write the internal key-value mapping
     /// to pre-configured location in the filesystem.
-    fn write_fs(&mut self) -> Result<()>;
+    fn write_fs(&mut self) -> Result<SystemTime>;
 
     /// Erase data stored on the filesystem
     fn erase(&self) -> Result<()>;
