@@ -72,6 +72,7 @@ where
         + Monoid<V>,
 {
     /// Create a new file storage with a diagnostic label and file path
+    /// The storage will be initialized using the disk data, if the path exists
     pub fn new(label: String, path: &Path) -> Result<Self> {
         let time = SystemTime::now();
         let mut storage = Self {
