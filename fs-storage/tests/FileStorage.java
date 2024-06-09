@@ -52,18 +52,4 @@ public class FileStorage {
     public void merge(FileStorage other) {
         merge(this.fileStoragePtr, other.fileStoragePtr);
     }
-
-    public static void main(String[] args) {
-        FileStorage fileStorage = new FileStorage("test", "test.txt");
-        System.out.println(fileStorage.fileStoragePtr);
-        fileStorage.set("key", "value");
-        fileStorage.set("key", "value1");
-        fileStorage.set("key1", "value");
-        fileStorage.remove("key");
-        System.out.println(fileStorage.needsSyncing());
-        fileStorage.writeFS();
-        System.out.println(fileStorage.needsSyncing());
-        System.out.println(fileStorage.readFS());
-        fileStorage.erase();
-    }
 }
