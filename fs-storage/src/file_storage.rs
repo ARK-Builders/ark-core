@@ -29,9 +29,15 @@ pub struct FileStorage<K, V>
 where
     K: Ord,
 {
+    /// Label for logging
     label: String,
+    /// Path to underlying file where data is persisted
     path: PathBuf,
+    /// Last modified time of internal mapping. This becomes equal to
+    /// `written_to_disk` only when data is written or read from disk.
     modified: SystemTime,
+    /// Last time the data was written to disk. This becomes equal to
+    /// `modified` only when data is written or read from disk.
     written_to_disk: SystemTime,
     data: FileStorageData<K, V>,
 }
