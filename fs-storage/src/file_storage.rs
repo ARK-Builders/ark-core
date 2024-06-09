@@ -167,7 +167,7 @@ where
         self.modified = std::time::SystemTime::now();
     }
 
-    /// Remove a key-value pair from the storage given a key
+    /// Remove an entry from the internal mapping given a key
     fn remove(&mut self, id: &K) -> Result<()> {
         self.data.entries.remove(id).ok_or_else(|| {
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
