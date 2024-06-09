@@ -9,17 +9,17 @@ public class FileStorage {
 
     private static native void set(String id, String value, long file_storage_ptr);
 
-    private static native void remove(String id, long file_storage_ptr);
+    private static native String remove(String id, long file_storage_ptr);
 
-    private static native boolean needsSyncing(long file_storage_ptr);
+    private static native String needsSyncing(long file_storage_ptr);
 
     private static native Object readFS(long file_storage_ptr);
 
-    private static native void writeFS(long file_storage_ptr);
+    private static native String writeFS(long file_storage_ptr);
 
-    private static native void erase(long file_storage_ptr);
+    private static native String erase(long file_storage_ptr);
 
-    private static native void merge(long file_storage_ptr, long other_file_storage_ptr);
+    private static native String merge(long file_storage_ptr, long other_file_storage_ptr);
 
     public FileStorage(String label, String path) {
         this.fileStoragePtr = create(label, path);
@@ -29,11 +29,11 @@ public class FileStorage {
         set(id, value, this.fileStoragePtr);
     }
 
-    public void remove(String id) {
-        remove(id, this.fileStoragePtr);
+    public String remove(String id) {
+        return remove(id, this.fileStoragePtr);
     }
 
-    public boolean needsSyncing() {
+    public String needsSyncing() {
         return needsSyncing(this.fileStoragePtr);
     }
 
@@ -41,15 +41,15 @@ public class FileStorage {
         return readFS(this.fileStoragePtr);
     }
 
-    public void writeFS() {
-        writeFS(this.fileStoragePtr);
+    public String writeFS() {
+        return writeFS(this.fileStoragePtr);
     }
 
-    public void erase() {
-        erase(this.fileStoragePtr);
+    public String erase() {
+        return erase(this.fileStoragePtr);
     }
 
-    public void merge(FileStorage other) {
-        merge(this.fileStoragePtr, other.fileStoragePtr);
+    public String merge(FileStorage other) {
+        return merge(this.fileStoragePtr, other.fileStoragePtr);
     }
 }

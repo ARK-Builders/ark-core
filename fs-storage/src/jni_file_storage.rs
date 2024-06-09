@@ -16,7 +16,7 @@ pub mod jni_bindings {
     // This is just a pointer. We'll be returning it from our function. We
     // can't return one of the objects with lifetime information because the
     // lifetime checker won't let us.
-    use jni::sys::{jboolean, jlong, jobject};
+    use jni::sys::{jlong, jobject, jstring};
 
     use crate::base_storage::BaseStorage;
 
@@ -69,13 +69,15 @@ pub mod jni_bindings {
         _class: JClass,
         id: JString<'local>,
         file_storage_ptr: jlong,
-    ) {
+    ) -> jstring {
         let id: String = env.get_string(&id).unwrap().into();
-        FileStorage::from_jlong(file_storage_ptr)
-            .remove(&id)
-            .unwrap_or_else(|err| {
-                env.fatal_error(err.to_string());
-            });
+        match FileStorage::from_jlong(file_storage_ptr).remove(&id) {
+            Ok(()) => env.new_string("").unwrap().into_raw(),
+            Err(err) => env
+                .new_string(err.to_string())
+                .unwrap()
+                .into_raw(),
+        }
     }
 
     #[no_mangle]
@@ -83,12 +85,20 @@ pub mod jni_bindings {
         env: JNIEnv<'_>,
         _class: JClass,
         file_storage_ptr: jlong,
-    ) -> jboolean {
+    ) -> jstring {
         match FileStorage::from_jlong(file_storage_ptr).needs_syncing() {
-            Ok(updated) => updated as jboolean,
-            Err(err) => {
-                env.fatal_error(err.to_string());
+            Ok(updated) => {
+                let result = if updated {
+                    "true"
+                } else {
+                    "false"
+                };
+                env.new_string(result).unwrap().into_raw()
             }
+            Err(err) => env
+                .new_string(err.to_string())
+                .unwrap()
+                .into_raw(),
         }
     }
 
@@ -145,28 +155,34 @@ pub mod jni_bindings {
         env: JNIEnv,
         _class: JClass,
         file_storage_ptr: jlong,
-    ) {
-        FileStorage::from_jlong(file_storage_ptr)
-            .write_fs()
-            .unwrap_or_else(|err| {
-                env.fatal_error(err.to_string());
-            });
+    ) -> jstring {
+        match FileStorage::from_jlong(file_storage_ptr).write_fs() {
+            Ok(()) => env.new_string("").unwrap().into_raw(),
+            Err(err) => env
+                .new_string(err.to_string())
+                .unwrap()
+                .into_raw(),
+        }
     }
 
     #[allow(clippy::suspicious_doc_comments)]
     ///! Safety: The FileStorage instance is dropped after this call
     #[no_mangle]
     pub extern "system" fn Java_FileStorage_erase(
-        env: &mut JNIEnv,
+        env: JNIEnv,
         _class: JClass,
         file_storage_ptr: jlong,
-    ) {
+    ) -> jstring {
         let file_storage = unsafe {
             Box::from_raw(file_storage_ptr as *mut FileStorage<String, String>)
         };
-        file_storage.erase().unwrap_or_else(|err| {
-            env.fatal_error(err.to_string());
-        });
+        match file_storage.erase() {
+            Ok(()) => env.new_string("").unwrap().into_raw(),
+            Err(err) => env
+                .new_string(err.to_string())
+                .unwrap()
+                .into_raw(),
+        }
     }
 
     #[no_mangle]
@@ -175,11 +191,15 @@ pub mod jni_bindings {
         _class: JClass,
         file_storage_ptr: jlong,
         other_file_storage_ptr: jlong,
-    ) {
-        FileStorage::from_jlong(file_storage_ptr)
+    ) -> jstring {
+        match FileStorage::from_jlong(file_storage_ptr)
             .merge_from(FileStorage::from_jlong(other_file_storage_ptr))
-            .unwrap_or_else(|err| {
-                env.fatal_error(err.to_string());
-            });
+        {
+            Ok(()) => env.new_string("").unwrap().into_raw(),
+            Err(err) => env
+                .new_string(err.to_string())
+                .unwrap()
+                .into_raw(),
+        }
     }
 }
