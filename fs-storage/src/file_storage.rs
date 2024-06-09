@@ -161,7 +161,7 @@ where
         + std::str::FromStr
         + Monoid<V>,
 {
-    /// Set a key-value pair in the storage
+    /// Set a key-value pair in the internal mapping
     fn set(&mut self, key: K, value: V) {
         self.data.entries.insert(key, value);
         self.modified = std::time::SystemTime::now();
