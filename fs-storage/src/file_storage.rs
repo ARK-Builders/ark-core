@@ -361,6 +361,22 @@ mod tests {
     }
 
     #[test]
+    fn test_file_timestamp_bug() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let storage_path = temp_dir.path().join("teststorage.txt");
+        let mut file_storage =
+            FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
+        file_storage.set("key1".to_string(), "value1".to_string());
+        let updated = file_storage.write_fs().unwrap();
+        let file_updated = fs::metadata(&file_storage.path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(file_updated, updated);
+    }
+
+    #[test]
     fn test_file_storage_is_storage_updated() {
         let temp_dir =
             TempDir::new("tmp").expect("Failed to create temporary directory");
@@ -393,9 +409,15 @@ mod tests {
             SyncStatus::StorageStale
         );
         let updated = mirror_storage.write_fs().unwrap();
-        let file_updated = fs::metadata(&mirror_storage.path).unwrap().modified().unwrap();
+        let file_updated = fs::metadata(&mirror_storage.path)
+            .unwrap()
+            .modified()
+            .unwrap();
         assert_eq!(file_updated, updated);
-        let file_updated_2 = fs::metadata(&mirror_storage.path).unwrap().modified().unwrap();
+        let file_updated_2 = fs::metadata(&mirror_storage.path)
+            .unwrap()
+            .modified()
+            .unwrap();
         assert_eq!(file_updated, file_updated_2);
 
         assert_eq!(
