@@ -255,6 +255,7 @@ where
         let mut writer = BufWriter::new(file);
         let value_data = serde_json::to_string_pretty(&self.data)?;
         writer.write_all(value_data.as_bytes())?;
+        writer.flush()?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
         if new_timestamp == self.modified {
