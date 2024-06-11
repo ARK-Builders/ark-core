@@ -360,6 +360,33 @@ mod tests {
     }
 
     #[test]
+    fn test_file_metadata_timestamp_updated() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let storage_path = temp_dir.path().join("teststorage.txt");
+
+        let mut file_storage =
+            FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
+        file_storage.write_fs().unwrap();
+
+        file_storage.set("key1".to_string(), "value1".to_string());
+        let before_write = fs::metadata(&storage_path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        file_storage.write_fs().unwrap();
+        let after_write = fs::metadata(&storage_path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        println!(
+            "before_write: {:?}, after_write: {:?}",
+            before_write, after_write
+        );
+        assert!(before_write < after_write);
+    }
+
+    #[test]
     fn test_file_storage_is_storage_updated() {
         let temp_dir =
             TempDir::new("tmp").expect("Failed to create temporary directory");
@@ -390,20 +417,7 @@ mod tests {
             SyncStatus::StorageStale
         );
 
-        let before_write = fs::metadata(&storage_path)
-            .unwrap()
-            .modified()
-            .unwrap();
         mirror_storage.write_fs().unwrap();
-        let after_write = fs::metadata(&storage_path)
-            .unwrap()
-            .modified()
-            .unwrap();
-        println!(
-            "before_write: {:?}, after_write: {:?}",
-            before_write, after_write
-        );
-        assert!(before_write < after_write);
         assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         // receive updates from external data manipulation
