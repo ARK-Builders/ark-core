@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::io::{Write};
 use std::time::SystemTime;
 use std::{
     collections::BTreeMap,
@@ -307,7 +307,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs};
+    use std::{collections::BTreeMap};
     use tempdir::TempDir;
 
     use crate::{
