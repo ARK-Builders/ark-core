@@ -243,7 +243,7 @@ where
     }
 
     /// Write the data to file
-    fn write_fs(&mut self) -> Result<SystemTime> {
+    fn write_fs(&mut self) -> Result<()> {
         let parent_dir = self.path.parent().ok_or_else(|| {
             ArklibError::Storage(
                 self.label.clone(),
@@ -251,11 +251,9 @@ where
             )
         })?;
         fs::create_dir_all(parent_dir)?;
-        let file = File::create(&self.path)?;
-        let mut writer = BufWriter::new(file);
-        let value_data = serde_json::to_string_pretty(&self.data)?;
-        writer.write_all(value_data.as_bytes())?;
-        writer.flush()?;
+        let mut file = File::create(&self.path)?;
+        file.write_all(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
+        file.flush()?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
         if new_timestamp == self.modified {
@@ -269,7 +267,7 @@ where
             self.label,
             self.data.entries.len()
         );
-        Ok(new_timestamp)
+        Ok(())
     }
 
     /// Erase the file from disk
@@ -362,22 +360,6 @@ mod tests {
     }
 
     #[test]
-    fn test_file_timestamp_bug() {
-        let temp_dir =
-            TempDir::new("tmp").expect("Failed to create temporary directory");
-        let storage_path = temp_dir.path().join("teststorage.txt");
-        let mut file_storage =
-            FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
-        file_storage.set("key1".to_string(), "value1".to_string());
-        let updated = file_storage.write_fs().unwrap();
-        let file_updated = fs::metadata(&file_storage.path)
-            .unwrap()
-            .modified()
-            .unwrap();
-        assert_eq!(file_updated, updated);
-    }
-
-    #[test]
     fn test_file_storage_is_storage_updated() {
         let temp_dir =
             TempDir::new("tmp").expect("Failed to create temporary directory");
@@ -387,7 +369,7 @@ mod tests {
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
-        std::thread::sleep(std::time::Duration::from_secs(1));
+
         file_storage.set("key1".to_string(), "value1".to_string());
         assert_eq!(
             file_storage.sync_status().unwrap(),
@@ -395,8 +377,6 @@ mod tests {
         );
         file_storage.write_fs().unwrap();
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
 
         // External data manipulation
         let mut mirror_storage =
@@ -409,18 +389,10 @@ mod tests {
             mirror_storage.sync_status().unwrap(),
             SyncStatus::StorageStale
         );
-        let updated = mirror_storage.write_fs().unwrap();
-        let file_updated = fs::metadata(&mirror_storage.path)
-            .unwrap()
-            .modified()
-            .unwrap();
-        assert_eq!(file_updated, updated);
-        let file_updated_2 = fs::metadata(&mirror_storage.path)
-            .unwrap()
-            .modified()
-            .unwrap();
-        assert_eq!(file_updated, file_updated_2);
+        mirror_storage.write_fs().unwrap();
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
+        // receive updates from external data manipulation
         assert_eq!(
             file_storage.sync_status().unwrap(),
             SyncStatus::MappingStale

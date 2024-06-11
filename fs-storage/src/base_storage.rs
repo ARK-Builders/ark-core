@@ -54,7 +54,7 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
 
     /// Write the internal key-value mapping
     /// to pre-configured location in the filesystem.
-    fn write_fs(&mut self) -> Result<SystemTime>;
+    fn write_fs(&mut self) -> Result<()>;
 
     /// Erase data stored on the filesystem
     fn erase(&self) -> Result<()>;
