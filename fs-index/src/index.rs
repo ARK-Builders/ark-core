@@ -106,7 +106,7 @@ impl<Id: ResourceId> ResourceIndex<Id> {
             match CanonicalPathBuf::canonicalize(&path) {
                 Ok(path) => {
                     log::trace!("[load] {} -> {}", id, path.display());
-                    index.insert_entry(path, IndexEntry { id, modified });
+                    index.insert_entry(path, IndexEntry { modified, id });
                 }
                 Err(_) => {
                     log::warn!("File {} not found", path.display());
@@ -638,7 +638,7 @@ where
     let id = Id::from_path(path)?;
     let modified = metadata.modified()?;
 
-    Ok(IndexEntry { id, modified })
+    Ok(IndexEntry { modified, id })
 }
 
 fn scan_entries<Id>(
@@ -685,9 +685,9 @@ mod tests {
     use dev_hash::Crc32;
     use fs_atomic_versions::initialize;
     use std::fs::File;
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     use std::fs::Permissions;
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     use std::os::unix::fs::PermissionsExt;
 
     use std::path::PathBuf;
@@ -952,7 +952,7 @@ mod tests {
 
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
-            #[cfg(target_os = "linux")]
+            #[cfg(target_family = "unix")]
             file.set_permissions(Permissions::from_mode(0o222))
                 .expect("Should be fine");
 
