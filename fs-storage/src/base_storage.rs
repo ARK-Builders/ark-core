@@ -42,7 +42,7 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     /// Remove an entry from the internal mapping.
     fn remove(&mut self, id: &K) -> Result<()>;
 
-    /// Get `SyncStatus` of the storage
+    /// Get [`SyncStatus`] of the storage
     fn sync_status(&self) -> Result<SyncStatus>;
 
     /// Sync the in-memory storage with the storage on disk
