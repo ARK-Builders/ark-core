@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{Write};
+use std::io::Write;
 use std::time::SystemTime;
 use std::{
     collections::BTreeMap,
@@ -307,7 +307,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap};
+    use std::{collections::BTreeMap, fs};
     use tempdir::TempDir;
 
     use crate::{
@@ -389,7 +389,18 @@ mod tests {
             mirror_storage.sync_status().unwrap(),
             SyncStatus::StorageStale
         );
+
+        let before_write = fs::metadata(&storage_path)
+            .unwrap()
+            .modified()
+            .unwrap();
         mirror_storage.write_fs().unwrap();
+        let after_write = fs::metadata(&storage_path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        println!("before_write: {:?}, after_write: {:?}", before_write, after_write);
+        assert!(before_write < after_write);
         assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         // receive updates from external data manipulation
