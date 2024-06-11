@@ -14,7 +14,7 @@ use jni::objects::{JClass, JString, JValue};
 // This is just a pointer. We'll be returning it from our function. We
 // can't return one of the objects with lifetime information because the
 // lifetime checker won't let us.
-use jni::sys::{jlong, jobject, jstring};
+use jni::sys::{jboolean, jlong, jobject};
 
 use crate::base_storage::BaseStorage;
 
@@ -67,36 +67,35 @@ pub extern "system" fn Java_FileStorage_remove<'local>(
     _class: JClass,
     id: JString<'local>,
     file_storage_ptr: jlong,
-) -> jstring {
+) {
     let id: String = env.get_string(&id).unwrap().into();
-    match FileStorage::from_jlong(file_storage_ptr).remove(&id) {
-        Ok(()) => env.new_string("").unwrap().into_raw(),
-        Err(err) => env
-            .new_string(err.to_string())
-            .unwrap()
-            .into_raw(),
-    }
+    FileStorage::from_jlong(file_storage_ptr)
+        .remove(&id)
+        .unwrap_or_else(|err| {
+            let error_class = env
+                .find_class("java/lang/RuntimeException")
+                .unwrap();
+            env.throw_new(error_class, &err.to_string())
+                .unwrap();
+        });
 }
 
 #[no_mangle]
 pub extern "system" fn Java_FileStorage_needsSyncing(
-    env: JNIEnv<'_>,
+    mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
-) -> jstring {
+) -> jboolean {
     match FileStorage::from_jlong(file_storage_ptr).needs_syncing() {
-        Ok(updated) => {
-            let result = if updated {
-                "true"
-            } else {
-                "false"
-            };
-            env.new_string(result).unwrap().into_raw()
+        Ok(updated) => updated as jboolean,
+        Err(err) => {
+            let error_class = env
+                .find_class("java/lang/RuntimeException")
+                .unwrap();
+            env.throw_new(error_class, &err.to_string())
+                .unwrap();
+            false as jboolean
         }
-        Err(err) => env
-            .new_string(err.to_string())
-            .unwrap()
-            .into_raw(),
     }
 }
 
@@ -150,53 +149,55 @@ pub extern "system" fn Java_FileStorage_readFS(
 
 #[no_mangle]
 pub extern "system" fn Java_FileStorage_writeFS(
-    env: JNIEnv,
+    mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
-) -> jstring {
-    match FileStorage::from_jlong(file_storage_ptr).write_fs() {
-        Ok(()) => env.new_string("").unwrap().into_raw(),
-        Err(err) => env
-            .new_string(err.to_string())
-            .unwrap()
-            .into_raw(),
-    }
+) {
+    FileStorage::from_jlong(file_storage_ptr)
+        .write_fs()
+        .unwrap_or_else(|err| {
+            let error_class = env
+                .find_class("java/lang/RuntimeException")
+                .unwrap();
+            env.throw_new(error_class, &err.to_string())
+                .unwrap();
+        });
 }
 
 #[allow(clippy::suspicious_doc_comments)]
 ///! Safety: The FileStorage instance is dropped after this call
 #[no_mangle]
 pub extern "system" fn Java_FileStorage_erase(
-    env: JNIEnv,
+    mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
-) -> jstring {
+) {
     let file_storage = unsafe {
         Box::from_raw(file_storage_ptr as *mut FileStorage<String, String>)
     };
-    match file_storage.erase() {
-        Ok(()) => env.new_string("").unwrap().into_raw(),
-        Err(err) => env
-            .new_string(err.to_string())
-            .unwrap()
-            .into_raw(),
-    }
+    file_storage.erase().unwrap_or_else(|err| {
+        let error_class = env
+            .find_class("java/lang/RuntimeException")
+            .unwrap();
+        env.throw_new(error_class, &err.to_string())
+            .unwrap();
+    });
 }
 
 #[no_mangle]
 pub extern "system" fn Java_FileStorage_merge(
-    env: JNIEnv,
+    mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
     other_file_storage_ptr: jlong,
-) -> jstring {
-    match FileStorage::from_jlong(file_storage_ptr)
+) {
+    FileStorage::from_jlong(file_storage_ptr)
         .merge_from(FileStorage::from_jlong(other_file_storage_ptr))
-    {
-        Ok(()) => env.new_string("").unwrap().into_raw(),
-        Err(err) => env
-            .new_string(err.to_string())
-            .unwrap()
-            .into_raw(),
-    }
+        .unwrap_or_else(|err| {
+            let error_class = env
+                .find_class("java/lang/RuntimeException")
+                .unwrap();
+            env.throw_new(error_class, &err.to_string())
+                .unwrap();
+        });
 }

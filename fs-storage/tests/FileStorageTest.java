@@ -22,8 +22,7 @@ public class FileStorageTest {
         fileStorage.set("key1", "value1");
         fileStorage.set("key2", "value2");
 
-        String err = fileStorage.remove("key1");
-        assertTrue(err.isEmpty());
+        fileStorage.remove("key1");
 
         @SuppressWarnings("unchecked")
         LinkedHashMap<String, String> data = (LinkedHashMap<String, String>) fileStorage.readFS();
@@ -39,34 +38,27 @@ public class FileStorageTest {
 
         fileStorage.set("key1", "value1");
         fileStorage.set("key1", "value2");
-        String err = fileStorage.writeFS();
-        assertTrue(err.isEmpty());
+        fileStorage.writeFS();
 
         File file = storagePath.toFile();
         assertTrue(file.exists());
 
-        err = fileStorage.erase();
-        assertTrue(err.isEmpty());
+        fileStorage.erase();
         assertFalse(file.exists());
     }
 
-    // problem
     @Test
     public void testFileStorageNeedsSyncing() {
         String label = "test";
         Path storagePath = tempDir.resolve("test.txt");    
         FileStorage fileStorage = new FileStorage(label, storagePath.toString());
         fileStorage.writeFS();
-        String result = fileStorage.needsSyncing();
-        assertEquals("false", result);
+        assertFalse(fileStorage.needsSyncing());
         fileStorage.set("key1", "value1");
         // // FAIL: don't why it is still false
         // assertTrue(fileStorage.needsSyncing());
-
-        String err = fileStorage.writeFS();
-        assertTrue(err.isEmpty());
-        result = fileStorage.needsSyncing();
-        assertEquals("false", result);
+        fileStorage.writeFS();
+        assertFalse(fileStorage.needsSyncing());
     }
 
     @Test
@@ -82,10 +74,8 @@ public class FileStorageTest {
         fileStorage2.set("key1", "3");
         fileStorage2.set("key3", "9");
 
-        String err = fileStorage1.merge(fileStorage2);
-        assertTrue(err.isEmpty());
-        err = fileStorage1.writeFS();
-        assertTrue(err.isEmpty());
+        fileStorage1.merge(fileStorage2);
+        fileStorage1.writeFS();
         
         @SuppressWarnings("unchecked")
         LinkedHashMap<String, String> data = (LinkedHashMap<String, String>) fileStorage1.readFS();
@@ -106,8 +96,7 @@ public class FileStorageTest {
         fileStorage.set("key", "value1");
         fileStorage.set("key1", "value");
 
-        String err = fileStorage.remove("key");
-        assertTrue(err.isEmpty());
+        fileStorage.remove("key");
 
         // Sleep for 1 second
         try {
@@ -117,16 +106,14 @@ public class FileStorageTest {
         }
     
 
-        err = fileStorage.writeFS();
-        assertTrue(err.isEmpty());
+        fileStorage.writeFS();
 
         @SuppressWarnings("unchecked")
         LinkedHashMap<String, String> data = (LinkedHashMap<String, String>) fileStorage.readFS();
         assertEquals(1, data.size());
         assertEquals("value", data.get("key1"));
 
-        err = fileStorage.erase();
-        assertTrue(err.isEmpty());
+        fileStorage.erase();
         File file = storagePath.toFile();
         assertFalse(file.exists());
     }

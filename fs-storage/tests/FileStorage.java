@@ -9,17 +9,17 @@ public class FileStorage {
 
     private static native void set(String id, String value, long file_storage_ptr);
 
-    private static native String remove(String id, long file_storage_ptr);
+    private static native void remove(String id, long file_storage_ptr);
 
-    private static native String needsSyncing(long file_storage_ptr);
+    private static native boolean needsSyncing(long file_storage_ptr);
 
     private static native Object readFS(long file_storage_ptr);
 
-    private static native String writeFS(long file_storage_ptr);
+    private static native void writeFS(long file_storage_ptr);
 
-    private static native String erase(long file_storage_ptr);
+    private static native void erase(long file_storage_ptr);
 
-    private static native String merge(long file_storage_ptr, long other_file_storage_ptr);
+    private static native void merge(long file_storage_ptr, long other_file_storage_ptr);
 
     public FileStorage(String label, String path) {
         this.fileStoragePtr = create(label, path);
@@ -29,27 +29,53 @@ public class FileStorage {
         set(id, value, this.fileStoragePtr);
     }
 
-    public String remove(String id) {
-        return remove(id, this.fileStoragePtr);
+    public void remove(String id) {
+        try {
+            remove(id, this.fileStoragePtr);
+        } catch (RuntimeException e) {
+            System.err.println("Error removing file storage: " + e.getMessage());
+        }
     }
 
-    public String needsSyncing() {
-        return needsSyncing(this.fileStoragePtr);
+    public boolean needsSyncing() {
+        try {
+            return needsSyncing(this.fileStoragePtr);
+        } catch (RuntimeException e) {
+            System.err.println("Error checking if file storage needs syncing: " + e.getMessage());
+            return false;
+        }
     }
 
     public Object readFS() {
-        return readFS(this.fileStoragePtr);
+        try {
+            return readFS(this.fileStoragePtr);
+        } catch (RuntimeException e) {
+            System.err.println("Error reading file storage: " + e.getMessage());
+            return null;
+        }
     }
 
-    public String writeFS() {
-        return writeFS(this.fileStoragePtr);
+    public void writeFS() {
+        try {
+            writeFS(this.fileStoragePtr);
+        } catch (RuntimeException e) {
+            System.err.println("Error writing file storage: " + e.getMessage());
+        }
     }
 
-    public String erase() {
-        return erase(this.fileStoragePtr);
+    public void erase() {
+        try {
+            erase(this.fileStoragePtr);
+        } catch (RuntimeException e) {
+            System.err.println("Error erasing file storage: " + e.getMessage());
+        }
     }
 
-    public String merge(FileStorage other) {
-        return merge(this.fileStoragePtr, other.fileStoragePtr);
+    public void merge(FileStorage other) {
+        try {
+            merge(this.fileStoragePtr, other.fileStoragePtr);
+        } catch (RuntimeException e) {
+            System.err.println("Error merging file storage: " + e.getMessage());
+        }
     }
 }
