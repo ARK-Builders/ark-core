@@ -220,7 +220,7 @@ where
         match self.sync_status()? {
             SyncStatus::InSync => Ok(()),
             SyncStatus::MappingStale => self.read_fs().map(|_| ()),
-            SyncStatus::StorageStale => self.write_fs(),
+            SyncStatus::StorageStale => self.write_fs().map(|_| ()),
             SyncStatus::Diverge => {
                 let data = self.load_fs_data()?;
                 self.merge_from(&data)?;
@@ -243,7 +243,7 @@ where
     }
 
     /// Write the data to file
-    fn write_fs(&mut self) -> Result<()> {
+    fn write_fs(&mut self) -> Result<SystemTime> {
         let parent_dir = self.path.parent().ok_or_else(|| {
             ArklibError::Storage(
                 self.label.clone(),
@@ -255,20 +255,21 @@ where
         let mut writer = BufWriter::new(file);
         let value_data = serde_json::to_string_pretty(&self.data)?;
         writer.write_all(value_data.as_bytes())?;
+        writer.flush()?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
         if new_timestamp == self.modified {
             return Err("Timestamp has not been updated".into());
         }
         self.modified = new_timestamp;
-        self.written_to_disk = self.modified;
+        self.written_to_disk = new_timestamp;
 
         log::info!(
             "{} {} entries have been written",
             self.label,
             self.data.entries.len()
         );
-        Ok(())
+        Ok(new_timestamp)
     }
 
     /// Erase the file from disk
@@ -308,7 +309,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, fs};
     use tempdir::TempDir;
 
     use crate::{
@@ -361,6 +362,22 @@ mod tests {
     }
 
     #[test]
+    fn test_file_timestamp_bug() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let storage_path = temp_dir.path().join("teststorage.txt");
+        let mut file_storage =
+            FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
+        file_storage.set("key1".to_string(), "value1".to_string());
+        let updated = file_storage.write_fs().unwrap();
+        let file_updated = fs::metadata(&file_storage.path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(file_updated, updated);
+    }
+
+    #[test]
     fn test_file_storage_is_storage_updated() {
         let temp_dir =
             TempDir::new("tmp").expect("Failed to create temporary directory");
@@ -392,8 +409,17 @@ mod tests {
             mirror_storage.sync_status().unwrap(),
             SyncStatus::StorageStale
         );
-        mirror_storage.write_fs().unwrap();
-        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
+        let updated = mirror_storage.write_fs().unwrap();
+        let file_updated = fs::metadata(&mirror_storage.path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(file_updated, updated);
+        let file_updated_2 = fs::metadata(&mirror_storage.path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(file_updated, file_updated_2);
 
         assert_eq!(
             file_storage.sync_status().unwrap(),
