@@ -191,27 +191,24 @@ where
     fn sync_status(&self) -> Result<SyncStatus> {
         let file_updated = fs::metadata(&self.path)?.modified()?;
 
-        // mapping updated
-        let status = if self.modified > self.written_to_disk {
-            // file updated since last write
-            if file_updated > self.written_to_disk {
-                // both updated
-                SyncStatus::Diverge
-            } else {
-                // only mapping updated
-                SyncStatus::StorageStale
-            }
-        }
-        // mapping not updated
-        else {
-            // file updated since last write
-            if file_updated > self.written_to_disk {
-                // only file updated
-                SyncStatus::MappingStale
-            } else {
-                // no change
-                SyncStatus::InSync
-            }
+        // Determine the synchronization status based on the modification times
+        // Conditions:
+        // 1. If both the in-memory storage and the storage on disk have been modified
+        //    since the last write, then the storage is diverged.
+        // 2. If only the in-memory storage has been modified since the last write,
+        //    then the storage on disk is stale.
+        // 3. If only the storage on disk has been modified since the last write,
+        //    then the in-memory storage is stale.
+        // 4. If neither the in-memory storage nor the storage on disk has been modified
+        //    since the last write, then the storage is in sync.
+        let status = match (
+            self.modified > self.written_to_disk,
+            file_updated > self.written_to_disk,
+        ) {
+            (true, true) => SyncStatus::Diverge,
+            (true, false) => SyncStatus::StorageStale,
+            (false, true) => SyncStatus::MappingStale,
+            (false, false) => SyncStatus::InSync,
         };
 
         log::info!("{} sync status is {}", self.label, status);
@@ -402,7 +399,10 @@ mod tests {
             .unwrap()
             .modified()
             .unwrap();
-        println!("before_write: {:?}, after_write: {:?}", before_write, after_write);
+        println!(
+            "before_write: {:?}, after_write: {:?}",
+            before_write, after_write
+        );
         assert!(before_write < after_write);
         assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
