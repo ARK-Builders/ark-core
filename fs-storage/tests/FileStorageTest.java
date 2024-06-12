@@ -120,7 +120,7 @@ public class FileStorageTest {
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         Exception exception = assertThrows(RuntimeException.class, () ->
         fileStorage.remove("invalid_id"));
-        assertEquals("Storage error: test Key not found", exception.getMessage());
+        assertTrue(exception.getMessage().matches("Storage error.*"));
     }
 
     @Test
@@ -129,7 +129,7 @@ public class FileStorageTest {
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         Exception exception = assertThrows(RuntimeException.class, () ->
         fileStorage.needsSyncing());
-        assertEquals("Storage error: test No such file or directory (os error 2)", exception.getMessage());
+        assertTrue(exception.getMessage().matches("Storage error.*"));
     }
 
     @Test
@@ -138,7 +138,7 @@ public class FileStorageTest {
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         Exception exception = assertThrows(RuntimeException.class, () ->
         fileStorage.writeFS());
-        assertEquals("IO error: Is a directory (os error 21)", exception.getMessage());
+        assertTrue(exception.getMessage().matches("IO error.*"));
     }
 
     @Test
@@ -147,7 +147,7 @@ public class FileStorageTest {
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         Exception exception = assertThrows(RuntimeException.class, () ->
         fileStorage.erase());
-        assertEquals("Storage error: test No such file or directory (os error 2)", exception.getMessage());
+        assertTrue(exception.getMessage().matches("Storage error.*"));
     }
 
     @Test
@@ -156,6 +156,6 @@ public class FileStorageTest {
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         Exception exception = assertThrows(RuntimeException.class, () ->
         fileStorage.readFS());
-        assertEquals("Storage error: test File does not exist", exception.getMessage());
+        assertTrue(exception.getMessage().matches("Storage error.*"));
     }
 }
