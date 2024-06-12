@@ -254,6 +254,7 @@ where
         let mut file = File::create(&self.path)?;
         file.write_all(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
         file.flush()?;
+        file.sync_all()?;
 
         let new_timestamp = fs::metadata(&self.path)?.modified()?;
         if new_timestamp == self.modified {
@@ -368,6 +369,7 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
 
         file_storage.set("key1".to_string(), "value1".to_string());
         let before_write = fs::metadata(&storage_path)
@@ -375,6 +377,7 @@ mod tests {
             .modified()
             .unwrap();
         file_storage.write_fs().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
         let after_write = fs::metadata(&storage_path)
             .unwrap()
             .modified()
@@ -395,6 +398,7 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         file_storage.set("key1".to_string(), "value1".to_string());
@@ -403,6 +407,7 @@ mod tests {
             SyncStatus::StorageStale
         );
         file_storage.write_fs().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         // External data manipulation
@@ -418,6 +423,7 @@ mod tests {
         );
 
         mirror_storage.write_fs().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
         assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         // receive updates from external data manipulation
