@@ -9,7 +9,7 @@ use jni::JNIEnv;
 // These objects are what you should use as arguments to your native
 // function. They carry extra lifetime information to prevent them escaping
 // this context and getting used after being GC'd.
-use jni::objects::{JClass, JString, JValue};
+use jni::objects::{JClass, JObject, JString, JValue};
 
 // This is just a pointer. We'll be returning it from our function. We
 // can't return one of the objects with lifetime information because the
@@ -72,10 +72,7 @@ pub extern "system" fn Java_FileStorage_remove<'local>(
     FileStorage::from_jlong(file_storage_ptr)
         .remove(&id)
         .unwrap_or_else(|err| {
-            let error_class = env
-                .find_class("java/lang/RuntimeException")
-                .unwrap();
-            env.throw_new(error_class, &err.to_string())
+            env.throw_new("java/lang/RuntimeException", &err.to_string())
                 .unwrap();
         });
 }
@@ -89,10 +86,7 @@ pub extern "system" fn Java_FileStorage_needsSyncing(
     match FileStorage::from_jlong(file_storage_ptr).needs_syncing() {
         Ok(updated) => updated as jboolean,
         Err(err) => {
-            let error_class = env
-                .find_class("java/lang/RuntimeException")
-                .unwrap();
-            env.throw_new(error_class, &err.to_string())
+            env.throw_new("java/lang/RuntimeException", &err.to_string())
                 .unwrap();
             false as jboolean
         }
@@ -106,9 +100,14 @@ pub extern "system" fn Java_FileStorage_readFS(
     file_storage_ptr: jlong,
 ) -> jobject {
     let data: BTreeMap<String, String> =
-        FileStorage::from_jlong(file_storage_ptr)
-            .read_fs()
-            .expect("not able to read data");
+        match FileStorage::from_jlong(file_storage_ptr).read_fs() {
+            Ok(data) => data,
+            Err(err) => {
+                env.throw_new("java/lang/RuntimeException", &err.to_string())
+                    .expect("Failed to throw RuntimeException");
+                return JObject::null().into_raw();
+            }
+        };
 
     // Create a new LinkedHashMap object
     let linked_hash_map_class =
@@ -156,10 +155,7 @@ pub extern "system" fn Java_FileStorage_writeFS(
     FileStorage::from_jlong(file_storage_ptr)
         .write_fs()
         .unwrap_or_else(|err| {
-            let error_class = env
-                .find_class("java/lang/RuntimeException")
-                .unwrap();
-            env.throw_new(error_class, &err.to_string())
+            env.throw_new("java/lang/RuntimeException", &err.to_string())
                 .unwrap();
         });
 }
@@ -176,10 +172,7 @@ pub extern "system" fn Java_FileStorage_erase(
         Box::from_raw(file_storage_ptr as *mut FileStorage<String, String>)
     };
     file_storage.erase().unwrap_or_else(|err| {
-        let error_class = env
-            .find_class("java/lang/RuntimeException")
-            .unwrap();
-        env.throw_new(error_class, &err.to_string())
+        env.throw_new("java/lang/RuntimeException", &err.to_string())
             .unwrap();
     });
 }
@@ -194,10 +187,7 @@ pub extern "system" fn Java_FileStorage_merge(
     FileStorage::from_jlong(file_storage_ptr)
         .merge_from(FileStorage::from_jlong(other_file_storage_ptr))
         .unwrap_or_else(|err| {
-            let error_class = env
-                .find_class("java/lang/RuntimeException")
-                .unwrap();
-            env.throw_new(error_class, &err.to_string())
+            env.throw_new("java/lang/RuntimeException", &err.to_string())
                 .unwrap();
         });
 }

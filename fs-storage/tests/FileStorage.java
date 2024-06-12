@@ -30,52 +30,26 @@ public class FileStorage {
     }
 
     public void remove(String id) {
-        try {
-            remove(id, this.fileStoragePtr);
-        } catch (RuntimeException e) {
-            System.err.println("Error removing file storage: " + e.getMessage());
-        }
+        remove(id, this.fileStoragePtr);
     }
 
     public boolean needsSyncing() {
-        try {
-            return needsSyncing(this.fileStoragePtr);
-        } catch (RuntimeException e) {
-            System.err.println("Error checking if file storage needs syncing: " + e.getMessage());
-            return false;
-        }
+        return needsSyncing(this.fileStoragePtr);
     }
 
     public Object readFS() {
-        try {
-            return readFS(this.fileStoragePtr);
-        } catch (RuntimeException e) {
-            System.err.println("Error reading file storage: " + e.getMessage());
-            return null;
-        }
+        return readFS(this.fileStoragePtr);
     }
 
     public void writeFS() {
-        try {
-            writeFS(this.fileStoragePtr);
-        } catch (RuntimeException e) {
-            System.err.println("Error writing file storage: " + e.getMessage());
-        }
+        writeFS(this.fileStoragePtr);
     }
 
     public void erase() {
-        try {
-            erase(this.fileStoragePtr);
-        } catch (RuntimeException e) {
-            System.err.println("Error erasing file storage: " + e.getMessage());
-        }
+        erase(this.fileStoragePtr);
     }
 
     public void merge(FileStorage other) {
-        try {
-            merge(this.fileStoragePtr, other.fileStoragePtr);
-        } catch (RuntimeException e) {
-            System.err.println("Error merging file storage: " + e.getMessage());
-        }
+        merge(this.fileStoragePtr, other.fileStoragePtr);
     }
 }

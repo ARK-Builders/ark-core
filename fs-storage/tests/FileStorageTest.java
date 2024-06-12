@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class FileStorageTest {
     FileStorage fileStorage = new FileStorage("test", "test.txt");
@@ -15,9 +16,8 @@ public class FileStorageTest {
 
     @Test
     public void testFileStorageWriteRead() {
-        String label = "test";
         Path storagePath = tempDir.resolve("test.txt");    
-        FileStorage fileStorage = new FileStorage(label, storagePath.toString());
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
 
         fileStorage.set("key1", "value1");
         fileStorage.set("key2", "value2");
@@ -32,9 +32,8 @@ public class FileStorageTest {
 
     @Test
     public void testFileStorageAutoDelete() {
-        String label = "test";
         Path storagePath = tempDir.resolve("test.txt");    
-        FileStorage fileStorage = new FileStorage(label, storagePath.toString());
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
 
         fileStorage.set("key1", "value1");
         fileStorage.set("key1", "value2");
@@ -49,9 +48,8 @@ public class FileStorageTest {
 
     @Test
     public void testFileStorageNeedsSyncing() {
-        String label = "test";
         Path storagePath = tempDir.resolve("test.txt");    
-        FileStorage fileStorage = new FileStorage(label, storagePath.toString());
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         fileStorage.writeFS();
         assertFalse(fileStorage.needsSyncing());
         fileStorage.set("key1", "value1");
@@ -88,9 +86,8 @@ public class FileStorageTest {
 
     @Test
     public void testFileStorageMainScenario() {
-        String label = "test";
         Path storagePath = tempDir.resolve("test.txt");    
-        FileStorage fileStorage = new FileStorage(label, storagePath.toString());
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
 
         fileStorage.set("key", "value");
         fileStorage.set("key", "value1");
@@ -98,7 +95,6 @@ public class FileStorageTest {
 
         fileStorage.remove("key");
 
-        // Sleep for 1 second
         try {
             Thread.sleep(1000); 
         } catch (InterruptedException e) {
@@ -116,5 +112,50 @@ public class FileStorageTest {
         fileStorage.erase();
         File file = storagePath.toFile();
         assertFalse(file.exists());
+    }
+
+    @Test
+    public void testRemoveException() {
+        Path storagePath = tempDir.resolve("test.txt");    
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
+        Exception exception = assertThrows(RuntimeException.class, () ->
+        fileStorage.remove("invalid_id"));
+        assertEquals("Storage error: test Key not found", exception.getMessage());
+    }
+
+    @Test
+    public void testNeedsSyncingException() {
+        Path storagePath = tempDir.resolve("test.txt");    
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
+        Exception exception = assertThrows(RuntimeException.class, () ->
+        fileStorage.needsSyncing());
+        assertEquals("Storage error: test No such file or directory (os error 2)", exception.getMessage());
+    }
+
+    @Test
+    public void testWriteException(){
+        Path storagePath = tempDir.resolve("");    
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
+        Exception exception = assertThrows(RuntimeException.class, () ->
+        fileStorage.writeFS());
+        assertEquals("IO error: Is a directory (os error 21)", exception.getMessage());
+    }
+
+    @Test
+    public void testEraseException(){
+        Path storagePath = tempDir.resolve("test.txt");    
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
+        Exception exception = assertThrows(RuntimeException.class, () ->
+        fileStorage.erase());
+        assertEquals("Storage error: test No such file or directory (os error 2)", exception.getMessage());
+    }
+
+    @Test
+    public void testReadException(){
+        Path storagePath = tempDir.resolve("test.txt");    
+        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
+        Exception exception = assertThrows(RuntimeException.class, () ->
+        fileStorage.readFS());
+        assertEquals("Storage error: test File does not exist", exception.getMessage());
     }
 }
