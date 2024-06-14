@@ -243,6 +243,9 @@ where
     }
 
     /// Write the data to file
+    /// 
+    /// Update the modified timestamp in file metadata to avoid OS timing issues
+    /// https://github.com/ARK-Builders/ark-rust/pull/63#issuecomment-2163882227
     fn write_fs(&mut self) -> Result<()> {
         let parent_dir = self.path.parent().ok_or_else(|| {
             ArklibError::Storage(
@@ -368,7 +371,6 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
 
         file_storage.set("key1".to_string(), "value1".to_string());
         let before_write = fs::metadata(&storage_path)
@@ -376,7 +378,6 @@ mod tests {
             .modified()
             .unwrap();
         file_storage.write_fs().unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
         let after_write = fs::metadata(&storage_path)
             .unwrap()
             .modified()
@@ -397,7 +398,6 @@ mod tests {
         let mut file_storage =
             FileStorage::new("TestStorage".to_string(), &storage_path).unwrap();
         file_storage.write_fs().unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         file_storage.set("key1".to_string(), "value1".to_string());
@@ -406,7 +406,6 @@ mod tests {
             SyncStatus::StorageStale
         );
         file_storage.write_fs().unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
         assert_eq!(file_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         // External data manipulation
@@ -422,7 +421,6 @@ mod tests {
         );
 
         mirror_storage.write_fs().unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
         assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
 
         // receive updates from external data manipulation
