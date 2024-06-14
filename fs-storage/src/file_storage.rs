@@ -243,7 +243,7 @@ where
     }
 
     /// Write the data to file
-    /// 
+    ///
     /// Update the modified timestamp in file metadata to avoid OS timing issues
     /// https://github.com/ARK-Builders/ark-rust/pull/63#issuecomment-2163882227
     fn write_fs(&mut self) -> Result<()> {
