@@ -44,18 +44,19 @@ fn read_command(args: &[String], path: &str) -> Result<()> {
     };
 
     let mut fs: FileStorage<String, String> =
-        FileStorage::new("cli".to_string(), Path::new(path));
+        FileStorage::new("cli".to_string(), Path::new(path))
+            .context("Failed to create FileStorage")?;
 
     let map = fs
         .read_fs()
         .expect("No Data is present on this path");
     if keys.is_empty() {
-        for (key, value) in &map {
+        for (key, value) in map {
             println!("{}: {}", key, value);
         }
     }
     for key in &keys {
-        if let Some(value) = &map.get(key) {
+        if let Some(value) = map.get(key) {
             println!("{}: {}", key, value);
         } else {
             eprintln!("Key '{}' not found", key);
@@ -78,7 +79,8 @@ fn write_command(args: &[String], path: &str) -> Result<()> {
         .map_or(false, |ext| ext == "json");
 
     let mut fs: FileStorage<String, String> =
-        FileStorage::new("cli".to_string(), Path::new(path));
+        FileStorage::new("cli".to_string(), Path::new(path))
+            .context("Failed to create FileStorage")?;
     if content_json {
         let content =
             fs::read_to_string(content).context("Failed to read JSON file")?;
