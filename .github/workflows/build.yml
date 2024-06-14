@@ -38,9 +38,6 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-      - name: Build Release
-        run: cargo build --verbose --release
-
   windows:
     name: Test on Windows
     runs-on: windows-latest
