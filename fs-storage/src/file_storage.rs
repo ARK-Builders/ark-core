@@ -254,7 +254,7 @@ where
         let mut file = File::create(&self.path)?;
         file.write_all(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
         file.flush()?;
-        
+
         let new_timestamp = SystemTime::now();
         file.set_modified(new_timestamp)?;
         file.sync_all()?;
