@@ -31,7 +31,7 @@ where
 {
     /// Label for logging
     label: String,
-    /// Path to underlying file where data is persisted
+    /// Path to the underlying file where data is persisted
     path: PathBuf,
     /// Last modified time of internal mapping. This becomes equal to
     /// `written_to_disk` only when data is written or read from disk.
