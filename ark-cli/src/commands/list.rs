@@ -136,7 +136,17 @@ impl List {
                         Ok(mut file) => {
                             let mut contents = String::new();
                             match file.read_to_string(&mut contents) {
-                                Ok(_) => (None, None, Some(contents)),
+                                Ok(_) => {
+                                    // Check if the content of the file is a valid url
+                                    let url = contents.trim();
+                                    let url = url::Url::parse(url);
+                                    match url {
+                                        Ok(url) => {
+                                            (None, None, Some(url.to_string()))
+                                        }
+                                        Err(_) => return None,
+                                    }
+                                }
                                 Err(_) => return None,
                             }
                         }
