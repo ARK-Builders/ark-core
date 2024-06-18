@@ -1,8 +1,11 @@
 use data_error::Result;
-use jnix_macros::{FromJava, IntoJava};
 use std::collections::BTreeMap;
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, FromJava, IntoJava)]
+#[cfg(feature = "jni-bindings")]
+use jnix::{FromJava, IntoJava};
+
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
+#[cfg_attr(feature = "jni-bindings", derive(FromJava, IntoJava))]
 #[jnix(class_name = "SyncStatus")]
 /// Represents the synchronization status of the storage.
 pub enum SyncStatus {
