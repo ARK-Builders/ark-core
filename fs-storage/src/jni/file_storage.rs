@@ -1,7 +1,7 @@
+use crate::base_storage::SyncStatus;
+use jni::signature::ReturnType;
 use std::collections::BTreeMap;
 use std::path::Path;
-
-use jni::signature::ReturnType;
 // This is the interface to the JVM that we'll call the majority of our
 // methods on.
 use jni::JNIEnv;
@@ -14,7 +14,8 @@ use jni::objects::{JClass, JObject, JString, JValue};
 // This is just a pointer. We'll be returning it from our function. We
 // can't return one of the objects with lifetime information because the
 // lifetime checker won't let us.
-use jni::sys::{jboolean, jlong, jobject};
+use jni::sys::{jlong, jobject};
+use jnix::{IntoJava, JnixEnv};
 
 use crate::base_storage::BaseStorage;
 
@@ -43,7 +44,11 @@ pub extern "system" fn Java_FileStorage_create<'local>(
         .into();
 
     let file_storage: FileStorage<String, String> =
-        FileStorage::new(label, Path::new(&path));
+        FileStorage::new(label, Path::new(&path)).unwrap_or_else(|err| {
+            env.throw_new("java/lang/RuntimeException", &err.to_string())
+                .expect("Failed to throw RuntimeException");
+            FileStorage::new("".to_string(), Path::new("")).unwrap()
+        });
     Box::into_raw(Box::new(file_storage)) as jlong
 }
 
@@ -77,20 +82,39 @@ pub extern "system" fn Java_FileStorage_remove<'local>(
         });
 }
 
+// A JNI function called from Java that creates a `MyData` Rust type, converts it to a Java
+// type and returns it.
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_needsSyncing(
+#[allow(non_snake_case)]
+pub extern "system" fn Java_FileStorage_syncStatus<'env>(
+    env: jnix::jni::JNIEnv<'env>,
+    _this: jnix::jni::objects::JObject<'env>,
+    file_storage_ptr: jnix::jni::sys::jlong,
+) -> jnix::jni::objects::JObject<'env> {
+    let env = JnixEnv::from(env);
+    let sync_status = FileStorage::from_jlong(file_storage_ptr)
+        .sync_status()
+        .unwrap_or_else(|err| {
+            env.throw_new("java/lang/RuntimeException", err.to_string())
+                .unwrap();
+            SyncStatus::InSync
+        });
+
+    sync_status.into_java(&env).forget()
+}
+
+#[no_mangle]
+pub extern "system" fn Java_FileStorage_sync(
     mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
-) -> jboolean {
-    match FileStorage::from_jlong(file_storage_ptr).needs_syncing() {
-        Ok(updated) => updated as jboolean,
-        Err(err) => {
+) {
+    FileStorage::from_jlong(file_storage_ptr)
+        .sync()
+        .unwrap_or_else(|err| {
             env.throw_new("java/lang/RuntimeException", &err.to_string())
                 .unwrap();
-            false as jboolean
-        }
-    }
+        });
 }
 
 #[no_mangle]
@@ -101,7 +125,7 @@ pub extern "system" fn Java_FileStorage_readFS(
 ) -> jobject {
     let data: BTreeMap<String, String> =
         match FileStorage::from_jlong(file_storage_ptr).read_fs() {
-            Ok(data) => data,
+            Ok(data) => data.clone(),
             Err(err) => {
                 env.throw_new("java/lang/RuntimeException", &err.to_string())
                     .expect("Failed to throw RuntimeException");

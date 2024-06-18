@@ -16,13 +16,14 @@ public class FileStorageTest {
 
     @Test
     public void testFileStorageWriteRead() {
-        Path storagePath = tempDir.resolve("test.txt");    
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
 
         fileStorage.set("key1", "value1");
         fileStorage.set("key2", "value2");
 
         fileStorage.remove("key1");
+        fileStorage.writeFS();
 
         @SuppressWarnings("unchecked")
         LinkedHashMap<String, String> data = (LinkedHashMap<String, String>) fileStorage.readFS();
@@ -32,7 +33,7 @@ public class FileStorageTest {
 
     @Test
     public void testFileStorageAutoDelete() {
-        Path storagePath = tempDir.resolve("test.txt");    
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
 
         fileStorage.set("key1", "value1");
@@ -48,15 +49,14 @@ public class FileStorageTest {
 
     @Test
     public void testFileStorageNeedsSyncing() {
-        Path storagePath = tempDir.resolve("test.txt");    
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         fileStorage.writeFS();
-        assertFalse(fileStorage.needsSyncing());
+        assertEquals(SyncStatus.InSync, fileStorage.syncStatus());
         fileStorage.set("key1", "value1");
-        // // FAIL: don't why it is still false
-        // assertTrue(fileStorage.needsSyncing());
+        assertEquals(SyncStatus.StorageStale, fileStorage.syncStatus());
         fileStorage.writeFS();
-        assertFalse(fileStorage.needsSyncing());
+        assertEquals(SyncStatus.InSync, fileStorage.syncStatus());
     }
 
     @Test
@@ -74,7 +74,7 @@ public class FileStorageTest {
 
         fileStorage1.merge(fileStorage2);
         fileStorage1.writeFS();
-        
+
         @SuppressWarnings("unchecked")
         LinkedHashMap<String, String> data = (LinkedHashMap<String, String>) fileStorage1.readFS();
         assertEquals(3, data.size());
@@ -83,10 +83,9 @@ public class FileStorageTest {
         assertEquals("9", data.get("key3"));
     }
 
-
     @Test
     public void testFileStorageMainScenario() {
-        Path storagePath = tempDir.resolve("test.txt");    
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
 
         fileStorage.set("key", "value");
@@ -96,11 +95,10 @@ public class FileStorageTest {
         fileStorage.remove("key");
 
         try {
-            Thread.sleep(1000); 
+            Thread.sleep(1000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-    
 
         fileStorage.writeFS();
 
@@ -116,46 +114,40 @@ public class FileStorageTest {
 
     @Test
     public void testRemoveException() {
-        Path storagePath = tempDir.resolve("test.txt");    
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () ->
-        fileStorage.remove("invalid_id"));
+        Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.remove("invalid_id"));
         assertTrue(exception.getMessage().matches("Storage error.*"));
     }
 
     @Test
-    public void testNeedsSyncingException() {
-        Path storagePath = tempDir.resolve("test.txt");    
+    public void testSyncException() {
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () ->
-        fileStorage.needsSyncing());
-        assertTrue(exception.getMessage().matches("Storage error.*"));
-    }
-
-    @Test
-    public void testWriteException(){
-        Path storagePath = tempDir.resolve("");    
-        FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () ->
-        fileStorage.writeFS());
+        Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.sync());
         assertTrue(exception.getMessage().matches("IO error.*"));
     }
 
     @Test
-    public void testEraseException(){
-        Path storagePath = tempDir.resolve("test.txt");    
+    public void testCreateException() {
+        Path storagePath = tempDir.resolve("");
+        Exception exception = assertThrows(RuntimeException.class, () -> new FileStorage("", storagePath.toString()));
+        assertTrue(exception.getMessage().matches("IO error.*"));
+    }
+
+    @Test
+    public void testEraseException() {
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () ->
-        fileStorage.erase());
+        Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.erase());
         assertTrue(exception.getMessage().matches("Storage error.*"));
     }
 
     @Test
-    public void testReadException(){
-        Path storagePath = tempDir.resolve("test.txt");    
+    public void testReadException() {
+        Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () ->
-        fileStorage.readFS());
+        Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.readFS());
         assertTrue(exception.getMessage().matches("Storage error.*"));
     }
 }

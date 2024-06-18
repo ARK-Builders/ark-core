@@ -11,7 +11,9 @@ public class FileStorage {
 
     private static native void remove(String id, long file_storage_ptr);
 
-    private static native boolean needsSyncing(long file_storage_ptr);
+    private static native void sync(long file_storage_ptr);
+
+    private static native SyncStatus syncStatus(long file_storage_ptr);
 
     private static native Object readFS(long file_storage_ptr);
 
@@ -33,8 +35,12 @@ public class FileStorage {
         remove(id, this.fileStoragePtr);
     }
 
-    public boolean needsSyncing() {
-        return needsSyncing(this.fileStoragePtr);
+    public void sync() {
+        sync(this.fileStoragePtr);
+    }
+
+    public SyncStatus syncStatus() {
+        return syncStatus(this.fileStoragePtr);
     }
 
     public Object readFS() {
