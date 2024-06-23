@@ -1,5 +1,7 @@
 pub mod base_storage;
 pub mod file_storage;
+#[cfg(feature = "jni-bindings")]
+pub mod jni;
 pub mod monoid;
 mod utils;
 pub const ARK_FOLDER: &str = ".ark";
