@@ -1,3 +1,5 @@
+package dev.arkbuilders.core;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,11 +54,11 @@ public class FileStorageTest {
         Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         fileStorage.writeFS();
-        assertEquals(SyncStatus.InSync, fileStorage.syncStatus());
+        assertEquals(FileStorage.SyncStatus.InSync, fileStorage.syncStatus());
         fileStorage.set("key1", "value1");
-        assertEquals(SyncStatus.StorageStale, fileStorage.syncStatus());
+        assertEquals(FileStorage.SyncStatus.StorageStale, fileStorage.syncStatus());
         fileStorage.writeFS();
-        assertEquals(SyncStatus.InSync, fileStorage.syncStatus());
+        assertEquals(FileStorage.SyncStatus.InSync, fileStorage.syncStatus());
     }
 
     @Test
