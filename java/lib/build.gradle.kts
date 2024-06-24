@@ -35,3 +35,8 @@ tasks.named<Test>("test") {
     val rustLibPath = projectDir.resolve("../../target/release").absolutePath
     jvmArgs = listOf("-Djava.library.path=$rustLibPath")
 }
+
+tasks.named<Javadoc>("javadoc") {
+    options.encoding = "UTF-8"
+    options.memberLevel = JavadocMemberLevel.PUBLIC
+}
