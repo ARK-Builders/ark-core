@@ -28,7 +28,7 @@ impl FileStorage<String, String> {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_create<'local>(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_create<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass,
     label: JString<'local>,
@@ -53,7 +53,7 @@ pub extern "system" fn Java_FileStorage_create<'local>(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_set<'local>(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_set<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass,
     id: JString<'local>,
@@ -67,7 +67,7 @@ pub extern "system" fn Java_FileStorage_set<'local>(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_remove<'local>(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_remove<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass,
     id: JString<'local>,
@@ -86,7 +86,9 @@ pub extern "system" fn Java_FileStorage_remove<'local>(
 // type and returns it.
 #[no_mangle]
 #[allow(non_snake_case)]
-pub extern "system" fn Java_FileStorage_syncStatus<'env>(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_syncStatus<
+    'env,
+>(
     env: jnix::jni::JNIEnv<'env>,
     _this: jnix::jni::objects::JObject<'env>,
     file_storage_ptr: jnix::jni::sys::jlong,
@@ -104,7 +106,7 @@ pub extern "system" fn Java_FileStorage_syncStatus<'env>(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_sync(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_sync(
     mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
@@ -118,7 +120,7 @@ pub extern "system" fn Java_FileStorage_sync(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_readFS(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_readFS(
     mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
@@ -171,7 +173,7 @@ pub extern "system" fn Java_FileStorage_readFS(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_writeFS(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_writeFS(
     mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
@@ -187,7 +189,7 @@ pub extern "system" fn Java_FileStorage_writeFS(
 #[allow(clippy::suspicious_doc_comments)]
 ///! Safety: The FileStorage instance is dropped after this call
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_erase(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_erase(
     mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,
@@ -202,7 +204,7 @@ pub extern "system" fn Java_FileStorage_erase(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_FileStorage_merge(
+pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_merge(
     mut env: JNIEnv<'_>,
     _class: JClass,
     file_storage_ptr: jlong,

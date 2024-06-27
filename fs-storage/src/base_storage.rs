@@ -6,7 +6,7 @@ use jnix::{FromJava, IntoJava};
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
 #[cfg_attr(feature = "jni-bindings", derive(FromJava, IntoJava))]
-#[jnix(class_name = "SyncStatus")]
+#[jnix(class_name = "dev/arkbuilders/core/FileStorage$SyncStatus")]
 /// Represents the synchronization status of the storage.
 pub enum SyncStatus {
     /// No synchronization needed.

@@ -44,13 +44,15 @@ jobs:
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
         with:
-          distribution: 'temurin'
-          java-version: '22'
+          distribution: "temurin"
+          java-version: "22"
+
+      - name: Set up Gradle
+        uses: gradle/gradle-build-action@v3
 
       - name: Java tests
-        run: |
-          cd fs-storage
-          make test-linux
+        run: gradle test
+        working-directory: ./java
 
   windows:
     name: Test on Windows
@@ -62,19 +64,24 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Build Release
+        run: cargo build --verbose --release
+
       - name: Run tests
         run: cargo test --workspace --verbose
 
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
         with:
-          distribution: 'temurin'
-          java-version: '22'
+          distribution: "temurin"
+          java-version: "22"
+
+      - name: Set up Gradle
+        uses: gradle/gradle-build-action@v3
 
       - name: Java tests
-        run: |
-          cd fs-storage
-          make test-windows
+        run: gradle test
+        working-directory: ./java
 
   mac-intel:
     name: Test on macOS Intel
@@ -86,16 +93,21 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Build Release
+        run: cargo build --verbose --release
+
       - name: Run tests
         run: cargo test --workspace --verbose
 
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
         with:
-          distribution: 'temurin'
-          java-version: '22'
+          distribution: "temurin"
+          java-version: "22"
+
+      - name: Set up Gradle
+        uses: gradle/gradle-build-action@v3
 
       - name: Java tests
-        run: |
-          cd fs-storage
-          make test-mac
+        run: gradle test
+        working-directory: ./java
