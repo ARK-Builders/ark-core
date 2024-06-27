@@ -115,4 +115,4 @@ cargo flamegraph --bench index_build_benchmark -o index_build_benchmark.svg -- -
 
 ## Bindings
 
-`arks` includes support for Java bindings using the [`jni-rs`](https://github.com/jni-rs/jni-rs) crate, which uses the Java Native Interface (JNI) to allow Rust functions to be called from Java. The Java bindings are implemented as a Gradle project, located in the `java/` directory.
+`ark` includes support for Java bindings using the [`jni-rs`](https://github.com/jni-rs/jni-rs) crate, which uses the Java Native Interface (JNI) to allow Rust functions to be called from Java. The Java bindings are implemented as a Gradle project, located in the `java/` directory.
