@@ -8,7 +8,6 @@ use jnix::{FromJava, IntoJava};
 #[cfg_attr(feature = "jni-bindings", derive(FromJava, IntoJava))]
 #[jnix(class_name = "dev/arkbuilders/core/FileStorage$SyncStatus")]
 /// Represents the synchronization status of the storage.
-/// Any changes here should be reflected in the Java class `SyncStatus`.
 pub enum SyncStatus {
     /// No synchronization needed.
     InSync,
