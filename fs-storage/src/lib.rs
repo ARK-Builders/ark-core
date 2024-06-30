@@ -1,9 +1,9 @@
 pub mod base_storage;
+pub mod btreemap_iter;
 pub mod file_storage;
 #[cfg(feature = "jni-bindings")]
 pub mod jni;
 pub mod monoid;
-pub mod wrapper_btreemap;
 
 mod utils;
 pub const ARK_FOLDER: &str = ".ark";
