@@ -73,7 +73,7 @@ pub fn provide_root(root_dir: &Option<PathBuf>) -> Result<PathBuf, AppError> {
 pub fn provide_index(root_dir: &PathBuf) -> ResourceIndex<ResourceId> {
     let rwlock =
         crate::provide_index(root_dir).expect("Failed to retrieve index");
-    let index = &*rwlock.read().unwrap();
+    let index = &*rwlock.read().expect("Failed to lock index");
     index.clone()
 }
 
@@ -94,7 +94,11 @@ pub fn monitor_index(
             println!("Build succeeded in {:?}\n", duration);
 
             if let Some(millis) = interval {
-                let mut index = rwlock.write().unwrap();
+                let mut index = rwlock.write().map_err(|_| {
+                    AppError::StorageCreationError(
+                        "Failed to write lock index".to_owned(),
+                    )
+                })?;
                 loop {
                     let pause = Duration::from_millis(millis);
                     thread::sleep(pause);
@@ -117,7 +121,11 @@ pub fn monitor_index(
                     }
                 }
             } else {
-                let index = rwlock.read().unwrap();
+                let index = rwlock.read().map_err(|_| {
+                    AppError::StorageCreationError(
+                        "Failed to read lock index".to_owned(),
+                    )
+                })?;
 
                 println!("Here are {} entries in the index", index.size());
 

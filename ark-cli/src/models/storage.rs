@@ -4,12 +4,9 @@ use std::fmt::Write;
 use std::path::PathBuf;
 
 use crate::{
-    commands::{
-        self,
-        file::{format_file, format_line},
-    },
+    commands::{file_append, file_insert, format_file, format_line},
     error::AppError,
-    models::format::Format,
+    models::Format,
 };
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -131,11 +128,7 @@ impl Storage {
                     Format::Raw => format!("{}:{}\n", id, content),
                 };
 
-                match commands::file::file_append(
-                    &atomic_file,
-                    &content,
-                    Format::Raw,
-                ) {
+                match file_append(&atomic_file, &content, Format::Raw) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(e),
                 }
@@ -159,8 +152,7 @@ impl Storage {
                         ))
                     })?;
 
-                match commands::file::file_append(&atomic_file, content, format)
-                {
+                match file_append(&atomic_file, content, format) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(e),
                 }
@@ -278,11 +270,7 @@ impl Storage {
                     Format::Raw => format!("{}:{}\n", id, content),
                 };
 
-                match commands::file::file_insert(
-                    &atomic_file,
-                    &content,
-                    Format::Raw,
-                ) {
+                match file_insert(&atomic_file, &content, Format::Raw) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(e),
                 }
@@ -306,8 +294,7 @@ impl Storage {
                         ))
                     })?;
 
-                match commands::file::file_insert(&atomic_file, content, format)
-                {
+                match file_insert(&atomic_file, content, format) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(e),
                 }

@@ -1,5 +1,6 @@
 use crate::error::AppError;
-use crate::models::{format, format::Format};
+use crate::models::key_value_to_str;
+use crate::models::Format;
 use data_error::Result as ArklibResult;
 use fs_atomic_versions::atomic::{modify, modify_json, AtomicFile};
 
@@ -15,7 +16,7 @@ pub fn file_append(
             combined_vec
         })?),
         Format::KeyValue => {
-            let values = format::key_value_to_str(content)?;
+            let values = key_value_to_str(content)?;
 
             Ok(append_json(atomic_file, values.to_vec())?)
         }
@@ -32,7 +33,7 @@ pub fn file_insert(
             Ok(modify(atomic_file, |_| content.as_bytes().to_vec())?)
         }
         Format::KeyValue => {
-            let values = format::key_value_to_str(content)?;
+            let values = key_value_to_str(content)?;
 
             modify_json(
                 atomic_file,
