@@ -243,10 +243,8 @@ where
     }
 
     /// Get a value from the internal mapping
-    fn get(&self, id: &K) -> Result<&V> {
-        self.data.entries.get(id).ok_or_else(|| {
-            ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
-        })
+    fn get(&self, id: &K) -> Option<&V> {
+        self.data.entries.get(id)
     }
 
     /// Write the data to file

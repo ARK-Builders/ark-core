@@ -57,7 +57,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_BTreeMapIterator_next(
             "(Ljava/lang/Object;Ljava/lang/Object;)V",
             &[JValue::Object(&key), JValue::Object(&value)],
         )
-        .unwrap();
+        .expect("Failed to create new Java Map object");
     pair.as_raw()
 }
 

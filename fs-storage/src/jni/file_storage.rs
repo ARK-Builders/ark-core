@@ -186,15 +186,11 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_get<'local>(
     let file_storage = FileStorage::from_jlong(file_storage_ptr);
 
     match file_storage.get(&id) {
-        Ok(value) => env
+        Some(value) => env
             .new_string(value)
-            .expect("Failed to create new JString")
+            .expect("Failed to create new string")
             .into_raw(),
-        Err(err) => {
-            env.throw_new("java/lang/RuntimeException", &err.to_string())
-                .unwrap();
-            env.new_string("").expect("").into_raw()
-        }
+        None => JObject::null().into_raw(),
     }
 }
 #[no_mangle]
