@@ -1,6 +1,7 @@
 pub mod base_storage;
 pub mod btreemap_iter;
 pub mod file_storage;
+pub mod folder_storage;
 #[cfg(feature = "jni-bindings")]
 pub mod jni;
 pub mod monoid;
