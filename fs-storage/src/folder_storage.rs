@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::time::SystemTime;
-
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -10,12 +9,23 @@ use std::{
 
 use crate::base_storage::{BaseStorage, SyncStatus};
 use crate::monoid::Monoid;
-// use crate::utils::read_version_2_fs;
+use crate::utils::read_version_2_fs;
 use data_error::{ArklibError, Result};
 
-const MAX_ENTRIES_PER_FILE: usize = 1000;
-const STORAGE_VERSION: i32 = 1;
+/*
+Note on `FolderStorage` Versioning:
 
+`FolderStorage` is a basic key-value storage system that persists data to disk.
+
+In version 2, `FolderStorage` stored data in a plaintext format.
+Starting from version 3, data is stored in JSON format.
+
+For backward compatibility, we provide a helper function `read_version_2_fs` to read version 2 format.
+*/
+const STORAGE_VERSION: i32 = 3;
+const MAX_ENTRIES_PER_FILE: usize = 1000;
+
+/// Represents a file storage system that persists data to disk.
 pub struct FolderStorage<K, V>
 where
     K: Ord,
@@ -24,16 +34,12 @@ where
     label: String,
     /// Path to the underlying file where data is persisted
     path: PathBuf,
-    /// Tracks the last known modification time of each file in memory.
-    /// This becomes equal to `last_disk_updated` only when data is written or read from disk.
-    disk_timestamps: BTreeMap<K, SystemTime>,
-    /// Tracks the last known modification time of each file on disk.
-    /// This becomes equal to `last_ram_updated` only when data is written or read from disk.
-    ram_timestamps: BTreeMap<K, SystemTime>,
-    current_file_index: usize,
-    current_file_entries: usize,
-    // Maps keys to file indices
-    index: BTreeMap<K, usize>,
+    /// Last modified time of internal mapping. This becomes equal to
+    /// `written_to_disk` only when data is written or read from disk.
+    modified: SystemTime,
+    /// Last time the data was written to disk. This becomes equal to
+    /// `modified` only when data is written or read from disk.
+    written_to_disk: SystemTime,
     data: FolderStorageData<K, V>,
 }
 
@@ -65,61 +71,36 @@ where
         + Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
-        + std::str::FromStr
-        + std::fmt::Debug,
+        + std::str::FromStr,
     V: Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
         + std::str::FromStr
         + Monoid<V>,
 {
+    /// Create a new file storage with a diagnostic label and file path
+    /// The storage will be initialized using the disk data, if the path exists
+    ///
+    /// Note: if the file storage already exists, the data will be read from the file
+    /// without overwriting it.
     pub fn new(label: String, path: &Path) -> Result<Self> {
+        let time = SystemTime::now();
         let mut storage = Self {
             label,
-            path: path.to_path_buf(),
-            disk_timestamps: BTreeMap::new(),
-            ram_timestamps: BTreeMap::new(),
-            current_file_index: 0,
-            current_file_entries: 0,
-            index: BTreeMap::new(),
+            path: PathBuf::from(path),
+            modified: time,
+            written_to_disk: time,
             data: FolderStorageData {
                 version: STORAGE_VERSION,
                 entries: BTreeMap::new(),
             },
         };
-        storage.load_index()?;
 
         if Path::exists(path) {
             storage.read_fs()?;
         }
 
         Ok(storage)
-    }
-
-    fn load_index(&mut self) -> Result<()> {
-        let index_path: PathBuf = self.path.join("index.json");
-        if index_path.exists() {
-            let mut file = File::open(index_path)?;
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)?;
-            self.index = serde_json::from_str(&contents)?;
-            self.current_file_index =
-                *self.index.values().max().unwrap_or(&0) + 1; // Correct?
-        }
-        Ok(())
-    }
-
-    fn save_index(&self) -> Result<()> {
-        let index_path = self.path.join("index.json");
-        let mut file = File::create(index_path)?;
-        let contents = serde_json::to_string(&self.index)?;
-        file.write_all(contents.as_bytes())?;
-        Ok(())
-    }
-
-    fn get_file_path(&self, file_index: usize) -> PathBuf {
-        self.path
-            .join(format!("data_{}.json", file_index))
     }
 
     /// Load mapping from file
@@ -131,84 +112,72 @@ where
             ));
         }
 
-        for entry in fs::read_dir(self.path.clone())? {
-            let path = entry?.path();
-            log::info!("Reading value from: {:?}", path);
+        let mut data = FolderStorageData {
+            version: STORAGE_VERSION,
+            entries: BTreeMap::new(),
+        };
 
-            if !path.is_file() || path.file_name().unwrap() == "index.json" {
-                continue;
+        let index_path = self.path.join("index.json");
+        if index_path.exists() {
+            let index_file = File::open(&index_path)?;
+            let index: BTreeMap<K, usize> =
+                serde_json::from_reader(index_file)?;
+
+            for (_key, file_index) in index {
+                let file_path = self
+                    .path
+                    .join(format!("data_{}.json", file_index));
+                if file_path.exists() {
+                    // First check if the file starts with "version: 2"
+                    let file_content =
+                        std::fs::read_to_string(file_path.clone())?;
+                    if file_content.starts_with("version: 2") {
+                        // Attempt to parse the file using the legacy version 2 storage format of FolderStorage.
+                        match read_version_2_fs(&file_path) {
+                            Ok(legacy_data) => {
+                                log::info!(
+                                    "Version 2 storage format detected for {}",
+                                    self.label
+                                );
+                                data.version = 2;
+                                data.entries.extend(legacy_data);
+                                continue;
+                            }
+                            Err(_) => {
+                                return Err(ArklibError::Storage(
+                                    self.label.clone(),
+                                    "Storage seems to be version 2, but failed to parse"
+                                        .to_owned(),
+                                ));
+                            }
+                        };
+                    }
+
+                    let file = fs::File::open(&file_path)?;
+                    let file_data: FolderStorageData<K, V> =
+                        serde_json::from_reader(file).map_err(|err| {
+                            ArklibError::Storage(
+                                self.label.clone(),
+                                err.to_string(),
+                            )
+                        })?;
+
+                    if file_data.version != STORAGE_VERSION {
+                        return Err(ArklibError::Storage(
+                            self.label.clone(),
+                            format!(
+                                "Storage version mismatch: expected {}, got {}",
+                                STORAGE_VERSION, file_data.version
+                            ),
+                        ));
+                    }
+
+                    data.entries.extend(file_data.entries);
+                }
             }
-
-            let metadata = fs::metadata(&path)?;
-            let new_timestamp = metadata.modified()?;
-
-            let file_index = path
-                .file_stem()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .split('_')
-                .nth(1)
-                .unwrap()
-                .parse::<usize>()
-                .unwrap();
-
-            let mut file = File::open(&path)?;
-            let mut contents: String = String::new();
-            file.read_to_string(&mut contents)?;
-
-            let data: BTreeMap<K, V> = serde_json::from_str(&contents)?;
-
-        //     for (id, value) in data {
-        //         let disk_timestamp = self
-        //             .disk_timestamps
-        //             .get(&id)
-        //             .cloned()
-        //             .unwrap_or(SystemTime::UNIX_EPOCH);
-        //         if disk_timestamp < new_timestamp {
-        //             self.data.entries.insert(id.clone(), value);
-        //             self.disk_timestamps.insert(id, new_timestamp);
-        //             self.index.insert(id, file_index);
-        //         }
-        //     }
-
-        //     self.disk_timestamps.extend(new_timestamps);
-        //     self.save_index()?;
-
-        //     Ok(new_value_by_id)
         }
 
-        // let file = fs::File::open(&self.path)?;
-        // let data: FolderStorageData<K, V> = serde_json::from_reader(file)
-        //     .map_err(|err| {
-        //         ArklibError::Storage(self.label.clone(), err.to_string())
-        //     })?;
-        // let version = data.version;
-        // if version != STORAGE_VERSION {
-        //     return Err(ArklibError::Storage(
-        //         self.label.clone(),
-        //         format!(
-        //             "Storage version mismatch: expected {}, got {}",
-        //             STORAGE_VERSION, version
-        //         ),
-        //     ));
-        // }
-
         Ok(data)
-    }
-
-    fn find_changed_ids(&self) -> Vec<K> {
-        self.ram_timestamps
-            .iter()
-            .filter_map(|(id, ram_ft)| {
-                let disk_ft = self.disk_timestamps.get(id);
-                if disk_ft.is_none() || disk_ft.unwrap() != ram_ft {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
     }
 }
 
@@ -218,90 +187,34 @@ where
         + Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
-        + std::str::FromStr
-        + std::fmt::Debug,
+        + std::str::FromStr,
     V: Clone
         + serde::Serialize
         + serde::de::DeserializeOwned
         + std::str::FromStr
         + Monoid<V>,
 {
-    fn set(&mut self, id: K, value: V) {
-        // Perform all this either in init or readFS
-        // let file_index = if let Some(&existing_index) = self.index.get(&id) {
-        //     existing_index
-        // } else if self.current_file_entries >= MAX_ENTRIES_PER_FILE {
-        //     self.current_file_index += 1;
-        //     self.current_file_entries = 0;
-        //     self.current_file_index
-        // } else {
-        //     self.current_file_index
-        // };
-
-        // let file_path = self.get_file_path(file_index);
-        // let mut data: BTreeMap<String, V> = if file_path.exists() {
-        //     let mut file = File::open(&file_path).unwrap();
-        //     let mut contents = String::new();
-        //     file.read_to_string(&mut contents).unwrap();
-        //     serde_json::from_str(&contents).unwrap()
-        // } else {
-        //     BTreeMap::new()
-        // };
-
-        self.data.entries.insert(id.clone(), value);
-        self.ram_timestamps.insert(id, SystemTime::now());
-
-        // data.insert(id.clone(), value);
-        // let mut file = File::create(file_path)?;
-        // let contents = serde_json::to_string(&data)?;
-        // file.write_all(contents.as_bytes())?; // remove this instead add to a self.data
-
-        // self.index.insert(id.clone(), file_index);
-        // self.current_file_entries += 1;
-        // self.save_index()?;
-
-        // let now = SystemTime::now()
-        //     .duration_since(UNIX_EPOCH)
-        //     .unwrap()
-        //     .as_secs();
-        // self.ram_timestamps.insert(
-        //     id,
-        //     SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(now),
-        // );
+    /// Set a key-value pair in the internal mapping
+    fn set(&mut self, key: K, value: V) {
+        self.data.entries.insert(key, value);
+        self.modified = std::time::SystemTime::now();
     }
 
+    /// Remove an entry from the internal mapping given a key
     fn remove(&mut self, id: &K) -> Result<()> {
-        // if let Some(&file_index) = self.index.get(id) {
-        //     let file_path = self.get_file_path(file_index);
-        //     let mut file = File::open(&file_path)?;
-        //     let mut contents = String::new();
-        //     file.read_to_string(&mut contents)?;
-        //     let mut data: BTreeMap<String, V> =
-        //         serde_json::from_str(&contents)?;
-
-        //     data.remove(id);
-
-        //     let mut file = File::create(file_path)?;
-        //     let contents = serde_json::to_string(&data)?;
-        //     file.write_all(contents.as_bytes())?;
-
-        //     self.index.remove(id);
-        //     self.save_index()?;
-        //     self.ram_timestamps.remove(id);
-        //     self.disk_timestamps.remove(id);
-        // }
         self.data.entries.remove(id).ok_or_else(|| {
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
         })?;
-        self.ram_timestamps.remove(id);
+        self.modified = std::time::SystemTime::now();
         Ok(())
     }
 
     /// Compare the timestamp of the storage file
     /// with the timestamp of the in-memory storage and the last written
     /// to time to determine if either of the two requires syncing.
-    fn sync_status(&self, id: &K) -> Result<SyncStatus> {
+    fn sync_status(&self) -> Result<SyncStatus> {
         let file_updated = fs::metadata(&self.path)?.modified()?;
+
         // Determine the synchronization status based on the modification times
         // Conditions:
         // 1. If both the in-memory storage and the storage on disk have been modified
@@ -313,8 +226,8 @@ where
         // 4. If neither the in-memory storage nor the storage on disk has been modified
         //    since the last write, then the storage is in sync.
         let status = match (
-            self.ram_timestamps.get(id) > self.disk_timestamps.get(id),
-            file_updated > self.disk_timestamps.get(id).unwrap().clone(),
+            self.modified > self.written_to_disk,
+            file_updated > self.written_to_disk,
         ) {
             (true, true) => SyncStatus::Diverge,
             (true, false) => SyncStatus::StorageStale,
@@ -341,9 +254,13 @@ where
         }
     }
 
+    /// Read the data from file
     fn read_fs(&mut self) -> Result<&BTreeMap<K, V>> {
         let data = self.load_fs_data()?;
+        self.modified = fs::metadata(&self.path)?.modified()?;
+        self.written_to_disk = self.modified;
         self.data = data;
+
         Ok(&self.data.entries)
     }
 
@@ -357,86 +274,98 @@ where
     /// Update the modified timestamp in file metadata to avoid OS timing issues
     /// https://github.com/ARK-Builders/ark-rust/pull/63#issuecomment-2163882227
     fn write_fs(&mut self) -> Result<()> {
-        fs::create_dir_all(&self.path)?;
-        let changed_values: BTreeMap<K, V> = BTreeMap::new(); // TODO
-        for (id, val) in changed_values.clone() {
-            let file_index = if let Some(&existing_index) = self.index.get(&id)
-            {
-                existing_index
-            } else if self.current_file_entries >= MAX_ENTRIES_PER_FILE {
-                self.current_file_index += 1;
-                self.current_file_entries = 0;
-                self.current_file_index
-            } else {
-                self.current_file_index
-            };
+        let parent_dir = self.path.parent().ok_or_else(|| {
+            ArklibError::Storage(
+                self.label.clone(),
+                "Failed to get parent directory".to_owned(),
+            )
+        })?;
+        fs::create_dir_all(parent_dir)?;
 
-            let file_path = self.get_file_path(file_index);
-            let mut data: BTreeMap<K, V> = if file_path.exists() {
-                let mut file = File::open(&file_path).unwrap();
-                let mut contents = String::new();
-                file.read_to_string(&mut contents).unwrap();
-                serde_json::from_str(&contents).unwrap()
+        let mut current_file_index = 0;
+        let mut current_file_entries = 0;
+
+        for (key, value) in &self.data.entries {
+            if current_file_entries >= MAX_ENTRIES_PER_FILE {
+                current_file_index += 1;
+                current_file_entries = 0;
+            }
+
+            let file_path = self
+                .path
+                .join(format!("data_{}.json", current_file_index));
+            let mut file_data: BTreeMap<K, V> = if file_path.exists() {
+                let file = File::open(&file_path)?;
+                serde_json::from_reader(file)?
             } else {
                 BTreeMap::new()
             };
 
-            data.insert(id.clone(), val);
+            file_data.insert(key.clone(), value.clone());
+            current_file_entries += 1;
 
-            let mut file = File::create(file_path)?;
-            let contents = serde_json::to_string(&data)?;
-            file.write_all(contents.as_bytes())?;
+            let mut file = File::create(&file_path)?;
+            file.write_all(
+                serde_json::to_string_pretty(&file_data)?.as_bytes(),
+            )?;
+            file.flush()?;
 
-            self.index.insert(id.clone(), file_index);
-            self.current_file_entries += 1;
-            self.save_index()?;
-
-            let now = SystemTime::now();
-            self.ram_timestamps.insert(id.clone(), now);
-            self.disk_timestamps.insert(id, now);
+            let new_timestamp = SystemTime::now();
+            file.set_modified(new_timestamp)?;
+            file.sync_all()?;
         }
+
+        // Write the index file
+        // index stores K -> key, V -> file index in which key value pair is stored
+        let index: BTreeMap<K, usize> = self
+            .data
+            .entries
+            .keys()
+            .enumerate()
+            .map(|(i, k)| (k.clone(), i / MAX_ENTRIES_PER_FILE))
+            .collect();
+        let index_path = self.path.join("index.json");
+        let mut index_file = File::create(index_path)?;
+        index_file
+            .write_all(serde_json::to_string_pretty(&index)?.as_bytes())?;
+        index_file.flush()?;
+        index_file.sync_all()?;
+
+        let new_timestamp = SystemTime::now();
+        self.modified = new_timestamp;
+        self.written_to_disk = new_timestamp;
 
         log::info!(
             "{} {} entries have been written",
             self.label,
-            changed_values.len()
+            self.data.entries.len()
         );
-
-        // let changed_value_by_ids: BTreeMap<_, _> = self
-        //     .find_changed_ids()
-        //     .into_iter()
-        //     .filter_map(|id| value_by_id.get(&id).map(|v| (id, v.clone())))
-        //     .collect();
-
         Ok(())
     }
 
     /// Erase the file from disk
-    /// Implement later
     fn erase(&self) -> Result<()> {
-        unimplemented!("erase")
-        // fs::remove_file(&self.path).map_err(|err| {
-        //     ArklibError::Storage(self.label.clone(), err.to_string())
-        // })
+        fs::remove_dir(&self.path).map_err(|err| {
+            ArklibError::Storage(self.label.clone(), err.to_string())
+        })
     }
 
     /// Merge the data from another storage instance into this storage instance
-    fn merge_from(&mut self, _other: impl AsRef<BTreeMap<K, V>>) -> Result<()>
+    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>
     where
         V: Monoid<V>,
     {
-        unimplemented!("merge_from")
-        // let other_entries = other.as_ref();
-        // for (key, value) in other_entries {
-        //     if let Some(existing_value) = self.data.entries.get(key) {
-        //         let resolved_value = V::combine(existing_value, value);
-        //         self.set(key.clone(), resolved_value);
-        //     } else {
-        //         self.set(key.clone(), value.clone())
-        //     }
-        // }
-        // self.modified = std::time::SystemTime::now();
-        // Ok(())
+        let other_entries = other.as_ref();
+        for (key, value) in other_entries {
+            if let Some(existing_value) = self.data.entries.get(key) {
+                let resolved_value = V::combine(existing_value, value);
+                self.set(key.clone(), resolved_value);
+            } else {
+                self.set(key.clone(), value.clone())
+            }
+        }
+        self.modified = std::time::SystemTime::now();
+        Ok(())
     }
 }
 
