@@ -10,12 +10,15 @@ use std::{
 use crate::base_storage::{BaseStorage, SyncStatus};
 use crate::monoid::Monoid;
 // use crate::utils::read_version_2_fs;
+use crate::utils::remove_files_not_in_ram;
 use data_error::{ArklibError, Result};
 
 /*
 Note on `FolderStorage` Versioning:
 
 `FolderStorage` is a basic key-value storage system that persists data to disk.
+where the key is the path of the file inside the directory.
+
 
 In version 2, `FolderStorage` stored data in a plaintext format.
 Starting from version 3, data is stored in JSON format.
@@ -24,7 +27,7 @@ For backward compatibility, we provide a helper function `read_version_2_fs` to 
 */
 const STORAGE_VERSION: i32 = 3;
 
-/// Represents a file storage system that persists data to disk.
+/// Represents a folder storage system that persists data to disk.
 pub struct FolderStorage<K, V>
 where
     K: Ord,
@@ -33,13 +36,11 @@ where
     label: String,
     /// Path to the underlying file where data is persisted
     path: PathBuf,
-    /// Last modified time of internal mapping. This becomes equal to
-    /// `written_to_disk` only when data is written or read from disk.
-    // modified: SystemTime,
+    /// `ram_timestamps` can be used to track the last time a file was modified in memory.
+    /// where the key is the path of the file inside the directory.
     ram_timestamps: BTreeMap<K, SystemTime>,
-    /// Last time the data was written to disk. This becomes equal to
-    /// `modified` only when data is written or read from disk.
-    // written_to_disk: SystemTime,
+    /// `disk_timestamps` can be used to track the last time a file written or read from disk.
+    /// where the key is the path of the file inside the directory.
     disk_timestamps: BTreeMap<K, SystemTime>,
     data: FolderStorageData<K, V>,
 }
@@ -80,10 +81,10 @@ where
         + std::str::FromStr
         + Monoid<V>,
 {
-    /// Create a new file storage with a diagnostic label and file path
+    /// Create a new folder storage with a diagnostic label and directory path
     /// The storage will be initialized using the disk data, if the path exists
     ///
-    /// Note: if the file storage already exists, the data will be read from the file
+    /// Note: if the folder storage already exists, the data will be read from the folder
     /// without overwriting it.
     pub fn new(label: String, path: &Path) -> Result<Self> {
         let mut storage = Self {
@@ -104,8 +105,8 @@ where
         Ok(storage)
     }
 
-    /// Load mapping from file
-    fn load_fs_data(&self) -> Result<FolderStorageData<K, V>> {
+    /// Load mapping from folder storage
+    fn load_fs_data(&mut self) -> Result<FolderStorageData<K, V>> {
         if !self.path.exists() {
             return Err(ArklibError::Storage(
                 self.label.clone(),
@@ -124,6 +125,9 @@ where
             version: STORAGE_VERSION,
             entries: BTreeMap::new(),
         };
+
+        self.disk_timestamps.clear();
+        self.ram_timestamps.clear();
 
         // read_version_2_fs : unimplemented!()
 
@@ -156,7 +160,14 @@ where
                         format!("Failed to deserialize value: {}", e),
                     )
                 })?;
-                data.entries.insert(key, value);
+                data.entries.insert(key.clone(), value);
+
+                if let Ok(metadata) = fs::metadata(&path) {
+                    if let Ok(modified) = metadata.modified() {
+                        self.disk_timestamps.insert(key.clone(), modified);
+                        self.ram_timestamps.insert(key, modified);
+                    }
+                }
             }
         }
         Ok(data)
@@ -195,11 +206,73 @@ where
         Ok(())
     }
 
-    /// Compare the timestamp of the storage file
-    /// with the timestamp of the in-memory storage and the last written
+    /// Compare the timestamp of the storage files
+    /// with the timestamps of the in-memory storage and the last written
     /// to time to determine if either of the two requires syncing.
     fn sync_status(&self) -> Result<SyncStatus> {
-        unimplemented!()
+        let mut ram_newer = false;
+        let mut disk_newer = false;
+
+        for (key, ram_timestamp) in &self.ram_timestamps {
+            let file_path = self.path.join(format!("{}.bin", key));
+
+            if let Ok(metadata) = fs::metadata(&file_path) {
+                if let Ok(disk_timestamp) = metadata.modified() {
+                    match ram_timestamp.cmp(&disk_timestamp) {
+                        std::cmp::Ordering::Greater => ram_newer = true,
+                        std::cmp::Ordering::Less => disk_newer = true,
+                        std::cmp::Ordering::Equal => {}
+                    }
+                } else {
+                    // If we can't read the disk timestamp, assume RAM is newer
+                    ram_newer = true;
+                }
+            } else {
+                // If the file doesn't exist on disk, RAM is newer
+                ram_newer = true;
+            }
+
+            // If we've found both RAM and disk modifications, we can stop checking
+            if ram_newer && disk_newer {
+                break;
+            }
+        }
+
+        // Check for files on disk that aren't in RAM
+        for entry in fs::read_dir(&self.path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file()
+                && path.extension().map_or(false, |ext| ext == "bin")
+            {
+                let key = path
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .parse::<K>()
+                    .map_err(|_| {
+                        ArklibError::Storage(
+                            self.label.clone(),
+                            "Failed to parse key from filename".to_owned(),
+                        )
+                    })?;
+                if !self.ram_timestamps.contains_key(&key) {
+                    disk_newer = true;
+                    break;
+                }
+            }
+        }
+
+        let status = match (ram_newer, disk_newer) {
+            (false, false) => SyncStatus::InSync,
+            (true, false) => SyncStatus::StorageStale,
+            (false, true) => SyncStatus::MappingStale,
+            (true, true) => SyncStatus::Diverge,
+        };
+
+        log::info!("{} sync status is {}", self.label, status);
+        Ok(status)
     }
 
     /// Sync the in-memory storage with the storage on disk
@@ -217,19 +290,10 @@ where
         }
     }
 
-    /// Read the data from file
+    /// Read the data from folder storage
     fn read_fs(&mut self) -> Result<&BTreeMap<K, V>> {
         let data = self.load_fs_data()?;
         self.data = data;
-        self.disk_timestamps.clear();
-        for key in self.data.entries.keys() {
-            let file_path = self.path.join(format!("{}.bin", key));
-            if let Ok(metadata) = fs::metadata(&file_path) {
-                if let Ok(modified) = metadata.modified() {
-                    self.disk_timestamps.insert(key.clone(), modified);
-                }
-            }
-        }
         Ok(&self.data.entries)
     }
 
@@ -238,7 +302,7 @@ where
         self.data.entries.get(id)
     }
 
-    /// Write the data to file
+    /// Write the data to folder
     ///
     /// Update the modified timestamp in file metadata to avoid OS timing issues
     /// https://github.com/ARK-Builders/ark-rust/pull/63#issuecomment-2163882227
@@ -267,29 +331,7 @@ where
         }
 
         // Remove files for keys that no longer exist
-        for entry in fs::read_dir(&self.path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file()
-                && path.extension().map_or(false, |ext| ext == "bin")
-            {
-                let key = path
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .parse::<K>()
-                    .map_err(|_| {
-                        ArklibError::Storage(
-                            self.label.clone(),
-                            "Failed to parse key from filename".to_owned(),
-                        )
-                    })?;
-                if !self.data.entries.contains_key(&key) {
-                    fs::remove_file(path)?;
-                }
-            }
-        }
+        remove_files_not_in_ram(&self.path, &self.label, &self.data.entries);
 
         log::info!(
             "{} {} entries have been written",
@@ -299,14 +341,14 @@ where
         Ok(())
     }
 
-    /// Erase the file from disk
+    /// Erase the folder from disk
     fn erase(&self) -> Result<()> {
         fs::remove_dir(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
         })
     }
 
-    /// Merge the data from another storage instance into this storage instance
+    /// Merge the data from another folder storage instance into this folder storage instance
     fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>
     where
         V: Monoid<V>,

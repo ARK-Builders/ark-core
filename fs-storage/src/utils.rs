@@ -1,5 +1,7 @@
+use data_error::ArklibError;
 use data_error::Result;
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::Path;
 
 /// Parses version 2 `FileStorage` format and returns the data as a BTreeMap
@@ -50,6 +52,38 @@ where
     }
 
     Ok(data)
+}
+
+pub fn remove_files_not_in_ram<K, V>(
+    path: &Path,
+    label: &str,
+    data: &BTreeMap<K, V>,
+) where
+    K: std::str::FromStr + std::cmp::Ord,
+{
+    for entry in fs::read_dir(path).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "bin")
+        {
+            let key = path
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .parse::<K>()
+                .map_err(|_| {
+                    ArklibError::Storage(
+                        label.to_owned(),
+                        "Failed to parse key from filename".to_owned(),
+                    )
+                })
+                .unwrap();
+            if !data.contains_key(&key) {
+                fs::remove_file(path).unwrap();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
