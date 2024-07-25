@@ -10,7 +10,6 @@ use std::{
 use crate::base_storage::{BaseStorage, SyncStatus};
 use crate::monoid::Monoid;
 // use crate::utils::read_version_2_fs;
-use crate::utils::remove_files_not_in_ram;
 use data_error::{ArklibError, Result};
 
 /*
@@ -172,6 +171,33 @@ where
         }
         Ok(data)
     }
+
+    fn remove_files_not_in_ram(&mut self) {
+        for entry in fs::read_dir(self.path.clone()).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_file()
+                && path.extension().map_or(false, |ext| ext == "bin")
+            {
+                let key = path
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .parse::<K>()
+                    .map_err(|_| {
+                        ArklibError::Storage(
+                            self.label.to_owned(),
+                            "Failed to parse key from filename".to_owned(),
+                        )
+                    })
+                    .unwrap();
+                if !self.data.entries.contains_key(&key) {
+                    fs::remove_file(path).unwrap();
+                }
+            }
+        }
+    }
 }
 
 impl<K, V> BaseStorage<K, V> for FolderStorage<K, V>
@@ -219,47 +245,79 @@ where
             if let Ok(metadata) = fs::metadata(&file_path) {
                 if let Ok(disk_timestamp) = metadata.modified() {
                     match ram_timestamp.cmp(&disk_timestamp) {
-                        std::cmp::Ordering::Greater => ram_newer = true,
-                        std::cmp::Ordering::Less => disk_newer = true,
+                        std::cmp::Ordering::Greater => {
+                            ram_newer = true;
+                            log::debug!(
+                                "RAM newer: file {} is newer in RAM",
+                                file_path.display()
+                            );
+                        }
+                        std::cmp::Ordering::Less => {
+                            disk_newer = true;
+                            log::debug!(
+                                "Disk newer: file {} is newer on disk, ram: {}, disk: {}",
+                                file_path.display(),
+                                ram_timestamp.elapsed().unwrap().as_secs(),
+                                disk_timestamp.elapsed().unwrap().as_secs()
+                            );
+                        }
                         std::cmp::Ordering::Equal => {}
                     }
                 } else {
                     // If we can't read the disk timestamp, assume RAM is newer
                     ram_newer = true;
+                    log::debug!(
+                        "RAM newer: couldn't read disk timestamp for {}",
+                        file_path.display()
+                    );
                 }
             } else {
                 // If the file doesn't exist on disk, RAM is newer
                 ram_newer = true;
+                log::debug!(
+                    "RAM newer: file {} doesn't exist on disk",
+                    file_path.display()
+                );
             }
 
             // If we've found both RAM and disk modifications, we can stop checking
             if ram_newer && disk_newer {
+                log::debug!(
+                    "Both RAM and disk modifications found, stopping check"
+                );
                 break;
             }
         }
 
-        // Check for files on disk that aren't in RAM
-        for entry in fs::read_dir(&self.path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file()
-                && path.extension().map_or(false, |ext| ext == "bin")
-            {
-                let key = path
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .parse::<K>()
-                    .map_err(|_| {
-                        ArklibError::Storage(
-                            self.label.clone(),
-                            "Failed to parse key from filename".to_owned(),
-                        )
-                    })?;
-                if !self.ram_timestamps.contains_key(&key) {
-                    disk_newer = true;
-                    break;
+        // Skip this check if this divergent condition has already been reached
+        if !ram_newer || !disk_newer {
+            // Check for files on disk that aren't in RAM
+            for entry in fs::read_dir(&self.path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_file()
+                    && path.extension().map_or(false, |ext| ext == "bin")
+                {
+                    let key = path
+                        .file_stem()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .parse::<K>()
+                        .map_err(|_| {
+                            ArklibError::Storage(
+                                self.label.clone(),
+                                "Failed to parse key from filename".to_owned(),
+                            )
+                        })?;
+                    if !self.ram_timestamps.contains_key(&key) {
+                        disk_newer = true;
+                        log::debug!(
+                            "Disk newer: file {} exists on disk but not in RAM",
+                            path.display()
+                        );
+                        break;
+                    }
                 }
             }
         }
@@ -274,7 +332,6 @@ where
         log::info!("{} sync status is {}", self.label, status);
         Ok(status)
     }
-
     /// Sync the in-memory storage with the storage on disk
     fn sync(&mut self) -> Result<()> {
         match self.sync_status()? {
@@ -328,10 +385,12 @@ where
 
             self.disk_timestamps
                 .insert(key.clone(), new_timestamp);
+            self.ram_timestamps
+                .insert(key.clone(), new_timestamp);
         }
 
         // Remove files for keys that no longer exist
-        remove_files_not_in_ram(&self.path, &self.label, &self.data.entries);
+        self.remove_files_not_in_ram();
 
         log::info!(
             "{} {} entries have been written",
@@ -343,7 +402,7 @@ where
 
     /// Erase the folder from disk
     fn erase(&self) -> Result<()> {
-        fs::remove_dir(&self.path).map_err(|err| {
+        fs::remove_dir_all(&self.path).map_err(|err| {
             ArklibError::Storage(self.label.clone(), err.to_string())
         })
     }
@@ -374,5 +433,141 @@ where
 {
     fn as_ref(&self) -> &BTreeMap<K, V> {
         &self.data.entries
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        base_storage::{BaseStorage, SyncStatus},
+        folder_storage::FolderStorage,
+    };
+    use std::{fs, thread, time::Duration};
+
+    use tempdir::TempDir;
+
+    #[test]
+    fn test_folder_storage_write_read() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let mut storage =
+            FolderStorage::new("test".to_owned(), temp_dir.path()).unwrap();
+
+        storage.set("key1".to_owned(), "value1".to_string());
+        storage.set("key2".to_owned(), "value2".to_string());
+
+        assert!(storage.remove(&"key1".to_string()).is_ok());
+        storage
+            .write_fs()
+            .expect("Failed to write data to disk");
+
+        let data_read = storage
+            .read_fs()
+            .expect("Failed to read data from disk");
+        assert_eq!(data_read.len(), 1);
+        assert_eq!(data_read.get("key2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_folder_storage_auto_delete() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let mut storage =
+            FolderStorage::new("test".to_owned(), temp_dir.path()).unwrap();
+
+        storage.set("key1".to_string(), "value1".to_string());
+        storage.set("key1".to_string(), "value2".to_string());
+        assert!(storage.write_fs().is_ok());
+        assert_eq!(temp_dir.path().exists(), true);
+
+        if let Err(err) = storage.erase() {
+            panic!("Failed to delete file: {:?}", err);
+        }
+        assert!(!temp_dir.path().exists());
+    }
+
+    #[test]
+    fn test_folder_metadata_timestamp_updated() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let mut storage =
+            FolderStorage::new("test".to_owned(), temp_dir.path()).unwrap();
+        storage.write_fs().unwrap();
+
+        storage.set("key1".to_string(), "value1".to_string());
+        let before_write = fs::metadata(&temp_dir.path())
+            .unwrap()
+            .modified()
+            .unwrap();
+        thread::sleep(Duration::from_millis(10));
+        storage.write_fs().unwrap();
+        let after_write = fs::metadata(&temp_dir.path())
+            .unwrap()
+            .modified()
+            .unwrap();
+        println!(
+            "before_write: {:?}, after_write: {:?}",
+            before_write, after_write
+        );
+        assert!(before_write < after_write);
+    }
+
+    #[test]
+    fn test_folder_storage_is_storage_updated() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let mut storage =
+            FolderStorage::new("test".to_owned(), temp_dir.path()).unwrap();
+        storage.write_fs().unwrap();
+        assert_eq!(storage.sync_status().unwrap(), SyncStatus::InSync);
+
+        storage.set("key1".to_string(), "value1".to_string());
+        assert_eq!(storage.sync_status().unwrap(), SyncStatus::StorageStale);
+        storage.write_fs().unwrap();
+        assert_eq!(storage.sync_status().unwrap(), SyncStatus::InSync);
+
+        // External data manipulation
+        let mut mirror_storage = FolderStorage::new(
+            "MirrorTestStorage".to_string(),
+            temp_dir.path(),
+        )
+        .unwrap();
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
+
+        mirror_storage.set("key1".to_string(), "value3".to_string());
+        assert_eq!(
+            mirror_storage.sync_status().unwrap(),
+            SyncStatus::StorageStale
+        );
+
+        mirror_storage.write_fs().unwrap();
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
+
+        // receive updates from external data manipulation
+        assert_eq!(storage.sync_status().unwrap(), SyncStatus::MappingStale);
+        storage.read_fs().unwrap();
+        assert_eq!(storage.sync_status().unwrap(), SyncStatus::InSync);
+        assert_eq!(mirror_storage.sync_status().unwrap(), SyncStatus::InSync);
+    }
+
+    #[test]
+    fn test_monoid_combine() {
+        let temp_dir =
+            TempDir::new("tmp").expect("Failed to create temporary directory");
+        let mut storage1 =
+            FolderStorage::new("test".to_owned(), temp_dir.path()).unwrap();
+        let mut storage2 =
+            FolderStorage::new("test".to_owned(), temp_dir.path()).unwrap();
+
+        storage1.set("key1".to_string(), 2);
+        storage1.set("key2".to_string(), 6);
+
+        storage2.set("key1".to_string(), 3);
+        storage2.set("key3".to_string(), 9);
+
+        storage1.merge_from(&storage2).unwrap();
+        assert_eq!(storage1.as_ref().get("key1"), Some(&3));
+        assert_eq!(storage1.as_ref().get("key2"), Some(&6));
+        assert_eq!(storage1.as_ref().get("key3"), Some(&9));
     }
 }
