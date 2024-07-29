@@ -45,7 +45,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_create<'local>(
 
     let file_storage: FileStorage<String, String> =
         FileStorage::new(label, Path::new(&path)).unwrap_or_else(|err| {
-            env.throw_new("java/lang/RuntimeException", &err.to_string())
+            env.throw_new("java/lang/RuntimeException", err.to_string())
                 .expect("Failed to throw RuntimeException");
             FileStorage::new("".to_string(), Path::new("")).unwrap()
         });
@@ -77,7 +77,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_remove<'local>(
     FileStorage::from_jlong(file_storage_ptr)
         .remove(&id)
         .unwrap_or_else(|err| {
-            env.throw_new("java/lang/RuntimeException", &err.to_string())
+            env.throw_new("java/lang/RuntimeException", err.to_string())
                 .unwrap();
         });
 }
@@ -114,7 +114,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_sync(
     FileStorage::from_jlong(file_storage_ptr)
         .sync()
         .unwrap_or_else(|err| {
-            env.throw_new("java/lang/RuntimeException", &err.to_string())
+            env.throw_new("java/lang/RuntimeException", err.to_string())
                 .unwrap();
         });
 }
@@ -129,7 +129,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_readFS(
         match FileStorage::from_jlong(file_storage_ptr).read_fs() {
             Ok(data) => data.clone(),
             Err(err) => {
-                env.throw_new("java/lang/RuntimeException", &err.to_string())
+                env.throw_new("java/lang/RuntimeException", err.to_string())
                     .expect("Failed to throw RuntimeException");
                 return JObject::null().into_raw();
             }
@@ -202,7 +202,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_writeFS(
     FileStorage::from_jlong(file_storage_ptr)
         .write_fs()
         .unwrap_or_else(|err| {
-            env.throw_new("java/lang/RuntimeException", &err.to_string())
+            env.throw_new("java/lang/RuntimeException", err.to_string())
                 .unwrap();
         });
 }
@@ -219,7 +219,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_erase(
         Box::from_raw(file_storage_ptr as *mut FileStorage<String, String>)
     };
     file_storage.erase().unwrap_or_else(|err| {
-        env.throw_new("java/lang/RuntimeException", &err.to_string())
+        env.throw_new("java/lang/RuntimeException", err.to_string())
             .unwrap();
     });
 }
@@ -234,7 +234,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_merge(
     FileStorage::from_jlong(file_storage_ptr)
         .merge_from(FileStorage::from_jlong(other_file_storage_ptr))
         .unwrap_or_else(|err| {
-            env.throw_new("java/lang/RuntimeException", &err.to_string())
+            env.throw_new("java/lang/RuntimeException", err.to_string())
                 .unwrap();
         });
 }
