@@ -1,1120 +1,477 @@
-use anyhow::anyhow;
-use canonical_path::{CanonicalPath, CanonicalPathBuf};
-use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
-use std::fs::{self, File, Metadata};
-use std::io::{BufRead, BufReader, Write};
-use std::ops::Add;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use walkdir::{DirEntry, WalkDir};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    hash::Hash,
+    path::{Path, PathBuf},
+    time::{Duration, SystemTime},
+};
 
-use log;
+use serde::{Deserialize, Serialize};
 
-use data_error::{ArklibError, Result};
+use data_error::Result;
 use data_resource::ResourceId;
 use fs_storage::{ARK_FOLDER, INDEX_PATH};
 
-#[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
-pub struct IndexEntry<Id: ResourceId> {
-    pub modified: SystemTime,
-    pub id: Id,
-}
+use crate::utils::{discover_paths, scan_entries};
 
-#[derive(PartialEq, Clone, Debug)]
-pub struct ResourceIndex<Id: ResourceId> {
-    pub id2path: HashMap<Id, CanonicalPathBuf>,
-    pub path2id: HashMap<CanonicalPathBuf, IndexEntry<Id>>,
-
-    pub collisions: HashMap<Id, usize>,
-    root: PathBuf,
-}
-
-#[derive(PartialEq, Debug)]
-pub struct IndexUpdate<Id: ResourceId> {
-    pub deleted: HashSet<Id>,
-    pub added: HashMap<CanonicalPathBuf, Id>,
-}
-
+/// The threshold for considering a resource updated
 pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
 
-pub type Paths = HashSet<CanonicalPathBuf>;
+/// Represents a resource in the index
+#[derive(
+    PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug, Serialize, Deserialize,
+)]
+pub struct IndexedResource<Id> {
+    /// The unique identifier of the resource
+    id: Id,
+    /// The path of the resource, relative to the root path
+    path: PathBuf,
+    /// The last modified time of the resource (from the file system metadata)
+    last_modified: SystemTime,
+}
+
+impl<Id> IndexedResource<Id> {
+    /// Create a new indexed resource
+    pub fn new(id: Id, path: PathBuf, last_modified: SystemTime) -> Self {
+        IndexedResource {
+            id,
+            path,
+            last_modified,
+        }
+    }
+
+    /// Return the ID of the resource
+    pub fn id(&self) -> &Id {
+        &self.id
+    }
+
+    /// Return the path of the resource
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Return the last modified time of the resource
+    pub fn last_modified(&self) -> SystemTime {
+        self.last_modified
+    }
+}
+
+/// Represents an item with its last modified time
+#[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
+pub struct Timestamped<Item> {
+    /// The item to be timestamped
+    pub(crate) item: Item,
+    /// The last modified time of the resource (from the file system metadata)
+    pub(crate) last_modified: SystemTime,
+}
+
+type IndexedPaths = HashSet<Timestamped<PathBuf>>;
+
+/// Represents the index of resources in a directory.
+///
+/// [`ResourceIndex`] provides functionality for managing a directory index,
+/// including tracking changes, and querying resources.
+///
+/// #### Reactive API
+/// - [`ResourceIndex::update_all`]: Method to update the index by rescanning
+///   files and returning changes (additions/deletions/updates).
+///
+/// #### Snapshot API
+/// - [`ResourceIndex::get_resources_by_id`]: Query resources from the index by
+///   ID.
+/// - [`ResourceIndex::get_resource_by_path`]: Query a resource from the index
+///   by its path.
+///
+/// #### Track API
+/// Allows for fine-grained control over tracking changes in the index
+/// - [`ResourceIndex::track_addition`]: Track a newly added file (checks if the
+///   file exists in the file system).
+/// - [`ResourceIndex::track_removal`]: Track the deletion of a file (checks if
+///   the file was actually deleted).
+/// - [`ResourceIndex::track_modification`]: Track an update on a single file.
+///
+/// ## Examples
+/// ```no_run
+/// use std::path::Path;
+/// use fs_index::{ResourceIndex, load_or_build_index};
+/// use dev_hash::Crc32;
+///
+/// // Define the root path
+/// let root_path = Path::new("animals");
+///
+/// // Build the index
+/// let index: ResourceIndex<Crc32> = ResourceIndex::build(root_path).expect("Failed to build index");
+/// // Store the index
+/// index.store().expect("Failed to store index");
+///
+/// // Load the stored index
+/// let mut loaded_index: ResourceIndex<Crc32> = load_or_build_index(root_path, false).expect("Failed to load index");
+///
+/// // Update the index
+/// loaded_index.update_all().expect("Failed to update index");
+///
+/// // Get a resource by path
+/// let _resource = loaded_index
+///     .get_resource_by_path("cat.txt")
+///     .expect("Resource not found");
+/// ```
+#[derive(Clone, Debug)]
+pub struct ResourceIndex<Id>
+where
+    Id: Eq + Hash,
+{
+    /// The root path of the index (canonicalized)
+    pub(crate) root: PathBuf,
+    /// A map from resource IDs to paths
+    ///
+    /// Multiple resources can have the same ID (e.g., due to hash collisions
+    /// or files with the same content)
+    pub(crate) id_to_paths: HashMap<Id, HashSet<PathBuf>>,
+    /// A map from resource paths to resources
+    pub(crate) path_to_id: HashMap<PathBuf, Timestamped<Id>>,
+}
+
+/// Represents the result of an update operation on the ResourceIndex
+#[derive(PartialEq, Debug)]
+pub struct IndexUpdate<Id: ResourceId> {
+    /// Resources that were added during the update
+    added: HashMap<Id, IndexedPaths>,
+    /// Resources that were removed during the update
+    removed: HashSet<Id>,
+}
+
+impl<Id: ResourceId> IndexUpdate<Id> {
+    /// Return the resources that were added during the update
+    pub fn added(&self) -> &HashMap<Id, IndexedPaths> {
+        &self.added
+    }
+
+    /// Return the resources that were removed during the update
+    pub fn removed(&self) -> &HashSet<Id> {
+        &self.removed
+    }
+}
 
 impl<Id: ResourceId> ResourceIndex<Id> {
-    pub fn size(&self) -> usize {
-        //the actual size is lower in presence of collisions
-        self.path2id.len()
+    /// Return the number of resources in the index
+    pub fn len(&self) -> usize {
+        self.path_to_id.len()
     }
 
-    pub fn build<P: AsRef<Path>>(root_path: P) -> Self {
-        log::info!("Building the index from scratch");
-        let root_path: PathBuf = root_path.as_ref().to_owned();
+    /// Return true if the index is empty
+    pub fn is_empty(&self) -> bool {
+        self.path_to_id.is_empty()
+    }
 
-        let entries = discover_paths(&root_path);
-        let entries = scan_entries(entries);
+    /// Return the root path of the index
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
 
-        let mut index = ResourceIndex {
-            id2path: HashMap::new(),
-            path2id: HashMap::new(),
-            collisions: HashMap::new(),
-            root: root_path,
-        };
-
-        for (path, entry) in entries {
-            index.insert_entry(path, entry);
+    /// Return the resources in the index
+    pub fn resources(&self) -> Vec<IndexedResource<Id>> {
+        // Using path_to_resource so to avoid not collecting duplicates
+        let mut resources = vec![];
+        for (path, id) in self.path_to_id.iter() {
+            resources.push(IndexedResource::new(
+                id.item.clone(),
+                path.clone(),
+                id.last_modified,
+            ));
         }
-
-        log::info!("Index built");
-        index
+        resources
     }
 
-    pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
-        let root_path: PathBuf = root_path.as_ref().to_owned();
-
-        let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
-        log::info!("Loading the index from file {}", index_path.display());
-        let file = File::open(&index_path)?;
-        let mut index = ResourceIndex {
-            id2path: HashMap::new(),
-            path2id: HashMap::new(),
-            collisions: HashMap::new(),
-            root: root_path.clone(),
-        };
-
-        // We should not return early in case of missing files
-        let lines = BufReader::new(file).lines();
-        for line in lines {
-            let line = line?;
-
-            let mut parts = line.split(' ');
-
-            let modified = {
-                let str = parts.next().ok_or(ArklibError::Parse)?;
-                UNIX_EPOCH.add(Duration::from_millis(
-                    str.parse().map_err(|_| ArklibError::Parse)?,
-                ))
-            };
-
-            let id = {
-                let str = parts.next().ok_or(ArklibError::Parse)?;
-                Id::from_str(str).map_err(|_| ArklibError::Parse)?
-            };
-
-            let path: String =
-                itertools::Itertools::intersperse(parts, " ").collect();
-            let path: PathBuf = root_path.join(Path::new(&path));
-            match CanonicalPathBuf::canonicalize(&path) {
-                Ok(path) => {
-                    log::trace!("[load] {} -> {}", id, path.display());
-                    index.insert_entry(path, IndexEntry { modified, id });
-                }
-                Err(_) => {
-                    log::warn!("File {} not found", path.display());
-                    continue;
-                }
-            }
-        }
-
-        Ok(index)
+    /// Return the ID collisions
+    ///
+    /// **Note**: If you are using a cryptographic hash function, collisions
+    /// should be files with the same content. If you are using a
+    /// non-cryptographic hash function, collisions can be files with the
+    /// same content or files whose content hash to the same value.
+    pub fn collisions(&self) -> HashMap<Id, HashSet<PathBuf>> {
+        // Filter out IDs with only one resource
+        self.id_to_paths
+            .iter()
+            .filter(|(_id, paths)| paths.len() > 1)
+            .map(|(id, paths)| (id.clone(), paths.clone()))
+            .collect()
     }
 
+    /// Return the number of ID collisions
+    ///
+    /// **Note**: If you are using a cryptographic hash function, collisions
+    /// should be files with the same content. If you are using a
+    /// non-cryptographic hash function, collisions can be files with the
+    /// same content or files whose content hash to the same value.
+    pub fn num_collisions(&self) -> usize {
+        // Aggregate the number of collisions for each ID
+        self.id_to_paths
+            .values()
+            .filter(|paths| paths.len() > 1)
+            .map(|paths| paths.len())
+            .sum()
+    }
+
+    /// Save the index to the file system (as a JSON file in
+    /// <root_path>/ARK_FOLDER/INDEX_PATH)
     pub fn store(&self) -> Result<()> {
-        log::info!("Storing the index to file");
+        let ark_folder = self.root.join(ARK_FOLDER);
+        let index_path = ark_folder.join(INDEX_PATH);
+        log::debug!("Storing index at: {:?}", index_path);
 
-        let start = SystemTime::now();
+        fs::create_dir_all(&ark_folder)?;
+        let index_file = fs::File::create(index_path)?;
+        serde_json::to_writer_pretty(index_file, self)?;
 
-        let index_path = self
-            .root
-            .to_owned()
-            .join(ARK_FOLDER)
-            .join(INDEX_PATH);
-
-        let ark_dir = index_path.parent().unwrap();
-        fs::create_dir_all(ark_dir)?;
-
-        let mut file = File::create(index_path)?;
-
-        let mut path2id: Vec<(&CanonicalPathBuf, &IndexEntry<Id>)> =
-            self.path2id.iter().collect();
-        path2id.sort_by_key(|(_, entry)| *entry);
-
-        for (path, entry) in path2id.iter() {
-            log::trace!("[store] {} by path {}", entry.id, path.display());
-
-            let timestamp = entry
-                .modified
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| {
-                    ArklibError::Other(anyhow!("Error using duration since"))
-                })?
-                .as_millis();
-
-            let path =
-                pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
-                    .ok_or(ArklibError::Path(
-                        "Couldn't calculate path diff".into(),
-                    ))?;
-
-            writeln!(file, "{} {} {}", timestamp, entry.id, path.display())?;
-        }
-
-        log::trace!(
-            "Storing the index took {:?}",
-            start
-                .elapsed()
-                .map_err(|_| ArklibError::Other(anyhow!("SystemTime error")))
-        );
         Ok(())
     }
 
-    pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self> {
-        match Self::load(&root_path) {
-            Ok(mut index) => {
-                log::debug!("Index loaded: {} entries", index.path2id.len());
+    /// Get resources by their ID
+    ///
+    /// Returns None if there is no resource with the given ID
+    ///
+    /// **Note**: This can return multiple resources with the same ID in case of
+    /// hash collisions or files with the same content
+    pub fn get_resources_by_id(
+        &self,
+        id: &Id,
+    ) -> Option<Vec<IndexedResource<Id>>> {
+        let mut resources = vec![];
 
-                match index.update_all() {
-                    Ok(update) => {
-                        log::debug!(
-                            "Index updated: {} added, {} deleted",
-                            update.added.len(),
-                            update.deleted.len()
-                        );
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to update index: {}",
-                            e.to_string()
-                        );
-                    }
-                }
-
-                if let Err(e) = index.store() {
-                    log::error!("{}", e.to_string());
-                }
-                Ok(index)
-            }
-            Err(e) => {
-                log::warn!("{}", e.to_string());
-                Ok(Self::build(root_path))
-            }
+        let paths = self.id_to_paths.get(id)?;
+        for path in paths {
+            let id = self.path_to_id.get(path)?;
+            let resource = IndexedResource::new(
+                id.item.clone(),
+                path.clone(),
+                id.last_modified,
+            );
+            resources.push(resource);
         }
+
+        Some(resources)
     }
 
-    pub fn update_all(&mut self) -> Result<IndexUpdate<Id>> {
-        log::debug!("Updating the index");
-        log::trace!("[update] known paths: {:?}", self.path2id.keys());
+    /// Get a resource by its path
+    ///
+    /// Returns None if the resource does not exist
+    ///
+    /// **Note**: The path should be relative to the root path
+    pub fn get_resource_by_path<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Option<IndexedResource<Id>> {
+        let id = self.path_to_id.get(path.as_ref())?;
+        let resource = IndexedResource::new(
+            id.item.clone(),
+            path.as_ref().to_path_buf(),
+            id.last_modified,
+        );
+        Some(resource)
+    }
 
-        let curr_entries = discover_paths(self.root.clone());
+    /// Build a new index from the given root path
+    pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self> {
+        log::debug!("Building index at root path: {:?}", root_path.as_ref());
 
-        //assuming that collections manipulation is
-        // quicker than asking `path.exists()` for every path
-        let curr_paths: Paths = curr_entries.keys().cloned().collect();
-        let prev_paths: Paths = self.path2id.keys().cloned().collect();
-        let preserved_paths: Paths = curr_paths
-            .intersection(&prev_paths)
-            .cloned()
-            .collect();
+        let root_path = root_path.as_ref();
+        // Canonicalize the root path
+        let root_path = root_path.canonicalize()?;
 
-        let created_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
-            .iter()
-            .filter_map(|(path, entry)| {
-                if !preserved_paths.contains(path.as_canonical_path()) {
-                    Some((path.clone(), entry.clone()))
-                } else {
-                    None
-                }
+        let mut id_to_paths: HashMap<Id, HashSet<PathBuf>> = HashMap::new();
+        let mut path_to_resource = HashMap::new();
+
+        // Discover paths in the root directory
+        let paths = discover_paths(&root_path)?;
+        let entries: HashMap<PathBuf, Timestamped<Id>> =
+            scan_entries(&root_path, paths);
+
+        // Strip the root path from the entries
+        let entries: HashMap<PathBuf, Timestamped<Id>> = entries
+            .into_iter()
+            .map(|(path, id)| {
+                // Update the ID to paths map
+                id_to_paths
+                    .entry(id.item.clone())
+                    .or_default()
+                    .insert(path.clone());
+
+                (path, id)
             })
             .collect();
 
-        log::debug!("Checking updated paths");
-        let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
-            .into_iter()
-            .filter(|(path, dir_entry)| {
-                if !preserved_paths.contains(path.as_canonical_path()) {
-                    false
-                } else {
-                    let our_entry = &self.path2id[path];
-                    let prev_modified = our_entry.modified;
+        // Update the path to resource map
+        path_to_resource.extend(entries.clone());
 
-                    let result = dir_entry.metadata();
-                    match result {
-                        Err(msg) => {
-                            log::error!(
-                                "Couldn't retrieve metadata for {}: {}",
-                                &path.display(),
-                                msg
-                            );
-                            false
-                        }
-                        Ok(metadata) => match metadata.modified() {
+        let index = ResourceIndex {
+            root: root_path.to_path_buf(),
+            id_to_paths,
+            path_to_id: path_to_resource,
+        };
+        Ok(index)
+    }
+
+    /// Update the index with the latest information from the file system
+    pub fn update_all(&mut self) -> Result<IndexUpdate<Id>> {
+        log::debug!("Updating index at root path: {:?}", self.root);
+        log::trace!("Current index: {:#?}", self);
+
+        let mut added: HashMap<Id, IndexedPaths> = HashMap::new();
+        let mut removed: HashSet<Id> = HashSet::new();
+
+        let current_paths = discover_paths(&self.root)?;
+
+        // Assuming that collection manipulation
+        // is faster than repeated lookups
+        let current_entries: HashMap<PathBuf, Timestamped<Id>> =
+            scan_entries(self.root(), current_paths);
+        let previous_entries = self.path_to_id.clone();
+        // `preserved_entries` is the intersection of
+        // current_entries and previous_entries
+        let preserved_entries: HashMap<PathBuf, Timestamped<Id>> =
+            current_entries
+                .iter()
+                .filter_map(|(path, _resource)| {
+                    previous_entries.get(path).map(|prev_resource| {
+                        (path.clone(), prev_resource.clone())
+                    })
+                })
+                .collect();
+
+        // `created_entries` is the difference
+        // between current_entries and preserved_entries
+        let created_entries: HashMap<PathBuf, Timestamped<Id>> =
+            current_entries
+                .iter()
+                .filter_map(|(path, resource)| {
+                    if preserved_entries.contains_key(path) {
+                        None
+                    } else {
+                        Some((path.clone(), resource.clone()))
+                    }
+                })
+                .collect();
+
+        // `updated_entries` is the intersection of current_entries and
+        // preserved_entries where the last modified time has changed
+        // significantly (> RESOURCE_UPDATED_THRESHOLD)
+        let updated_entries: HashMap<PathBuf, Timestamped<Id>> =
+            current_entries
+                .into_iter()
+                .filter(|(path, _entry)| {
+                    if !preserved_entries.contains_key(path) {
+                        false
+                    } else {
+                        let our_entry = &self.path_to_id[path];
+                        let prev_modified = our_entry.last_modified;
+
+                        let entry_path = self.root.join(path);
+                        let result = fs::metadata(&entry_path);
+                        match result {
                             Err(msg) => {
                                 log::error!(
-                                    "Couldn't retrieve timestamp for {}: {}",
+                                    "Couldn't retrieve metadata for {}: {}",
                                     &path.display(),
                                     msg
                                 );
                                 false
                             }
-                            Ok(curr_modified) => {
-                                let elapsed = curr_modified
-                                    .duration_since(prev_modified)
-                                    .unwrap();
+                            Ok(metadata) => match metadata.modified() {
+                                Err(msg) => {
+                                    log::error!(
+                                    "Couldn't retrieve timestamp for {}: {}",
+                                    &path.display(),
+                                    msg
+                                );
+                                    false
+                                }
+                                Ok(curr_modified) => {
+                                    let elapsed = curr_modified
+                                        .duration_since(prev_modified)
+                                        .unwrap();
 
-                                let was_updated =
-                                    elapsed >= RESOURCE_UPDATED_THRESHOLD;
-                                if was_updated {
-                                    log::trace!(
-                                        "[update] modified {} by path {}
+                                    let was_updated =
+                                        elapsed >= RESOURCE_UPDATED_THRESHOLD;
+                                    if was_updated {
+                                        log::trace!(
+                                            "[update] modified {} by path {}
                                         \twas {:?}
                                         \tnow {:?}
                                         \telapsed {:?}",
-                                        our_entry.id,
-                                        path.display(),
-                                        prev_modified,
-                                        curr_modified,
-                                        elapsed
-                                    );
+                                            our_entry.item,
+                                            path.display(),
+                                            prev_modified,
+                                            curr_modified,
+                                            elapsed
+                                        );
+                                    }
+
+                                    was_updated
                                 }
-
-                                was_updated
-                            }
-                        },
+                            },
+                        }
                     }
-                }
-            })
-            .collect();
-
-        let mut deleted: HashSet<Id> = HashSet::new();
-
-        // treating both deleted and updated paths as deletions
-        prev_paths
-            .difference(&preserved_paths)
-            .cloned()
-            .chain(updated_paths.keys().cloned())
-            .for_each(|path| {
-                if let Some(entry) =
-                    self.path2id.remove(path.as_canonical_path())
-                {
-                    let k = self.collisions.remove(&entry.id).unwrap_or(1);
-                    if k > 1 {
-                        self.collisions.insert(entry.id, k - 1);
-                    } else {
-                        log::trace!(
-                            "[delete] {} by path {}",
-                            entry.id,
-                            path.display()
-                        );
-                        self.id2path.remove(&entry.id);
-                        deleted.insert(entry.id);
-                    }
-                } else {
-                    log::warn!("Path {} was not known", path.display());
-                }
-            });
-
-        let added: HashMap<CanonicalPathBuf, IndexEntry<Id>> =
-            scan_entries(updated_paths)
-                .into_iter()
-                .chain({
-                    log::debug!("Checking added paths");
-                    scan_entries(created_paths).into_iter()
                 })
-                .filter(|(_, entry)| !self.id2path.contains_key(&entry.id))
                 .collect();
 
-        for (path, entry) in added.iter() {
-            if deleted.contains(&entry.id) {
-                // emitting the resource as both deleted and added
-                // (renaming a duplicate might remain undetected)
-                log::trace!(
-                    "[update] moved {} to path {}",
-                    entry.id,
-                    path.display()
-                );
-            }
+        // Remove resources that are not in the current entries
+        let removed_entries: HashMap<PathBuf, Timestamped<Id>> =
+            previous_entries
+                .iter()
+                .filter_map(|(path, resource)| {
+                    if preserved_entries.contains_key(path) {
+                        None
+                    } else {
+                        Some((path.clone(), resource.clone()))
+                    }
+                })
+                .collect();
+        for (path, id) in removed_entries {
+            log::trace!(
+                "Resource removed: {:?}, last modified: {:?}",
+                path,
+                id.last_modified
+            );
 
-            self.insert_entry(path.clone(), entry.clone());
+            self.path_to_id.remove(&path);
+            self.id_to_paths
+                .get_mut(&id.item)
+                .unwrap()
+                .remove(&path);
+            let id = id.item.clone();
+            // Only remove the ID if it has no paths
+            if self.id_to_paths[&id].is_empty() {
+                self.id_to_paths.remove(&id);
+                removed.insert(id);
+            }
         }
 
-        let added: HashMap<CanonicalPathBuf, Id> = added
+        // added_entries = created_entries + updated_entries
+        let added_entries: HashMap<PathBuf, Timestamped<Id>> = created_entries
             .into_iter()
-            .map(|(path, entry)| (path, entry.id))
+            .chain(updated_entries)
             .collect();
 
-        Ok(IndexUpdate { deleted, added })
-    }
+        for (path, id) in added_entries {
+            log::trace!("Resource added: {:?}", path);
+            self.path_to_id.insert(path.clone(), id.clone());
 
-    // the caller must ensure that:
-    // * the index is up-to-date except this single path
-    // * the path hasn't been indexed before
-    pub fn index_new(
-        &mut self,
-        path: &dyn AsRef<Path>,
-    ) -> Result<IndexUpdate<Id>> {
-        log::debug!("Indexing a new path");
+            let last_modified = id.last_modified;
+            let id = id.item.clone();
+            self.id_to_paths
+                .entry(id.clone())
+                .or_default()
+                .insert(path.clone());
 
-        if !path.as_ref().exists() {
-            return Err(ArklibError::Path(
-                "Absent paths cannot be indexed".into(),
-            ));
+            let resource_path: Timestamped<PathBuf> = Timestamped {
+                item: path.clone(),
+                last_modified,
+            };
+            // If the ID is not in the added map, add it
+            // If the ID is in the added map, add the path to the set
+            added.entry(id).or_default().insert(resource_path);
         }
 
-        let path_buf = CanonicalPathBuf::canonicalize(path)?;
-        let path = path_buf.as_canonical_path();
-
-        return match fs::metadata(path) {
-            Err(_) => {
-                return Err(ArklibError::Path(
-                    "Couldn't to retrieve file metadata".into(),
-                ));
-            }
-            Ok(metadata) => match scan_entry(path, metadata) {
-                Err(_) => {
-                    return Err(ArklibError::Path(
-                        "The path points to a directory or empty file".into(),
-                    ));
-                }
-                Ok(new_entry) => {
-                    let id = new_entry.clone().id;
-
-                    if let Some(nonempty) = self.collisions.get_mut(&id) {
-                        *nonempty += 1;
-                    }
-
-                    let mut added = HashMap::new();
-                    added.insert(path_buf.clone(), id.clone());
-
-                    self.id2path.insert(id, path_buf.clone());
-                    self.path2id.insert(path_buf, new_entry);
-
-                    Ok(IndexUpdate {
-                        added,
-                        deleted: HashSet::new(),
-                    })
-                }
-            },
-        };
-    }
-
-    // the caller must ensure that:
-    // * the index is up-to-date except this single path
-    // * the path has been indexed before
-    // * the path maps into `old_id`
-    // * the content by the path has been modified
-    pub fn update_one(
-        &mut self,
-        path: &dyn AsRef<Path>,
-        old_id: Id,
-    ) -> Result<IndexUpdate<Id>> {
-        log::debug!("Updating a single entry in the index");
-
-        if !path.as_ref().exists() {
-            return self.forget_id(old_id);
-        }
-
-        let path_buf = CanonicalPathBuf::canonicalize(path)?;
-        let path = path_buf.as_canonical_path();
-
-        log::trace!(
-            "[update] paths {:?} has id {:?}",
-            path,
-            self.path2id[path]
-        );
-
-        return match fs::metadata(path) {
-            Err(_) => {
-                // updating the index after resource removal
-                // is a correct scenario
-                self.forget_path(path, old_id)
-            }
-            Ok(metadata) => {
-                match scan_entry(path, metadata) {
-                    Err(_) => {
-                        // a directory or empty file exists by the path
-                        self.forget_path(path, old_id)
-                    }
-                    Ok(new_entry) => {
-                        // valid resource exists by the path
-
-                        let curr_entry = &self.path2id.get(path);
-                        if curr_entry.is_none() {
-                            // if the path is not indexed, then we can't have
-                            // `old_id` if you want
-                            // to index new path, use `index_new` method
-                            return Err(ArklibError::Path(
-                                "Couldn't find the path in the index".into(),
-                            ));
-                        }
-                        let curr_entry = curr_entry.unwrap();
-
-                        if curr_entry.id == new_entry.id {
-                            // in rare cases we are here due to hash collision
-                            if curr_entry.modified == new_entry.modified {
-                                log::warn!("path {:?} was not modified", &path);
-                            } else {
-                                log::warn!("path {:?} was modified but not its content", &path);
-                            }
-
-                            // the caller must have ensured that the path was
-                            // indeed update
-                            return Err(ArklibError::Collision(
-                                "New content has the same id".into(),
-                            ));
-                        }
-
-                        // new resource exists by the path
-                        self.forget_path(path, old_id).map(|mut update| {
-                            update
-                                .added
-                                .insert(path_buf.clone(), new_entry.clone().id);
-                            self.insert_entry(path_buf, new_entry);
-
-                            update
-                        })
-                    }
-                }
-            }
-        };
-    }
-
-    pub fn forget_id(&mut self, old_id: Id) -> Result<IndexUpdate<Id>> {
-        let old_path = self
-            .path2id
-            .drain()
-            .filter_map(|(k, v)| {
-                if v.id == old_id {
-                    Some(k)
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        for p in old_path {
-            self.path2id.remove(&p);
-        }
-        self.id2path.remove(&old_id);
-        let mut deleted = HashSet::new();
-        deleted.insert(old_id);
-
-        Ok(IndexUpdate {
-            added: HashMap::new(),
-            deleted,
-        })
-    }
-
-    fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry<Id>) {
-        log::trace!("[add] {} by path {}", entry.id, path.display());
-        let id = entry.clone().id;
-
-        if let std::collections::hash_map::Entry::Vacant(e) =
-            self.id2path.entry(id.clone())
-        {
-            e.insert(path.clone());
-        } else if let Some(nonempty) = self.collisions.get_mut(&id) {
-            *nonempty += 1;
-        } else {
-            self.collisions.insert(id, 2);
-        }
-
-        self.path2id.insert(path, entry);
-    }
-
-    fn forget_path(
-        &mut self,
-        path: &CanonicalPath,
-        old_id: Id,
-    ) -> Result<IndexUpdate<Id>> {
-        self.path2id.remove(path);
-
-        if let Some(collisions) = self.collisions.get_mut(&old_id) {
-            debug_assert!(
-                *collisions > 1,
-                "Any collision must involve at least 2 resources"
-            );
-            *collisions -= 1;
-
-            if *collisions == 1 {
-                self.collisions.remove(&old_id);
-            }
-
-            // minor performance issue:
-            // we must find path of one of the collided
-            // resources and use it as new value
-            let maybe_collided_path =
-                self.path2id.iter().find_map(|(path, entry)| {
-                    if entry.id == old_id {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                });
-
-            if let Some(collided_path) = maybe_collided_path {
-                let old_path = self
-                    .id2path
-                    .insert(old_id.clone(), collided_path.clone());
-
-                debug_assert_eq!(
-                    old_path.unwrap().as_canonical_path(),
-                    path,
-                    "Must forget the requested path"
-                );
-            } else {
-                return Err(ArklibError::Collision(
-                    "Illegal state of collision tracker".into(),
-                ));
-            }
-        } else {
-            self.id2path.remove(&old_id.clone());
-        }
-
-        let mut deleted = HashSet::new();
-        deleted.insert(old_id);
-
-        Ok(IndexUpdate {
-            added: HashMap::new(),
-            deleted,
-        })
-    }
-}
-
-fn discover_paths<P: AsRef<Path>>(
-    root_path: P,
-) -> HashMap<CanonicalPathBuf, DirEntry> {
-    log::debug!(
-        "Discovering all files under path {}",
-        root_path.as_ref().display()
-    );
-
-    WalkDir::new(root_path)
-        .into_iter()
-        .filter_entry(|entry| !is_hidden(entry))
-        .filter_map(|result| match result {
-            Ok(entry) => {
-                let path = entry.path();
-                if !entry.file_type().is_dir() {
-                    match CanonicalPathBuf::canonicalize(path) {
-                        Ok(canonical_path) => Some((canonical_path, entry)),
-                        Err(msg) => {
-                            log::warn!(
-                                "Couldn't canonicalize {}:\n{}",
-                                path.display(),
-                                msg
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            }
-            Err(msg) => {
-                log::error!("Error during walking: {}", msg);
-                None
-            }
-        })
-        .collect()
-}
-
-fn scan_entry<Id>(
-    path: &CanonicalPath,
-    metadata: Metadata,
-) -> Result<IndexEntry<Id>>
-where
-    Id: ResourceId,
-{
-    if metadata.is_dir() {
-        return Err(ArklibError::Path("Path is expected to be a file".into()));
-    }
-
-    let size = metadata.len();
-    if size == 0 {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Empty resource",
-        ))?;
-    }
-
-    let id = Id::from_path(path)?;
-    let modified = metadata.modified()?;
-
-    Ok(IndexEntry { modified, id })
-}
-
-fn scan_entries<Id>(
-    entries: HashMap<CanonicalPathBuf, DirEntry>,
-) -> HashMap<CanonicalPathBuf, IndexEntry<Id>>
-where
-    Id: ResourceId,
-{
-    entries
-        .into_iter()
-        .filter_map(|(path_buf, entry)| {
-            let metadata = entry.metadata().ok()?;
-
-            let path = path_buf.as_canonical_path();
-            let result = scan_entry(path, metadata);
-            match result {
-                Err(msg) => {
-                    log::error!(
-                        "Couldn't retrieve metadata for {}:\n{}",
-                        path.display(),
-                        msg
-                    );
-                    None
-                }
-                Ok(entry) => Some((path_buf, entry)),
-            }
-        })
-        .collect()
-}
-
-fn is_hidden(entry: &DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .map(|s| s.starts_with('.'))
-        .unwrap_or(false)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::index::{discover_paths, IndexEntry};
-    use crate::ResourceIndex;
-    use canonical_path::CanonicalPathBuf;
-    use dev_hash::Crc32;
-    use fs_atomic_versions::initialize;
-    use std::fs::File;
-    #[cfg(target_family = "unix")]
-    use std::fs::Permissions;
-    #[cfg(target_family = "unix")]
-    use std::os::unix::fs::PermissionsExt;
-
-    use std::path::PathBuf;
-    use std::time::SystemTime;
-    use uuid::Uuid;
-
-    const FILE_SIZE_1: u64 = 10;
-    const FILE_SIZE_2: u64 = 11;
-
-    const FILE_NAME_1: &str = "test1.txt";
-    const FILE_NAME_2: &str = "test2.txt";
-    const FILE_NAME_3: &str = "test3.txt";
-
-    const CRC32_1: Crc32 = Crc32(3817498742);
-    const CRC32_2: Crc32 = Crc32(1804055020);
-
-    fn get_temp_dir() -> PathBuf {
-        create_dir_at(std::env::temp_dir())
-    }
-
-    fn create_dir_at(path: PathBuf) -> PathBuf {
-        let mut dir_path = path.clone();
-        dir_path.push(Uuid::new_v4().to_string());
-        std::fs::create_dir(&dir_path).expect("Could not create temp dir");
-        dir_path
-    }
-
-    fn create_file_at(
-        path: PathBuf,
-        size: Option<u64>,
-        name: Option<&str>,
-    ) -> (File, PathBuf) {
-        let mut file_path = path.clone();
-        if let Some(file_name) = name {
-            file_path.push(file_name);
-        } else {
-            file_path.push(Uuid::new_v4().to_string());
-        }
-        let file = File::create(file_path.clone())
-            .expect("Could not create temp file");
-        file.set_len(size.unwrap_or(0))
-            .expect("Could not set file size");
-        (file, file_path)
-    }
-
-    fn run_test_and_clean_up(
-        test: impl FnOnce(PathBuf) + std::panic::UnwindSafe,
-    ) {
-        initialize();
-
-        let path = get_temp_dir();
-        let result = std::panic::catch_unwind(|| test(path.clone()));
-        std::fs::remove_dir_all(path.clone())
-            .expect("Could not clean up after test");
-        if result.is_err() {
-            panic!("{}", result.err().map(|_| "Test panicked").unwrap())
-        }
-        assert!(result.is_ok());
-    }
-
-    // resource index build
-
-    #[test]
-    fn index_build_should_process_1_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-
-            let actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 1);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&CRC32_1));
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 1);
-        })
-    }
-
-    #[test]
-    fn index_build_should_process_colliding_files_correctly() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-
-            let actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&CRC32_1));
-            assert_eq!(actual.collisions.len(), 1);
-            assert_eq!(actual.size(), 2);
-        })
-    }
-
-    // resource index update
-
-    #[test]
-    fn update_all_should_handle_renamed_file_correctly() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
-
-            let mut actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-
-            // rename test2.txt to test3.txt
-            let mut name_from = path.clone();
-            name_from.push(FILE_NAME_2);
-            let mut name_to = path.clone();
-            name_to.push(FILE_NAME_3);
-            std::fs::rename(name_from, name_to)
-                .expect("Should rename file successfully");
-
-            let update = actual
-                .update_all()
-                .expect("Should update index correctly");
-
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            assert_eq!(update.deleted.len(), 1);
-            assert_eq!(update.added.len(), 1);
-        })
-    }
-
-    #[test]
-    fn update_all_should_index_new_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-
-            let mut actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            let (_, expected_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
-
-            let update = actual
-                .update_all()
-                .expect("Should update index correctly");
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 2);
-            assert!(actual.id2path.contains_key(&CRC32_1));
-            assert!(actual.id2path.contains_key(&CRC32_2));
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            assert_eq!(update.deleted.len(), 0);
-            assert_eq!(update.added.len(), 1);
-
-            let added_key =
-                CanonicalPathBuf::canonicalize(expected_path.clone())
-                    .expect("CanonicalPathBuf should be fine");
-            assert_eq!(
-                update
-                    .added
-                    .get(&added_key)
-                    .expect("Key exists")
-                    .clone(),
-                CRC32_2
-            )
-        })
-    }
-
-    #[test]
-    fn index_new_should_index_new_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            let mut index: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            let (_, new_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
-
-            let update = index
-                .index_new(&new_path)
-                .expect("Should update index correctly");
-
-            assert_eq!(index.root, path.clone());
-            assert_eq!(index.path2id.len(), 2);
-            assert_eq!(index.id2path.len(), 2);
-            assert!(index.id2path.contains_key(&CRC32_1));
-            assert!(index.id2path.contains_key(&CRC32_2));
-            assert_eq!(index.collisions.len(), 0);
-            assert_eq!(index.size(), 2);
-            assert_eq!(update.deleted.len(), 0);
-            assert_eq!(update.added.len(), 1);
-
-            let added_key = CanonicalPathBuf::canonicalize(new_path.clone())
-                .expect("CanonicalPathBuf should be fine");
-            assert_eq!(
-                update
-                    .added
-                    .get(&added_key)
-                    .expect("Key exists")
-                    .clone(),
-                CRC32_2
-            )
-        })
-    }
-
-    #[test]
-    fn update_one_should_error_on_new_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            let mut index = ResourceIndex::build(path.clone());
-
-            let (_, new_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
-
-            let update = index.update_one(&new_path, CRC32_2);
-
-            assert!(update.is_err())
-        })
-    }
-
-    #[test]
-    fn update_one_should_index_delete_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-
-            let mut actual = ResourceIndex::build(path.clone());
-
-            let mut file_path = path.clone();
-            file_path.push(FILE_NAME_1);
-            std::fs::remove_file(file_path.clone())
-                .expect("Should remove file successfully");
-
-            let update = actual
-                .update_one(&file_path.clone(), CRC32_1)
-                .expect("Should update index successfully");
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 0);
-            assert_eq!(update.deleted.len(), 1);
-            assert_eq!(update.added.len(), 0);
-
-            assert!(update.deleted.contains(&CRC32_1))
-        })
-    }
-
-    #[test]
-    fn update_all_should_error_on_files_without_permissions() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            let (file, _) = create_file_at(
-                path.clone(),
-                Some(FILE_SIZE_2),
-                Some(FILE_NAME_2),
-            );
-
-            let mut actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            #[cfg(target_family = "unix")]
-            file.set_permissions(Permissions::from_mode(0o222))
-                .expect("Should be fine");
-
-            let update = actual
-                .update_all()
-                .expect("Should update index correctly");
-
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            assert_eq!(update.deleted.len(), 0);
-            assert_eq!(update.added.len(), 0);
-        })
-    }
-
-    // error cases
-
-    #[test]
-    fn update_one_should_not_update_absent_path() {
-        run_test_and_clean_up(|path| {
-            let mut missing_path = path.clone();
-            missing_path.push("missing/directory");
-            let mut actual = ResourceIndex::build(path.clone());
-            let old_id = Crc32(2);
-            let result = actual
-                .update_one(&missing_path, old_id.clone())
-                .map(|i| i.deleted.clone().take(&old_id))
-                .ok()
-                .flatten();
-
-            assert_eq!(result, Some(Crc32(2)));
-        })
-    }
-
-    #[test]
-    fn update_one_should_index_new_path() {
-        run_test_and_clean_up(|path| {
-            let mut missing_path = path.clone();
-            missing_path.push("missing/directory");
-            let mut actual = ResourceIndex::build(path.clone());
-            let old_id = Crc32(2);
-            let result = actual
-                .update_one(&missing_path, old_id.clone())
-                .map(|i| i.deleted.clone().take(&old_id))
-                .ok()
-                .flatten();
-
-            assert_eq!(result, Some(Crc32(2)));
-        })
-    }
-
-    #[test]
-    fn should_not_index_empty_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(0), None);
-            let actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
-    }
-
-    #[test]
-    fn should_not_index_hidden_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(".hidden"));
-            let actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
-    }
-
-    #[test]
-    fn should_not_index_1_empty_directory() {
-        run_test_and_clean_up(|path| {
-            create_dir_at(path.clone());
-
-            let actual: ResourceIndex<Crc32> =
-                ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
-    }
-
-    #[test]
-    fn discover_paths_should_not_walk_on_invalid_path() {
-        run_test_and_clean_up(|path| {
-            let mut missing_path = path.clone();
-            missing_path.push("missing/directory");
-            let actual = discover_paths(missing_path);
-            assert_eq!(actual.len(), 0);
-        })
-    }
-
-    #[test]
-    fn index_entry_order() {
-        let old1 = IndexEntry {
-            id: Crc32(2),
-            modified: SystemTime::UNIX_EPOCH,
-        };
-        let old2 = IndexEntry {
-            id: Crc32(1),
-            modified: SystemTime::UNIX_EPOCH,
-        };
-
-        let new1 = IndexEntry {
-            id: Crc32(1),
-            modified: SystemTime::now(),
-        };
-        let new2 = IndexEntry {
-            id: Crc32(2),
-            modified: SystemTime::now(),
-        };
-
-        assert_eq!(new1, new1);
-        assert_eq!(new2, new2);
-        assert_eq!(old1, old1);
-        assert_eq!(old2, old2);
-
-        assert_ne!(new1, new2);
-        assert_ne!(new1, old1);
-
-        assert!(new1 > old1);
-        assert!(new1 > old2);
-        assert!(new2 > old1);
-        assert!(new2 > old2);
-        assert!(new2 > new1);
-    }
-
-    /// Test the performance of `ResourceIndex::build` on a specific directory.
-    ///
-    /// This test evaluates the performance of building a resource
-    /// index using the `ResourceIndex::build` method on a given directory.
-    /// It measures the time taken to build the resource index and prints the
-    /// number of collisions detected.
-    #[test]
-    fn test_build_resource_index() {
-        use std::time::Instant;
-
-        let path = "../test-assets/"; // The path to the directory to index
-        assert!(
-            std::path::Path::new(path).is_dir(),
-            "The provided path is not a directory or does not exist"
-        );
-
-        let start_time = Instant::now();
-        let index: ResourceIndex<Crc32> =
-            ResourceIndex::build(path.to_string());
-        let elapsed_time = start_time.elapsed();
-
-        println!("Number of paths: {}", index.id2path.len());
-        println!("Number of resources: {}", index.id2path.len());
-        println!("Number of collisions: {}", index.collisions.len());
-        println!("Time taken: {:?}", elapsed_time);
+        Ok(IndexUpdate { added, removed })
     }
 }
