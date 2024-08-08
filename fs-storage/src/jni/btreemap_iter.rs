@@ -1,5 +1,4 @@
-use crate::btreemap_iter::BTreeMapIterator;
-use crate::file_storage::FileStorage;
+use crate::{btreemap_iter::BTreeMapIterator, file_storage::FileStorage};
 // This is the interface to the JVM that we'll call the majority of our
 // methods on.
 use jni::JNIEnv;
