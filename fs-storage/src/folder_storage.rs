@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::time::SystemTime;
@@ -9,7 +8,6 @@ use std::{
 
 use crate::base_storage::{BaseStorage, SyncStatus};
 use crate::monoid::Monoid;
-// use crate::utils::read_version_2_fs;
 use data_error::{ArklibError, Result};
 
 /*
@@ -24,7 +22,7 @@ Starting from version 3, data is stored in JSON format.
 
 For backward compatibility, we provide a helper function `read_version_2_fs` to read version 2 format.
 */
-const STORAGE_VERSION: i32 = 3;
+// const STORAGE_VERSION: i32 = 3;
 
 /// Represents a folder storage system that persists data to disk.
 pub struct FolderStorage<K, V>
@@ -33,7 +31,7 @@ where
 {
     /// Label for logging
     label: String,
-    /// Path to the underlying file where data is persisted
+    /// Path to the underlying folder where data is persisted
     path: PathBuf,
     /// `ram_timestamps` can be used to track the last time a file was modified in memory.
     /// where the key is the path of the file inside the directory.
@@ -48,12 +46,10 @@ where
 ///
 ///
 /// This is the data that is serialized and deserialized to and from disk.
-#[derive(Serialize, Deserialize)]
 pub struct FolderStorageData<K, V>
 where
     K: Ord,
 {
-    version: i32,
     entries: BTreeMap<K, V>,
 }
 
@@ -92,7 +88,6 @@ where
             ram_timestamps: BTreeMap::new(),
             disk_timestamps: BTreeMap::new(),
             data: FolderStorageData {
-                version: STORAGE_VERSION,
                 entries: BTreeMap::new(),
             },
         };
@@ -109,7 +104,7 @@ where
         if !self.path.exists() {
             return Err(ArklibError::Storage(
                 self.label.clone(),
-                "File does not exist".to_owned(),
+                "Folder does not exist".to_owned(),
             ));
         }
 
@@ -121,14 +116,11 @@ where
         }
 
         let mut data = FolderStorageData {
-            version: STORAGE_VERSION,
             entries: BTreeMap::new(),
         };
 
         self.disk_timestamps.clear();
         self.ram_timestamps.clear();
-
-        // read_version_2_fs : unimplemented!()
 
         for entry in fs::read_dir(&self.path)? {
             let entry = entry?;
@@ -136,11 +128,21 @@ where
             if path.is_file()
                 && path.extension().map_or(false, |ext| ext == "bin")
             {
-                let key = path
-                    .file_stem()
-                    .unwrap()
+                let file_stem = path.file_stem().ok_or_else(|| {
+                    ArklibError::Storage(
+                        self.label.clone(),
+                        "Failed to extract file stem from filename".to_owned(),
+                    )
+                });
+
+                let key = file_stem?
                     .to_str()
-                    .unwrap()
+                    .ok_or_else(|| {
+                        ArklibError::Storage(
+                            self.label.clone(),
+                            "Failed to convert file stem to string".to_owned(),
+                        )
+                    })?
                     .parse::<K>()
                     .map_err(|_| {
                         ArklibError::Storage(
@@ -172,31 +174,55 @@ where
         Ok(data)
     }
 
-    fn remove_files_not_in_ram(&mut self) {
-        for entry in fs::read_dir(self.path.clone()).unwrap() {
-            let entry = entry.unwrap();
+    fn remove_files_not_in_ram(&mut self) -> Result<()> {
+        let dir = fs::read_dir(&self.path).map_err(|e| {
+            ArklibError::Storage(
+                self.label.clone(),
+                format!("Failed to read directory: {}", e),
+            )
+        })?;
+
+        for entry in dir {
+            let entry = entry.map_err(|e| {
+                ArklibError::Storage(
+                    self.label.clone(),
+                    format!("Failed to read directory entry: {}", e),
+                )
+            })?;
+
             let path = entry.path();
             if path.is_file()
-                && path.extension().map_or(false, |ext| ext == "bin")
+                && path.extension().and_then(|ext| ext.to_str()) == Some("bin")
             {
-                let key = path
+                let file_stem = path
                     .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .parse::<K>()
-                    .map_err(|_| {
+                    .and_then(|s| s.to_str())
+                    .ok_or_else(|| {
                         ArklibError::Storage(
-                            self.label.to_owned(),
-                            "Failed to parse key from filename".to_owned(),
+                            self.label.clone(),
+                            "Invalid file name".to_owned(),
                         )
-                    })
-                    .unwrap();
+                    })?;
+
+                let key = file_stem.parse::<K>().map_err(|_| {
+                    ArklibError::Storage(
+                        self.label.clone(),
+                        "Failed to parse key from filename".to_owned(),
+                    )
+                })?;
+
                 if !self.data.entries.contains_key(&key) {
-                    fs::remove_file(path).unwrap();
+                    if let Err(e) = fs::remove_file(&path) {
+                        ArklibError::Storage(
+                            self.label.clone(),
+                            format!("Failed to remove file {:?}: {}", path, e),
+                        );
+                    }
                 }
             }
         }
+
+        Ok(())
     }
 }
 
@@ -225,8 +251,6 @@ where
         self.data.entries.remove(id).ok_or_else(|| {
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
         })?;
-        // self.ram_timestamps.remove(id);
-        // OR
         self.ram_timestamps
             .insert(id.clone(), SystemTime::now());
         Ok(())
@@ -332,6 +356,7 @@ where
         log::info!("{} sync status is {}", self.label, status);
         Ok(status)
     }
+
     /// Sync the in-memory storage with the storage on disk
     fn sync(&mut self) -> Result<()> {
         match self.sync_status()? {
@@ -390,7 +415,7 @@ where
         }
 
         // Remove files for keys that no longer exist
-        self.remove_files_not_in_ram();
+        self.remove_files_not_in_ram().unwrap();
 
         log::info!(
             "{} {} entries have been written",
@@ -481,7 +506,7 @@ mod tests {
         assert_eq!(temp_dir.path().exists(), true);
 
         if let Err(err) = storage.erase() {
-            panic!("Failed to delete file: {:?}", err);
+            panic!("Failed to delete folder: {:?}", err);
         }
         assert!(!temp_dir.path().exists());
     }
