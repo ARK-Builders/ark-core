@@ -1,5 +1,8 @@
 use anyhow::{Context, Result};
-use fs_storage::{base_storage::BaseStorage, file_storage::FileStorage, folder_storage::FolderStorage};
+use fs_storage::{
+    base_storage::BaseStorage, file_storage::FileStorage,
+    folder_storage::FolderStorage,
+};
 use serde_json::Value;
 use std::{env, fs, path::Path};
 
