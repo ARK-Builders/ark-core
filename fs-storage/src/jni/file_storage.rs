@@ -1,7 +1,6 @@
 use crate::base_storage::SyncStatus;
 use jni::signature::ReturnType;
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 // This is the interface to the JVM that we'll call the majority of our
 // methods on.
 use jni::JNIEnv;
@@ -82,8 +81,8 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_remove<'local>(
         });
 }
 
-// A JNI function called from Java that creates a `MyData` Rust type, converts it to a Java
-// type and returns it.
+// A JNI function called from Java that creates a `MyData` Rust type, converts
+// it to a Java type and returns it.
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_syncStatus<

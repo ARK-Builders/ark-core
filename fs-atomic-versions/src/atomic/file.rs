@@ -1,8 +1,10 @@
-use std::fs::{self, File};
-use std::io::{Error, ErrorKind, Read, Result};
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::{
+    fs::{self, File},
+    io::{Error, ErrorKind, Read, Result},
+    path::{Path, PathBuf},
+};
 
 use crate::app_id;
 
