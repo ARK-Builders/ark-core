@@ -25,10 +25,7 @@ For backward compatibility, we provide a helper function `read_version_2_fs` to 
 // const STORAGE_VERSION: i32 = 3;
 
 /// Represents a folder storage system that persists data to disk.
-pub struct FolderStorage<K, V>
-where
-    K: Ord,
-{
+pub struct FolderStorage<K, V> {
     /// Label for logging
     label: String,
     /// Path to the underlying folder where data is persisted
@@ -46,10 +43,7 @@ where
 ///
 ///
 /// This is the data that is serialized and deserialized to and from disk.
-pub struct FolderStorageData<K, V>
-where
-    K: Ord,
-{
+pub struct FolderStorageData<K, V> {
     entries: BTreeMap<K, V>,
 }
 
@@ -70,11 +64,7 @@ where
         + serde::de::DeserializeOwned
         + std::str::FromStr
         + std::fmt::Display,
-    V: Clone
-        + serde::Serialize
-        + serde::de::DeserializeOwned
-        + std::str::FromStr
-        + Monoid<V>,
+    V: Clone + serde::Serialize + serde::de::DeserializeOwned + Monoid<V>,
 {
     /// Create a new folder storage with a diagnostic label and directory path
     /// The storage will be initialized using the disk data, if the path exists
@@ -234,11 +224,7 @@ where
         + serde::de::DeserializeOwned
         + std::str::FromStr
         + std::fmt::Display,
-    V: Clone
-        + serde::Serialize
-        + serde::de::DeserializeOwned
-        + std::str::FromStr
-        + Monoid<V>,
+    V: Clone + serde::Serialize + serde::de::DeserializeOwned + Monoid<V>,
 {
     /// Set a key-value pair in the internal mapping
     fn set(&mut self, key: K, value: V) {
@@ -466,9 +452,17 @@ mod tests {
     use crate::{
         base_storage::{BaseStorage, SyncStatus},
         folder_storage::FolderStorage,
+        monoid::Monoid,
     };
-    use std::{fs, thread, time::Duration};
+    use std::{
+        fs::{self, File},
+        io::Write,
+        thread,
+        time::Duration,
+    };
 
+    use quickcheck_macros::quickcheck;
+    use serde::{Deserialize, Serialize};
     use tempdir::TempDir;
 
     #[test]
@@ -594,5 +588,261 @@ mod tests {
         assert_eq!(storage1.as_ref().get("key1"), Some(&3));
         assert_eq!(storage1.as_ref().get("key2"), Some(&6));
         assert_eq!(storage1.as_ref().get("key3"), Some(&9));
+    }
+
+    use data_error::Result;
+    use quickcheck::{Arbitrary, Gen};
+    use std::collections::{BTreeMap, HashSet};
+    use std::time::SystemTime;
+
+    // Assuming FolderStorage, BaseStorage, SyncStatus, and other necessary types are in scope
+
+    #[derive(Clone, Debug)]
+    enum StorageOperation {
+        Set(String),
+        Remove(String),
+        Sync,
+        ExternalModify(String),
+        ExternalSet(String),
+    }
+
+    #[derive(Clone, Debug)]
+    struct StorageOperationSequence(Vec<StorageOperation>);
+
+    impl Arbitrary for StorageOperationSequence {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let mut existing_keys = HashSet::new();
+            let mut ops = Vec::new();
+            let size = usize::arbitrary(g) % 100 + 1; // Generate 1 to 100 operations
+
+            for _ in 0..size {
+                let op = match u8::arbitrary(g) % 5 {
+                    0 => {
+                        let key = u8::arbitrary(g).to_string();
+                        existing_keys.insert(key.clone());
+                        StorageOperation::Set(key)
+                    }
+                    1 if !existing_keys.is_empty() => {
+                        let key = g
+                            .choose(
+                                &existing_keys
+                                    .iter()
+                                    .cloned()
+                                    .collect::<Vec<_>>(),
+                            )
+                            .unwrap()
+                            .clone();
+                        existing_keys.remove(&key);
+                        StorageOperation::Remove(key)
+                    }
+                    2 => StorageOperation::Sync,
+                    3 if !existing_keys.is_empty() => {
+                        let key = g
+                            .choose(
+                                &existing_keys
+                                    .iter()
+                                    .cloned()
+                                    .collect::<Vec<_>>(),
+                            )
+                            .unwrap()
+                            .clone();
+                        StorageOperation::ExternalModify(key)
+                    }
+                    _ => {
+                        let key = u8::arbitrary(g).to_string();
+                        existing_keys.insert(key.clone());
+                        StorageOperation::ExternalSet(key)
+                    }
+                };
+                ops.push(op);
+            }
+
+            StorageOperationSequence(ops)
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+    struct Dummy;
+
+    impl Monoid<Dummy> for Dummy {
+        fn neutral() -> Dummy {
+            Dummy
+        }
+
+        fn combine(_a: &Dummy, _b: &Dummy) -> Dummy {
+            Dummy
+        }
+    }
+
+    #[quickcheck]
+    fn prop_folder_storage_correct(
+        StorageOperationSequence(operations): StorageOperationSequence,
+    ) {
+        let temp_dir =
+            TempDir::new("temp").expect("Failed to create temporary directory");
+        let path = temp_dir.path();
+
+        let mut storage =
+            FolderStorage::<String, Dummy>::new("test".to_string(), &path)
+                .unwrap();
+        let mut expected_data = BTreeMap::new();
+
+        log::info!("Created storage");
+        // Check initial state
+        assert_eq!(
+            storage.sync_status().unwrap(),
+            SyncStatus::InSync,
+            "Storage should be InSync when created"
+        );
+
+        let v = Dummy;
+        for op in operations {
+            let prev_status = storage.sync_status().unwrap();
+            log::info!("Applying op: {:?}", op);
+
+            match op {
+                StorageOperation::Set(k) => {
+                    storage.set(k.clone(), v);
+                    expected_data.insert(k, v);
+
+                    let status = storage.sync_status().unwrap();
+                    match prev_status {
+                        SyncStatus::InSync => {
+                            assert_eq!(
+                                status,
+                                SyncStatus::StorageStale,
+                                "Setting a key should make storage stale"
+                            );
+                        }
+                        SyncStatus::MappingStale => {
+                            assert_eq!(
+                                status,
+                                SyncStatus::Diverge,
+                                "Setting a key in stale mapping diverges the mapping",
+                            );
+                        }
+                        SyncStatus::StorageStale => {
+                            assert_eq!(
+                                status,
+                                SyncStatus::StorageStale,
+                                "Setting a key should make storage stale"
+                            );
+                        }
+                        SyncStatus::Diverge => {
+                            assert_eq!(
+                                status,
+                                SyncStatus::StorageStale,
+                                "Setting a key in a divergent storage keeps it divergent"
+                            );
+                        }
+                    };
+                }
+                StorageOperation::Remove(k) => {
+                    if expected_data.contains_key(&k) {
+                        storage.remove(&k).unwrap();
+                        expected_data.remove(&k);
+
+                        let status = storage.sync_status().unwrap();
+                        match prev_status {
+                            SyncStatus::InSync => {
+                                assert_eq!(
+                                    status,
+                                    SyncStatus::StorageStale,
+                                    "Removing a key should make storage stale"
+                                );
+                            }
+                            SyncStatus::MappingStale => {
+                                assert_eq!(status, SyncStatus::Diverge, "Removing a key in stale mapping diverges the mapping");
+                            }
+                            SyncStatus::StorageStale => {
+                                assert_eq!(
+                                    status,
+                                    SyncStatus::StorageStale,
+                                    "Removing a key should keep storage stale"
+                                );
+                            }
+                            SyncStatus::Diverge => {
+                                assert_eq!(status, SyncStatus::Diverge, "Removing a key in a divergent storage keeps it divergent");
+                            }
+                        };
+                    }
+                }
+                StorageOperation::Sync => {
+                    storage.sync().unwrap();
+                    assert_eq!(&storage.data.entries, &expected_data, "In-memory mapping should match expected data after sync");
+                    assert_eq!(
+                        storage.sync_status().unwrap(),
+                        SyncStatus::InSync,
+                        "Status should be InSync after sync operation"
+                    );
+                }
+                StorageOperation::ExternalModify(k) => {
+                    if expected_data.contains_key(&k) {
+                        let _ = perform_external_modification(&path, &k, v)
+                            .unwrap();
+                        expected_data.insert(k, v);
+
+                        let status = storage.sync_status().unwrap();
+                        match prev_status {
+                            SyncStatus::InSync => {
+                                assert_eq!(status, SyncStatus::MappingStale, "External modification when InSync should make memory stale");
+                            }
+                            SyncStatus::MappingStale => {
+                                assert_eq!(status, SyncStatus::MappingStale, "External modification should keep mapping stale");
+                            }
+                            SyncStatus::StorageStale => {
+                                assert_eq!(status, SyncStatus::Diverge, "External modification when StorageStale should make status Diverge");
+                            }
+                            SyncStatus::Diverge => {
+                                assert_eq!(status, SyncStatus::Diverge, "External modification should keep status Diverge");
+                            }
+                        };
+                    }
+                }
+                StorageOperation::ExternalSet(k) => {
+                    let _ =
+                        perform_external_modification(&path, &k, v).unwrap();
+                    expected_data.insert(k, v);
+
+                    let status = storage.sync_status().unwrap();
+                    match prev_status {
+                        SyncStatus::InSync => {
+                            assert_eq!(status, SyncStatus::MappingStale, "External set when InSync should make memory stale");
+                        }
+                        SyncStatus::MappingStale => {
+                            assert_eq!(
+                                status,
+                                SyncStatus::MappingStale,
+                                "External set should keep mapping stale"
+                            );
+                        }
+                        SyncStatus::StorageStale => {
+                            assert_eq!(status, SyncStatus::Diverge, "External set when StorageStale should make status Diverge");
+                        }
+                        SyncStatus::Diverge => {
+                            assert_eq!(
+                                status,
+                                SyncStatus::Diverge,
+                                "External set should keep status Diverge"
+                            );
+                        }
+                    };
+                }
+            }
+        }
+    }
+
+    fn perform_external_modification(
+        path: &std::path::Path,
+        key: &str,
+        value: Dummy,
+    ) -> Result<()> {
+        let mut file = File::create(path.join(format!("{}.bin", key)))?;
+        let bytes = bincode::serialize(&value).unwrap();
+        file.write_all(&bytes)?;
+        let time = SystemTime::now();
+        file.set_modified(time).unwrap();
+        file.sync_all()?;
+        Ok(())
     }
 }
