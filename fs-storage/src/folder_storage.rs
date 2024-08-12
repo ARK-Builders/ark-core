@@ -687,7 +687,7 @@ mod tests {
                 .unwrap();
         let mut expected_data = BTreeMap::new();
 
-        log::info!("Created storage");
+        println!("Created storage");
         // Check initial state
         assert_eq!(
             storage.sync_status().unwrap(),
@@ -698,7 +698,7 @@ mod tests {
         let v = Dummy;
         for op in operations {
             let prev_status = storage.sync_status().unwrap();
-            log::info!("Applying op: {:?}", op);
+            println!("Applying op: {:?}", op);
 
             match op {
                 StorageOperation::Set(k) => {
