@@ -25,7 +25,7 @@ pub struct FolderStorage<K, V> {
     data: FolderStorageData<K, V>,
 
     prev_sync_status: SyncStatus,
-    // Tracks soft-deleted entries
+    // Tracks deleted entries till the next sync
     soft_delete: BTreeMap<K, SystemTime>,
 }
 
@@ -332,7 +332,16 @@ where
                                     .unwrap_or(&SystemTime::UNIX_EPOCH)
                         {
                             ram_newer = true;
-                            disk_newer = true;
+                            if let Ok(metadata) = fs::metadata(&path) {
+                                if let Ok(disk_timestamp) = metadata.modified()
+                                {
+                                    if disk_timestamp
+                                        > *self.soft_delete.get(&key).unwrap()
+                                    {
+                                        disk_newer = true;
+                                    }
+                                }
+                            }
                         } else {
                             disk_newer = true;
                         }
@@ -715,8 +724,10 @@ mod tests {
         let mut storage =
             FolderStorage::<String, Dummy>::new("test".to_string(), &path)
                 .unwrap();
-        let mut expected_data = BTreeMap::new();
-        let mut unexpected_data = BTreeMap::new();
+        let mut expected_data_in_ram = BTreeMap::new();
+        let mut expected_data_in_disk = BTreeMap::new();
+        let mut removed_data = BTreeMap::new();
+        let mut setted_data = BTreeMap::new();
 
         println!("Created storage");
         // Check initial state
@@ -734,7 +745,8 @@ mod tests {
             match op {
                 StorageOperation::Set(k) => {
                     storage.set(k.clone(), v);
-                    expected_data.insert(k, v);
+                    expected_data_in_ram.insert(k.clone(), v);
+                    *setted_data.entry(k.clone()).or_insert(0) += 1;
 
                     let status = storage.sync_status().unwrap();
                     match prev_status {
@@ -769,30 +781,31 @@ mod tests {
                     };
                 }
                 StorageOperation::Remove(k) => {
-                    if expected_data.contains_key(&k) {
+                    if expected_data_in_ram.contains_key(&k) {
                         storage.remove(&k).unwrap();
+                        expected_data_in_disk.remove(&k);
+                        expected_data_in_ram.remove(&k);
 
-                        unexpected_data.remove(&k);
-                        expected_data.remove(&k);
+                        *removed_data.entry(k).or_insert(0) += 1;
 
                         let status = storage.sync_status().unwrap();
                         match prev_status {
                             SyncStatus::InSync => {
-                                // assert_eq!(
-                                //     status,
-                                //     SyncStatus::StorageStale,
-                                //     "Removing a key should make storage stale"
-                                // );
+                                assert_eq!(
+                                    status,
+                                    SyncStatus::StorageStale,
+                                    "Removing a key should make storage stale"
+                                );
                             }
                             SyncStatus::MappingStale => {
                                 assert_eq!(status, SyncStatus::Diverge, "Removing a key in stale mapping diverges the mapping");
                             }
                             SyncStatus::StorageStale => {
-                                // assert_eq!(
-                                //     status,
-                                //     SyncStatus::StorageStale,
-                                //     "Removing a key should keep storage stale"
-                                // );
+                                if removed_data == setted_data {
+                                    assert_eq!(status, SyncStatus::InSync, "Removing a key should make storage in sync when there is no data left");
+                                } else {
+                                    assert_eq!(status, SyncStatus::StorageStale, "Removing a key should keep storage stale");
+                                }
                             }
                             SyncStatus::Diverge => {
                                 assert_eq!(status, SyncStatus::Diverge, "Removing a key in a divergent storage keeps it divergent");
@@ -802,9 +815,11 @@ mod tests {
                 }
                 StorageOperation::Sync => {
                     storage.sync().unwrap();
-                    expected_data.append(&mut unexpected_data);
-                    assert_eq!(unexpected_data.len(), 0, "All unexpected data should be merged into expected data");
-                    assert_eq!(&storage.data.entries, &expected_data, "In-memory mapping should match expected data after sync");
+                    expected_data_in_ram.append(&mut expected_data_in_disk);
+                    expected_data_in_disk = expected_data_in_ram.clone();
+                    removed_data.clear();
+                    setted_data.clear();
+                    assert_eq!(&storage.data.entries, &expected_data_in_ram, "In-memory mapping should match expected data after sync");
                     assert_eq!(
                         storage.sync_status().unwrap(),
                         SyncStatus::InSync,
@@ -812,10 +827,10 @@ mod tests {
                     );
                 }
                 StorageOperation::ExternalModify(k) => {
-                    if expected_data.contains_key(&k) {
+                    if expected_data_in_ram.contains_key(&k) {
                         let _ = perform_external_modification(&path, &k, v)
                             .unwrap();
-                        unexpected_data.insert(k, v);
+                        expected_data_in_disk.insert(k, v);
 
                         let status = storage.sync_status().unwrap();
                         match prev_status {
@@ -837,7 +852,7 @@ mod tests {
                 StorageOperation::ExternalSet(k) => {
                     let _ =
                         perform_external_modification(&path, &k, v).unwrap();
-                    unexpected_data.insert(k, v);
+                    expected_data_in_disk.insert(k, v);
 
                     let status = storage.sync_status().unwrap();
                     match prev_status {
