@@ -54,7 +54,7 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     fn remove(&mut self, id: &K) -> Result<()>;
 
     /// Get [`SyncStatus`] of the storage
-    fn sync_status(&self) -> Result<SyncStatus>;
+    fn sync_status(&mut self) -> Result<SyncStatus>;
 
     /// Sync the in-memory storage with the storage on disk
     fn sync(&mut self) -> Result<()>;
