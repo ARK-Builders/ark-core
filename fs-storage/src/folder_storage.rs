@@ -10,20 +10,6 @@ use crate::base_storage::{BaseStorage, SyncStatus};
 use crate::monoid::Monoid;
 use data_error::{ArklibError, Result};
 
-/*
-Note on `FolderStorage` Versioning:
-
-`FolderStorage` is a basic key-value storage system that persists data to disk.
-where the key is the path of the file inside the directory.
-
-
-In version 2, `FolderStorage` stored data in a plaintext format.
-Starting from version 3, data is stored in JSON format.
-
-For backward compatibility, we provide a helper function `read_version_2_fs` to read version 2 format.
-*/
-// const STORAGE_VERSION: i32 = 3;
-
 /// Represents a folder storage system that persists data to disk.
 pub struct FolderStorage<K, V> {
     /// Label for logging
@@ -37,12 +23,13 @@ pub struct FolderStorage<K, V> {
     /// where the key is the path of the file inside the directory.
     disk_timestamps: BTreeMap<K, SystemTime>,
     data: FolderStorageData<K, V>,
+
+    prev_sync_status: SyncStatus,
+    // Tracks soft-deleted entries
+    soft_delete: BTreeMap<K, SystemTime>,
 }
 
 /// A struct that represents the data stored in a [`FolderStorage`] instance.
-///
-///
-/// This is the data that is serialized and deserialized to and from disk.
 pub struct FolderStorageData<K, V> {
     entries: BTreeMap<K, V>,
 }
@@ -80,6 +67,8 @@ where
             data: FolderStorageData {
                 entries: BTreeMap::new(),
             },
+            prev_sync_status: SyncStatus::InSync,
+            soft_delete: BTreeMap::new(),
         };
 
         if Path::exists(path) {
@@ -108,9 +97,6 @@ where
         let mut data = FolderStorageData {
             entries: BTreeMap::new(),
         };
-
-        self.disk_timestamps.clear();
-        self.ram_timestamps.clear();
 
         for entry in fs::read_dir(&self.path)? {
             let entry = entry?;
@@ -164,54 +150,66 @@ where
         Ok(data)
     }
 
-    fn remove_files_not_in_ram(&mut self) -> Result<()> {
-        let dir = fs::read_dir(&self.path).map_err(|e| {
-            ArklibError::Storage(
-                self.label.clone(),
-                format!("Failed to read directory: {}", e),
-            )
-        })?;
+    /// Resolve differences between memory and disk data
+    fn resolve_divergence(&mut self) -> Result<()> {
+        let new_data = self.load_fs_data()?;
+        let mut merged_data = BTreeMap::new();
 
-        for entry in dir {
-            let entry = entry.map_err(|e| {
-                ArklibError::Storage(
-                    self.label.clone(),
-                    format!("Failed to read directory entry: {}", e),
-                )
-            })?;
-
-            let path = entry.path();
-            if path.is_file()
-                && path.extension().and_then(|ext| ext.to_str()) == Some("bin")
-            {
-                let file_stem = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .ok_or_else(|| {
-                        ArklibError::Storage(
-                            self.label.clone(),
-                            "Invalid file name".to_owned(),
-                        )
-                    })?;
-
-                let key = file_stem.parse::<K>().map_err(|_| {
-                    ArklibError::Storage(
-                        self.label.clone(),
-                        "Failed to parse key from filename".to_owned(),
-                    )
-                })?;
-
-                if !self.data.entries.contains_key(&key) {
-                    if let Err(e) = fs::remove_file(&path) {
-                        ArklibError::Storage(
-                            self.label.clone(),
-                            format!("Failed to remove file {:?}: {}", path, e),
-                        );
+        // filter new_Data
+        if !self.soft_delete.is_empty() {
+            for (key, value) in new_data.entries.iter() {
+                if let Some(new_value) = self.soft_delete.get(key) {
+                    if new_value > self.disk_timestamps.get(key).unwrap() {
+                        continue;
                     }
                 }
+                merged_data.insert(key.clone(), value.clone());
+            }
+        } else {
+            merged_data = new_data.entries.clone();
+        }
+
+        for (key, value) in self.data.entries.iter() {
+            if let Some(new_value) = new_data.entries.get(key) {
+                let resolved_value = V::combine(value, new_value);
+                merged_data.insert(key.clone(), resolved_value);
+            } else {
+                merged_data.insert(key.clone(), value.clone());
             }
         }
 
+        self.data.entries = merged_data;
+        Ok(())
+    }
+
+    /// Remove files from disk that are not present in memory
+    fn remove_files_not_in_ram(&mut self) -> Result<()> {
+        if !self.soft_delete.is_empty() {
+            for (key, time) in self.soft_delete.iter() {
+                if time
+                    > self
+                        .disk_timestamps
+                        .get(key)
+                        .unwrap_or(&SystemTime::UNIX_EPOCH)
+                {
+                    let file_path = self.path.join(format!("{}.bin", key));
+                    if !file_path.exists() {
+                        continue;
+                    }
+                    if let Err(e) = fs::remove_file(&file_path) {
+                        return Err(ArklibError::Storage(
+                            self.label.clone(),
+                            format!(
+                                "Failed to remove file {:?}: {}",
+                                file_path, e
+                            ),
+                        ));
+                    }
+                    self.disk_timestamps
+                        .insert(key.clone(), SystemTime::now());
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -237,6 +235,9 @@ where
         self.data.entries.remove(id).ok_or_else(|| {
             ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
         })?;
+        // self.sync();
+        self.soft_delete
+            .insert(id.clone(), SystemTime::now());
         self.ram_timestamps
             .insert(id.clone(), SystemTime::now());
         Ok(())
@@ -245,12 +246,13 @@ where
     /// Compare the timestamp of the storage files
     /// with the timestamps of the in-memory storage and the last written
     /// to time to determine if either of the two requires syncing.
-    fn sync_status(&self) -> Result<SyncStatus> {
+    fn sync_status(&mut self) -> Result<SyncStatus> {
         let mut ram_newer = false;
         let mut disk_newer = false;
 
-        for (key, ram_timestamp) in &self.ram_timestamps {
+        for key in self.data.entries.keys() {
             let file_path = self.path.join(format!("{}.bin", key));
+            let ram_timestamp = self.ram_timestamps.get(key).unwrap();
 
             if let Ok(metadata) = fs::metadata(&file_path) {
                 if let Ok(disk_timestamp) = metadata.modified() {
@@ -320,38 +322,62 @@ where
                                 "Failed to parse key from filename".to_owned(),
                             )
                         })?;
-                    if !self.ram_timestamps.contains_key(&key) {
-                        disk_newer = true;
-                        log::debug!(
-                            "Disk newer: file {} exists on disk but not in RAM",
-                            path.display()
-                        );
-                        break;
+
+                    if !self.data.entries.contains_key(&key) {
+                        if self.soft_delete.contains_key(&key)
+                            && self.soft_delete.get(&key).unwrap()
+                                > self
+                                    .disk_timestamps
+                                    .get(&key)
+                                    .unwrap_or(&SystemTime::UNIX_EPOCH)
+                        {
+                            ram_newer = true;
+                        } else {
+                            disk_newer = true;
+                        }
                     }
                 }
             }
         }
 
-        let status = match (ram_newer, disk_newer) {
+        let new_status = match (ram_newer, disk_newer) {
             (false, false) => SyncStatus::InSync,
             (true, false) => SyncStatus::StorageStale,
             (false, true) => SyncStatus::MappingStale,
             (true, true) => SyncStatus::Diverge,
         };
 
-        log::info!("{} sync status is {}", self.label, status);
-        Ok(status)
+        // Compare with previous status to detect transitions
+        let final_status = match (self.prev_sync_status.clone(), &new_status) {
+            (_, SyncStatus::InSync) => SyncStatus::InSync,
+            (SyncStatus::Diverge, _) => SyncStatus::Diverge,
+            (_, SyncStatus::Diverge) => SyncStatus::Diverge,
+            (SyncStatus::StorageStale, SyncStatus::MappingStale) => {
+                SyncStatus::Diverge
+            }
+            (SyncStatus::MappingStale, SyncStatus::StorageStale) => {
+                SyncStatus::Diverge
+            }
+            _ => new_status,
+        };
+
+        self.prev_sync_status = final_status.clone();
+
+        log::info!("{} sync status is {}", self.label, final_status);
+        Ok(final_status)
     }
 
     /// Sync the in-memory storage with the storage on disk
     fn sync(&mut self) -> Result<()> {
+        // self.prev_sync_status = SyncStatus::InSync;
         match self.sync_status()? {
             SyncStatus::InSync => Ok(()),
             SyncStatus::MappingStale => self.read_fs().map(|_| ()),
             SyncStatus::StorageStale => self.write_fs().map(|_| ()),
             SyncStatus::Diverge => {
-                let data = self.load_fs_data()?;
-                self.merge_from(&data)?;
+                // let data = self.load_fs_data()?;
+                // self.merge_from(&data)?;
+                self.resolve_divergence()?;
                 self.write_fs()?;
                 Ok(())
             }
@@ -686,6 +712,7 @@ mod tests {
             FolderStorage::<String, Dummy>::new("test".to_string(), &path)
                 .unwrap();
         let mut expected_data = BTreeMap::new();
+        let mut unexpected_data = BTreeMap::new();
 
         println!("Created storage");
         // Check initial state
@@ -731,7 +758,7 @@ mod tests {
                         SyncStatus::Diverge => {
                             assert_eq!(
                                 status,
-                                SyncStatus::StorageStale,
+                                SyncStatus::Diverge,
                                 "Setting a key in a divergent storage keeps it divergent"
                             );
                         }
@@ -740,6 +767,8 @@ mod tests {
                 StorageOperation::Remove(k) => {
                     if expected_data.contains_key(&k) {
                         storage.remove(&k).unwrap();
+
+                        unexpected_data.remove(&k);
                         expected_data.remove(&k);
 
                         let status = storage.sync_status().unwrap();
@@ -769,6 +798,8 @@ mod tests {
                 }
                 StorageOperation::Sync => {
                     storage.sync().unwrap();
+                    expected_data.append(&mut unexpected_data);
+                    assert_eq!(unexpected_data.len(), 0, "All unexpected data should be merged into expected data");
                     assert_eq!(&storage.data.entries, &expected_data, "In-memory mapping should match expected data after sync");
                     assert_eq!(
                         storage.sync_status().unwrap(),
@@ -780,7 +811,7 @@ mod tests {
                     if expected_data.contains_key(&k) {
                         let _ = perform_external_modification(&path, &k, v)
                             .unwrap();
-                        expected_data.insert(k, v);
+                        unexpected_data.insert(k, v);
 
                         let status = storage.sync_status().unwrap();
                         match prev_status {
@@ -802,7 +833,7 @@ mod tests {
                 StorageOperation::ExternalSet(k) => {
                     let _ =
                         perform_external_modification(&path, &k, v).unwrap();
-                    expected_data.insert(k, v);
+                    unexpected_data.insert(k, v);
 
                     let status = storage.sync_status().unwrap();
                     match prev_status {
