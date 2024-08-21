@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -104,29 +104,7 @@ where
             if path.is_file()
                 && path.extension().map_or(false, |ext| ext == "bin")
             {
-                let file_stem = path.file_stem().ok_or_else(|| {
-                    ArklibError::Storage(
-                        self.label.clone(),
-                        "Failed to extract file stem from filename".to_owned(),
-                    )
-                });
-
-                let key = file_stem?
-                    .to_str()
-                    .ok_or_else(|| {
-                        ArklibError::Storage(
-                            self.label.clone(),
-                            "Failed to convert file stem to string".to_owned(),
-                        )
-                    })?
-                    .parse::<K>()
-                    .map_err(|_| {
-                        ArklibError::Storage(
-                            self.label.clone(),
-                            "Failed to parse key from filename".to_owned(),
-                        )
-                    })?;
-
+                let key: K = self.extract_key_from_file_path(&path)?;
                 let mut file = File::open(&path)?;
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer)?;
@@ -212,6 +190,30 @@ where
         }
         Ok(())
     }
+
+    pub fn extract_key_from_file_path(&self, path: &Path) -> Result<K> {
+        path.file_stem()
+            .ok_or_else(|| {
+                ArklibError::Storage(
+                    self.label.clone(),
+                    "Failed to extract file stem from filename".to_owned(),
+                )
+            })?
+            .to_str()
+            .ok_or_else(|| {
+                ArklibError::Storage(
+                    self.label.clone(),
+                    "Failed to convert file stem to string".to_owned(),
+                )
+            })?
+            .parse::<K>()
+            .map_err(|_| {
+                ArklibError::Storage(
+                    self.label.clone(),
+                    "Failed to parse key from filename".to_owned(),
+                )
+            })
+    }
 }
 
 impl<K, V> BaseStorage<K, V> for FolderStorage<K, V>
@@ -252,7 +254,10 @@ where
 
         for key in self.data.entries.keys() {
             let file_path = self.path.join(format!("{}.bin", key));
-            let ram_timestamp = self.ram_timestamps.get(key).unwrap();
+            let ram_timestamp = self
+                .ram_timestamps
+                .get(key)
+                .expect("Data entry key should have ram timestamp");
 
             if let Ok(metadata) = fs::metadata(&file_path) {
                 if let Ok(disk_timestamp) = metadata.modified() {
@@ -310,40 +315,33 @@ where
                 if path.is_file()
                     && path.extension().map_or(false, |ext| ext == "bin")
                 {
-                    let key = path
-                        .file_stem()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .parse::<K>()
-                        .map_err(|_| {
-                            ArklibError::Storage(
-                                self.label.clone(),
-                                "Failed to parse key from filename".to_owned(),
-                            )
-                        })?;
+                    let key = self.extract_key_from_file_path(&path)?;
 
                     if !self.data.entries.contains_key(&key) {
-                        if self.soft_delete.contains_key(&key)
-                            && self.soft_delete.get(&key).unwrap()
-                                > self
+                        match self.soft_delete.get(&key) {
+                            Some(soft_del) => {
+                                let disk_time = self
                                     .disk_timestamps
                                     .get(&key)
-                                    .unwrap_or(&SystemTime::UNIX_EPOCH)
-                        {
-                            ram_newer = true;
-                            if let Ok(metadata) = fs::metadata(&path) {
-                                if let Ok(disk_timestamp) = metadata.modified()
-                                {
-                                    if disk_timestamp
-                                        > *self.soft_delete.get(&key).unwrap()
-                                    {
-                                        disk_newer = true;
+                                    .unwrap_or(&UNIX_EPOCH);
+
+                                if soft_del > disk_time {
+                                    ram_newer = true;
+
+                                    if let Ok(metadata) = fs::metadata(&path) {
+                                        if let Ok(disk_timestamp) =
+                                            metadata.modified()
+                                        {
+                                            if disk_timestamp > *soft_del {
+                                                disk_newer = true;
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        } else {
-                            disk_newer = true;
+                            None => {
+                                disk_newer = true;
+                            }
                         }
                     }
                 }
@@ -437,7 +435,7 @@ where
         }
 
         // Remove files for keys that no longer exist
-        self.remove_files_not_in_ram().unwrap();
+        self.remove_files_not_in_ram()?;
 
         // Clear soft delete
         self.soft_delete.clear();
