@@ -137,12 +137,11 @@ where
                 let existing_value_updated = self
                     .ram_timestamps
                     .get(key)
-                    .map(|ram_stamp| {
+                    .and_then(|ram_stamp| {
                         self.disk_timestamps
                             .get(key)
                             .map(|disk_stamp| ram_stamp > disk_stamp)
                     })
-                    .flatten()
                     .unwrap_or(false);
 
                 // Use monoid to combine value for the given key
