@@ -1,6 +1,7 @@
+use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -23,10 +24,8 @@ pub struct FolderStorage<K, V> {
     /// where the key is the path of the file inside the directory.
     disk_timestamps: BTreeMap<K, SystemTime>,
     data: FolderStorageData<K, V>,
-
-    prev_sync_status: SyncStatus,
-    // Tracks deleted entries till the next sync
-    soft_delete: BTreeMap<K, SystemTime>,
+    /// Temporary store for deleted keys until storage is synced
+    deleted_keys: BTreeSet<K>,
 }
 
 /// A struct that represents the data stored in a [`FolderStorage`] instance.
@@ -67,8 +66,7 @@ where
             data: FolderStorageData {
                 entries: BTreeMap::new(),
             },
-            prev_sync_status: SyncStatus::InSync,
-            soft_delete: BTreeMap::new(),
+            deleted_keys: BTreeSet::new(),
         };
 
         if Path::exists(path) {
@@ -79,7 +77,7 @@ where
     }
 
     /// Load mapping from folder storage
-    fn load_fs_data(&mut self) -> Result<FolderStorageData<K, V>> {
+    fn load_fs_data(&mut self) -> Result<()> {
         if !self.path.exists() {
             return Err(ArklibError::Storage(
                 self.label.clone(),
@@ -125,66 +123,61 @@ where
                 }
             }
         }
-        Ok(data)
+
+        self.data = data;
+        Ok(())
     }
 
     /// Resolve differences between memory and disk data
     fn resolve_divergence(&mut self) -> Result<()> {
-        let new_data = self.load_fs_data()?;
-        let mut merged_data = BTreeMap::new();
+        let new_data = FolderStorage::new("new_data".into(), &self.path)?;
 
-        // filter new_Data
-        if !self.soft_delete.is_empty() {
-            for (key, value) in new_data.entries.iter() {
-                if let Some(new_value) = self.soft_delete.get(key) {
-                    if new_value > self.disk_timestamps.get(key).unwrap() {
-                        continue;
-                    }
+        for (key, new_value) in new_data.data.entries.iter() {
+            if let Some(existing_value) = self.data.entries.get(key) {
+                let existing_value_updated = self
+                    .ram_timestamps
+                    .get(key)
+                    .map(|ram_stamp| {
+                        self.disk_timestamps
+                            .get(key)
+                            .map(|disk_stamp| ram_stamp > disk_stamp)
+                    })
+                    .flatten()
+                    .unwrap_or(false);
+
+                // Use monoid to combine value for the given key
+                // if the memory and disk have diverged
+                if existing_value_updated {
+                    let resolved_value = V::combine(existing_value, new_value);
+                    self.data
+                        .entries
+                        .insert(key.clone(), resolved_value);
+                } else {
+                    self.data
+                        .entries
+                        .insert(key.clone(), new_value.clone());
                 }
-                merged_data.insert(key.clone(), value.clone());
-            }
-        } else {
-            merged_data = new_data.entries.clone();
-        }
-
-        for (key, value) in self.data.entries.iter() {
-            if let Some(new_value) = new_data.entries.get(key) {
-                let resolved_value = V::combine(value, new_value);
-                merged_data.insert(key.clone(), resolved_value);
             } else {
-                merged_data.insert(key.clone(), value.clone());
+                self.data
+                    .entries
+                    .insert(key.clone(), new_value.clone());
             }
         }
 
-        self.data.entries = merged_data;
         Ok(())
     }
 
     /// Remove files from disk that are not present in memory
     fn remove_files_not_in_ram(&mut self) -> Result<()> {
-        if !self.soft_delete.is_empty() {
-            for (key, time) in self.soft_delete.iter() {
-                if time
-                    > self
-                        .disk_timestamps
-                        .get(key)
-                        .unwrap_or(&SystemTime::UNIX_EPOCH)
-                {
-                    let file_path = self.path.join(format!("{}.bin", key));
-                    if !file_path.exists() {
-                        continue;
-                    }
-                    if let Err(e) = fs::remove_file(&file_path) {
-                        return Err(ArklibError::Storage(
-                            self.label.clone(),
-                            format!(
-                                "Failed to remove file {:?}: {}",
-                                file_path, e
-                            ),
-                        ));
-                    }
-                    self.disk_timestamps
-                        .insert(key.clone(), SystemTime::now());
+        for entry in fs::read_dir(&self.path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file()
+                && path.extension().map_or(false, |ext| ext == "bin")
+            {
+                let key: K = self.extract_key_from_file_path(&path)?;
+                if !self.data.entries.contains_key(&key) {
+                    fs::remove_file(&path)?;
                 }
             }
         }
@@ -229,27 +222,29 @@ where
     /// Set a key-value pair in the internal mapping
     fn set(&mut self, key: K, value: V) {
         self.data.entries.insert(key.clone(), value);
+        self.deleted_keys.remove(&key);
         self.ram_timestamps.insert(key, SystemTime::now());
     }
 
     /// Remove an entry from the internal mapping given a key
     fn remove(&mut self, id: &K) -> Result<()> {
-        self.data.entries.remove(id).ok_or_else(|| {
-            ArklibError::Storage(self.label.clone(), "Key not found".to_owned())
-        })?;
-        // self.sync();
-        self.soft_delete
-            .insert(id.clone(), SystemTime::now());
-        self.ram_timestamps
-            .insert(id.clone(), SystemTime::now());
-        Ok(())
+        match self.data.entries.remove(id) {
+            Some(_) => {
+                self.deleted_keys.insert(id.clone());
+                Ok(())
+            }
+            None => Err(ArklibError::Storage(
+                self.label.clone(),
+                "Key not found".to_owned(),
+            )),
+        }
     }
 
     /// Compare the timestamp of the storage files
     /// with the timestamps of the in-memory storage and the last written
     /// to time to determine if either of the two requires syncing.
     fn sync_status(&mut self) -> Result<SyncStatus> {
-        let mut ram_newer = false;
+        let mut ram_newer = !self.deleted_keys.is_empty();
         let mut disk_newer = false;
 
         for key in self.data.entries.keys() {
@@ -307,7 +302,7 @@ where
         }
 
         // Skip this check if this divergent condition has already been reached
-        if !ram_newer || !disk_newer {
+        if !(ram_newer && disk_newer) {
             // Check for files on disk that aren't in RAM
             for entry in fs::read_dir(&self.path)? {
                 let entry = entry?;
@@ -316,33 +311,11 @@ where
                     && path.extension().map_or(false, |ext| ext == "bin")
                 {
                     let key = self.extract_key_from_file_path(&path)?;
-
-                    if !self.data.entries.contains_key(&key) {
-                        match self.soft_delete.get(&key) {
-                            Some(soft_del) => {
-                                let disk_time = self
-                                    .disk_timestamps
-                                    .get(&key)
-                                    .unwrap_or(&UNIX_EPOCH);
-
-                                if soft_del > disk_time {
-                                    ram_newer = true;
-
-                                    if let Ok(metadata) = fs::metadata(&path) {
-                                        if let Ok(disk_timestamp) =
-                                            metadata.modified()
-                                        {
-                                            if disk_timestamp > *soft_del {
-                                                disk_newer = true;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            None => {
-                                disk_newer = true;
-                            }
-                        }
+                    if !self.data.entries.contains_key(&key)
+                        && !self.deleted_keys.contains(&key)
+                    {
+                        disk_newer = true;
+                        break;
                     }
                 }
             }
@@ -355,47 +328,33 @@ where
             (true, true) => SyncStatus::Diverge,
         };
 
-        // Compare with previous status to detect transitions
-        let final_status = match (self.prev_sync_status.clone(), &new_status) {
-            (_, SyncStatus::InSync) => SyncStatus::InSync,
-            (SyncStatus::Diverge, _) => SyncStatus::Diverge,
-            (_, SyncStatus::Diverge) => SyncStatus::Diverge,
-            (SyncStatus::StorageStale, SyncStatus::MappingStale) => {
-                SyncStatus::Diverge
-            }
-            (SyncStatus::MappingStale, SyncStatus::StorageStale) => {
-                SyncStatus::Diverge
-            }
-            _ => new_status,
-        };
-
-        self.prev_sync_status = final_status.clone();
-
-        log::info!("{} sync status is {}", self.label, final_status);
-        Ok(final_status)
+        log::info!("{} sync status is {}", self.label, new_status);
+        Ok(new_status)
     }
 
     /// Sync the in-memory storage with the storage on disk
     fn sync(&mut self) -> Result<()> {
-        // self.prev_sync_status = SyncStatus::InSync;
         match self.sync_status()? {
-            SyncStatus::InSync => Ok(()),
-            SyncStatus::MappingStale => self.read_fs().map(|_| ()),
-            SyncStatus::StorageStale => self.write_fs().map(|_| ()),
+            SyncStatus::InSync => {}
+            SyncStatus::MappingStale => {
+                self.read_fs()?;
+            }
+            SyncStatus::StorageStale => {
+                self.write_fs()?;
+            }
             SyncStatus::Diverge => {
-                // let data = self.load_fs_data()?;
-                // self.merge_from(&data)?;
                 self.resolve_divergence()?;
                 self.write_fs()?;
-                Ok(())
             }
-        }
+        };
+
+        self.deleted_keys.clear();
+        Ok(())
     }
 
     /// Read the data from folder storage
     fn read_fs(&mut self) -> Result<&BTreeMap<K, V>> {
-        let data = self.load_fs_data()?;
-        self.data = data;
+        self.load_fs_data()?;
         Ok(&self.data.entries)
     }
 
@@ -434,11 +393,21 @@ where
                 .insert(key.clone(), new_timestamp);
         }
 
+        // Delete files for previously deleted keys
+        self.deleted_keys.iter().for_each(|key| {
+            log::debug!("Deleting key: {}", key);
+            self.data.entries.remove(key);
+            self.ram_timestamps.remove(key);
+            self.disk_timestamps.remove(key);
+            let file_path = self.path.join(format!("{}.bin", key));
+            if file_path.exists() {
+                fs::remove_file(&file_path).expect("Failed to delete file");
+            }
+        });
+        self.deleted_keys.clear();
+
         // Remove files for keys that no longer exist
         self.remove_files_not_in_ram()?;
-
-        // Clear soft delete
-        self.soft_delete.clear();
 
         log::info!(
             "{} {} entries have been written",
@@ -492,12 +461,14 @@ mod tests {
         monoid::Monoid,
     };
     use std::{
+        collections::BTreeSet,
         fs::{self, File},
         io::Write,
         thread,
-        time::Duration,
+        time::{Duration, SystemTime},
     };
 
+    use data_error::Result;
     use quickcheck_macros::quickcheck;
     use serde::{Deserialize, Serialize};
     use tempdir::TempDir;
@@ -627,10 +598,8 @@ mod tests {
         assert_eq!(storage1.as_ref().get("key3"), Some(&9));
     }
 
-    use data_error::Result;
     use quickcheck::{Arbitrary, Gen};
     use std::collections::{BTreeMap, HashSet};
-    use std::time::SystemTime;
 
     // Assuming FolderStorage, BaseStorage, SyncStatus, and other necessary types are in scope
 
@@ -653,13 +622,13 @@ mod tests {
             let size = usize::arbitrary(g) % 100 + 1; // Generate 1 to 100 operations
 
             for _ in 0..size {
-                let op = match u8::arbitrary(g) % 5 {
-                    0 => {
+                let op = match u8::arbitrary(g) % 9 {
+                    0 | 1 | 2 | 3 | 4 => {
                         let key = u8::arbitrary(g).to_string();
                         existing_keys.insert(key.clone());
                         StorageOperation::Set(key)
                     }
-                    1 if !existing_keys.is_empty() => {
+                    5 if !existing_keys.is_empty() => {
                         let key = g
                             .choose(
                                 &existing_keys
@@ -672,8 +641,8 @@ mod tests {
                         existing_keys.remove(&key);
                         StorageOperation::Remove(key)
                     }
-                    2 => StorageOperation::Sync,
-                    3 if !existing_keys.is_empty() => {
+                    6 => StorageOperation::Sync,
+                    7 if !existing_keys.is_empty() => {
                         let key = g
                             .choose(
                                 &existing_keys
@@ -687,7 +656,6 @@ mod tests {
                     }
                     _ => {
                         let key = u8::arbitrary(g).to_string();
-                        existing_keys.insert(key.clone());
                         StorageOperation::ExternalSet(key)
                     }
                 };
@@ -711,6 +679,7 @@ mod tests {
         }
     }
 
+    // #[test_log::test]
     #[quickcheck]
     fn prop_folder_storage_correct(
         StorageOperationSequence(operations): StorageOperationSequence,
@@ -722,12 +691,11 @@ mod tests {
         let mut storage =
             FolderStorage::<String, Dummy>::new("test".to_string(), &path)
                 .unwrap();
-        let mut expected_data_in_ram = BTreeMap::new();
-        let mut expected_data_in_disk = BTreeMap::new();
-        let mut removed_data = BTreeMap::new();
-        let mut setted_data = BTreeMap::new();
+        let mut expected_data: BTreeMap<String, Dummy> = BTreeMap::new();
+        let mut pending_deletes = BTreeSet::new();
+        let mut pending_sets: BTreeMap<String, usize> = BTreeMap::new();
+        let mut pending_external: BTreeMap<String, usize> = BTreeMap::new();
 
-        println!("Created storage");
         // Check initial state
         assert_eq!(
             storage.sync_status().unwrap(),
@@ -736,147 +704,80 @@ mod tests {
         );
 
         let v = Dummy;
-        for op in operations {
-            let prev_status = storage.sync_status().unwrap();
-            println!("Applying op: {:?}", op);
-
+        for (i, op) in operations.into_iter().enumerate() {
             match op {
                 StorageOperation::Set(k) => {
                     storage.set(k.clone(), v);
-                    expected_data_in_ram.insert(k.clone(), v);
-                    *setted_data.entry(k.clone()).or_insert(0) += 1;
+                    pending_sets.insert(k.clone(), i);
+                    pending_deletes.remove(&k);
 
                     let status = storage.sync_status().unwrap();
-                    match prev_status {
-                        SyncStatus::InSync => {
-                            assert_eq!(
-                                status,
-                                SyncStatus::StorageStale,
-                                "Setting a key should make storage stale"
-                            );
-                        }
-                        SyncStatus::MappingStale => {
-                            assert_eq!(
-                                status,
-                                SyncStatus::Diverge,
-                                "Setting a key in stale mapping diverges the mapping",
-                            );
-                        }
-                        SyncStatus::StorageStale => {
-                            assert_eq!(
-                                status,
-                                SyncStatus::StorageStale,
-                                "Setting a key should make storage stale"
-                            );
-                        }
-                        SyncStatus::Diverge => {
-                            assert_eq!(
-                                status,
-                                SyncStatus::Diverge,
-                                "Setting a key in a divergent storage keeps it divergent"
-                            );
-                        }
-                    };
+                    let expected_status = expected_status(
+                        &pending_external,
+                        &pending_sets,
+                        &pending_deletes,
+                    );
+                    assert_eq!(status, expected_status);
                 }
                 StorageOperation::Remove(k) => {
-                    if expected_data_in_ram.contains_key(&k) {
-                        storage.remove(&k).unwrap();
-                        expected_data_in_disk.remove(&k);
-                        expected_data_in_ram.remove(&k);
+                    storage.remove(&k).unwrap();
+                    pending_sets.remove(&k);
+                    pending_deletes.insert(k.clone());
 
-                        *removed_data.entry(k).or_insert(0) += 1;
-
-                        let status = storage.sync_status().unwrap();
-                        match prev_status {
-                            SyncStatus::InSync => {
-                                assert_eq!(
-                                    status,
-                                    SyncStatus::StorageStale,
-                                    "Removing a key should make storage stale"
-                                );
-                            }
-                            SyncStatus::MappingStale => {
-                                assert_eq!(status, SyncStatus::Diverge, "Removing a key in stale mapping diverges the mapping");
-                            }
-                            SyncStatus::StorageStale => {
-                                if removed_data == setted_data {
-                                    assert_eq!(status, SyncStatus::InSync, "Removing a key should make storage in sync when there is no data left");
-                                } else {
-                                    assert_eq!(status, SyncStatus::StorageStale, "Removing a key should keep storage stale");
-                                }
-                            }
-                            SyncStatus::Diverge => {
-                                assert_eq!(status, SyncStatus::Diverge, "Removing a key in a divergent storage keeps it divergent");
-                            }
-                        };
-                    }
+                    let status = storage.sync_status().unwrap();
+                    let expected_status = expected_status(
+                        &pending_external,
+                        &pending_sets,
+                        &pending_deletes,
+                    );
+                    assert_eq!(status, expected_status);
                 }
                 StorageOperation::Sync => {
                     storage.sync().unwrap();
-                    expected_data_in_ram.append(&mut expected_data_in_disk);
-                    expected_data_in_disk = expected_data_in_ram.clone();
-                    removed_data.clear();
-                    setted_data.clear();
-                    assert_eq!(&storage.data.entries, &expected_data_in_ram, "In-memory mapping should match expected data after sync");
-                    assert_eq!(
-                        storage.sync_status().unwrap(),
-                        SyncStatus::InSync,
-                        "Status should be InSync after sync operation"
-                    );
-                }
-                StorageOperation::ExternalModify(k) => {
-                    if expected_data_in_ram.contains_key(&k) {
-                        let _ = perform_external_modification(&path, &k, v)
-                            .unwrap();
-                        expected_data_in_disk.insert(k, v);
 
-                        let status = storage.sync_status().unwrap();
-                        match prev_status {
-                            SyncStatus::InSync => {
-                                assert_eq!(status, SyncStatus::MappingStale, "External modification when InSync should make memory stale");
-                            }
-                            SyncStatus::MappingStale => {
-                                assert_eq!(status, SyncStatus::MappingStale, "External modification should keep mapping stale");
-                            }
-                            SyncStatus::StorageStale => {
-                                assert_eq!(status, SyncStatus::Diverge, "External modification when StorageStale should make status Diverge");
-                            }
-                            SyncStatus::Diverge => {
-                                assert_eq!(status, SyncStatus::Diverge, "External modification should keep status Diverge");
-                            }
-                        };
-                    }
-                }
-                StorageOperation::ExternalSet(k) => {
-                    let _ =
-                        perform_external_modification(&path, &k, v).unwrap();
-                    expected_data_in_disk.insert(k, v);
+                    // Note: Concurrent deletes are overriden by sets
+                    // Hence, deletes are weak. Also, for values where
+                    // monoidal combination is relevant, this logic will
+                    // have to be updated.
+                    pending_sets
+                        .keys()
+                        .chain(pending_external.keys())
+                        .for_each(|k| {
+                            expected_data.insert(k.clone(), v);
+                        });
+                    pending_deletes.iter().for_each(|key| {
+                        expected_data.remove(key);
+                    });
+
+                    pending_sets.clear();
+                    pending_external.clear();
+                    pending_deletes.clear();
 
                     let status = storage.sync_status().unwrap();
-                    match prev_status {
-                        SyncStatus::InSync => {
-                            assert_eq!(status, SyncStatus::MappingStale, "External set when InSync should make memory stale");
-                        }
-                        SyncStatus::MappingStale => {
-                            assert_eq!(
-                                status,
-                                SyncStatus::MappingStale,
-                                "External set should keep mapping stale"
-                            );
-                        }
-                        SyncStatus::StorageStale => {
-                            assert_eq!(status, SyncStatus::Diverge, "External set when StorageStale should make status Diverge");
-                        }
-                        SyncStatus::Diverge => {
-                            assert_eq!(
-                                status,
-                                SyncStatus::Diverge,
-                                "External set should keep status Diverge"
-                            );
-                        }
-                    };
+                    assert_eq!(status, SyncStatus::InSync);
+                    assert_eq!(storage.data.entries, expected_data);
+                }
+                StorageOperation::ExternalModify(k)
+                | StorageOperation::ExternalSet(k) => {
+                    perform_external_modification(path, &k, v).unwrap();
+                    pending_external.insert(k.clone(), i);
+                    let status = storage.sync_status().unwrap();
+                    let expected_status = expected_status(
+                        &pending_external,
+                        &pending_sets,
+                        &pending_deletes,
+                    );
+                    assert_eq!(status, expected_status);
                 }
             }
+
+            assert!(
+                pending_sets
+                    .keys()
+                    .filter(|key| pending_deletes.contains(*key))
+                    .count()
+                    == 0
+            );
         }
     }
 
@@ -892,5 +793,28 @@ mod tests {
         file.set_modified(time).unwrap();
         file.sync_all()?;
         Ok(())
+    }
+
+    fn expected_status(
+        pending_external: &BTreeMap<String, usize>,
+        pending_sets: &BTreeMap<String, usize>,
+        pending_deletes: &BTreeSet<String>,
+    ) -> SyncStatus {
+        let ram_newer = !pending_deletes.is_empty();
+        let ram_newer = ram_newer
+            || pending_sets
+                .iter()
+                .any(|(k, v)| pending_external.get(k).map_or(true, |e| v > e));
+        let disk_newer = pending_external
+            .iter()
+            .filter(|(k, _)| !pending_deletes.contains(*k))
+            .any(|(k, v)| pending_sets.get(k).map_or(true, |s| v > s));
+
+        match (ram_newer, disk_newer) {
+            (false, false) => SyncStatus::InSync,
+            (true, false) => SyncStatus::StorageStale,
+            (false, true) => SyncStatus::MappingStale,
+            (true, true) => SyncStatus::Diverge,
+        }
     }
 }
