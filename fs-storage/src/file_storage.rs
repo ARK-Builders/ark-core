@@ -191,7 +191,7 @@ where
     /// Compare the timestamp of the storage file
     /// with the timestamp of the in-memory storage and the last written
     /// to time to determine if either of the two requires syncing.
-    fn sync_status(&self) -> Result<SyncStatus> {
+    fn sync_status(&mut self) -> Result<SyncStatus> {
         let file_updated = fs::metadata(&self.path)?.modified()?;
 
         // Determine the synchronization status based on the modification times
