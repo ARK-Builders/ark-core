@@ -16,8 +16,8 @@ fn run() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         println!("Usage:");
-        println!(" cargo run --example cli (file | folder) write <path> [JSON_FILE_PATH | KEY_VALUE_PAIRS]");
-        println!(" cargo run --example cli (file | folder) read <path> <key1,key2,...>");
+        println!(" cargo run --example cli [file|folder] write <path> [JSON_FILE_PATH | KEY_VALUE_PAIRS]");
+        println!(" cargo run --example cli [file|folder] read <path> <key1,key2,...>");
         return Ok(());
     }
 

@@ -23,22 +23,17 @@ pub struct FolderStorage<K, V> {
     /// `disk_timestamps` can be used to track the last time a file written or read from disk.
     /// where the key is the path of the file inside the directory.
     disk_timestamps: BTreeMap<K, SystemTime>,
-    data: FolderStorageData<K, V>,
+    data: BTreeMap<K, V>,
     /// Temporary store for deleted keys until storage is synced
     deleted_keys: BTreeSet<K>,
 }
 
-/// A struct that represents the data stored in a [`FolderStorage`] instance.
-pub struct FolderStorageData<K, V> {
-    entries: BTreeMap<K, V>,
-}
-
-impl<K, V> AsRef<BTreeMap<K, V>> for FolderStorageData<K, V>
+impl<K, V> AsRef<BTreeMap<K, V>> for FolderStorage<K, V>
 where
     K: Ord,
 {
     fn as_ref(&self) -> &BTreeMap<K, V> {
-        &self.entries
+        &self.data
     }
 }
 
@@ -63,9 +58,7 @@ where
             path: PathBuf::from(path),
             ram_timestamps: BTreeMap::new(),
             disk_timestamps: BTreeMap::new(),
-            data: FolderStorageData {
-                entries: BTreeMap::new(),
-            },
+            data: BTreeMap::new(),
             deleted_keys: BTreeSet::new(),
         };
 
@@ -92,9 +85,7 @@ where
             ));
         }
 
-        let mut data = FolderStorageData {
-            entries: BTreeMap::new(),
-        };
+        let mut data = BTreeMap::new();
 
         for entry in fs::read_dir(&self.path)? {
             let entry = entry?;
@@ -113,7 +104,7 @@ where
                         format!("Failed to deserialize value: {}", e),
                     )
                 })?;
-                data.entries.insert(key.clone(), value);
+                data.insert(key.clone(), value);
 
                 if let Ok(metadata) = fs::metadata(&path) {
                     if let Ok(modified) = metadata.modified() {
@@ -132,8 +123,8 @@ where
     fn resolve_divergence(&mut self) -> Result<()> {
         let new_data = FolderStorage::new("new_data".into(), &self.path)?;
 
-        for (key, new_value) in new_data.data.entries.iter() {
-            if let Some(existing_value) = self.data.entries.get(key) {
+        for (key, new_value) in new_data.data.iter() {
+            if let Some(existing_value) = self.data.get(key) {
                 let existing_value_updated = self
                     .ram_timestamps
                     .get(key)
@@ -148,18 +139,12 @@ where
                 // if the memory and disk have diverged
                 if existing_value_updated {
                     let resolved_value = V::combine(existing_value, new_value);
-                    self.data
-                        .entries
-                        .insert(key.clone(), resolved_value);
+                    self.data.insert(key.clone(), resolved_value);
                 } else {
-                    self.data
-                        .entries
-                        .insert(key.clone(), new_value.clone());
+                    self.data.insert(key.clone(), new_value.clone());
                 }
             } else {
-                self.data
-                    .entries
-                    .insert(key.clone(), new_value.clone());
+                self.data.insert(key.clone(), new_value.clone());
             }
         }
 
@@ -168,16 +153,10 @@ where
 
     /// Remove files from disk that are not present in memory
     fn remove_files_not_in_ram(&mut self) -> Result<()> {
-        for entry in fs::read_dir(&self.path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file()
-                && path.extension().map_or(false, |ext| ext == "bin")
-            {
-                let key: K = self.extract_key_from_file_path(&path)?;
-                if !self.data.entries.contains_key(&key) {
-                    fs::remove_file(&path)?;
-                }
+        for key in self.deleted_keys.iter() {
+            let file_path = self.path.join(format!("{}.bin", key));
+            if file_path.exists() {
+                fs::remove_file(&file_path).expect("Failed to delete file");
             }
         }
         Ok(())
@@ -220,14 +199,14 @@ where
 {
     /// Set a key-value pair in the internal mapping
     fn set(&mut self, key: K, value: V) {
-        self.data.entries.insert(key.clone(), value);
+        self.data.insert(key.clone(), value);
         self.deleted_keys.remove(&key);
         self.ram_timestamps.insert(key, SystemTime::now());
     }
 
     /// Remove an entry from the internal mapping given a key
     fn remove(&mut self, id: &K) -> Result<()> {
-        match self.data.entries.remove(id) {
+        match self.data.remove(id) {
             Some(_) => {
                 self.deleted_keys.insert(id.clone());
                 Ok(())
@@ -246,7 +225,7 @@ where
         let mut ram_newer = !self.deleted_keys.is_empty();
         let mut disk_newer = false;
 
-        for key in self.data.entries.keys() {
+        for key in self.data.keys() {
             let file_path = self.path.join(format!("{}.bin", key));
             let ram_timestamp = self
                 .ram_timestamps
@@ -310,7 +289,7 @@ where
                     && path.extension().map_or(false, |ext| ext == "bin")
                 {
                     let key = self.extract_key_from_file_path(&path)?;
-                    if !self.data.entries.contains_key(&key)
+                    if !self.data.contains_key(&key)
                         && !self.deleted_keys.contains(&key)
                     {
                         disk_newer = true;
@@ -354,22 +333,23 @@ where
     /// Read the data from folder storage
     fn read_fs(&mut self) -> Result<&BTreeMap<K, V>> {
         self.load_fs_data()?;
-        Ok(&self.data.entries)
+        Ok(&self.data)
     }
 
     /// Get a value from the internal mapping
     fn get(&self, id: &K) -> Option<&V> {
-        self.data.entries.get(id)
+        self.data.get(id)
     }
 
-    /// Write the data to folder
+    /// Writes the data to a folder.
     ///
-    /// Update the modified timestamp in file metadata to avoid OS timing issues
-    /// https://github.com/ARK-Builders/ark-rust/pull/63#issuecomment-2163882227
+    /// Updates the file's modified timestamp to avoid OS timing issues, which may arise due to file system timestamp precision.
+    /// EXT3 has 1-second precision, while EXT4 can be more precise but not always.
+    /// This is addressed by modifying the metadata and calling `sync_all()` after file writes.
     fn write_fs(&mut self) -> Result<()> {
         fs::create_dir_all(&self.path)?;
 
-        for (key, value) in &self.data.entries {
+        for (key, value) in &self.data {
             let file_path = self.path.join(format!("{}.bin", key));
             let encoded: Vec<u8> = bincode::serialize(value).map_err(|e| {
                 ArklibError::Storage(
@@ -395,7 +375,7 @@ where
         // Delete files for previously deleted keys
         self.deleted_keys.iter().for_each(|key| {
             log::debug!("Deleting key: {}", key);
-            self.data.entries.remove(key);
+            self.data.remove(key);
             self.ram_timestamps.remove(key);
             self.disk_timestamps.remove(key);
             let file_path = self.path.join(format!("{}.bin", key));
@@ -411,7 +391,7 @@ where
         log::info!(
             "{} {} entries have been written",
             self.label,
-            self.data.entries.len()
+            self.data.len()
         );
         Ok(())
     }
@@ -430,7 +410,7 @@ where
     {
         let other_entries = other.as_ref();
         for (key, value) in other_entries {
-            if let Some(existing_value) = self.data.entries.get(key) {
+            if let Some(existing_value) = self.data.get(key) {
                 let resolved_value = V::combine(existing_value, value);
                 self.set(key.clone(), resolved_value);
             } else {
@@ -440,15 +420,6 @@ where
                 .insert(key.clone(), SystemTime::now());
         }
         Ok(())
-    }
-}
-
-impl<K, V> AsRef<BTreeMap<K, V>> for FolderStorage<K, V>
-where
-    K: Ord,
-{
-    fn as_ref(&self) -> &BTreeMap<K, V> {
-        &self.data.entries
     }
 }
 
@@ -754,7 +725,7 @@ mod tests {
 
                     let status = storage.sync_status().unwrap();
                     assert_eq!(status, SyncStatus::InSync);
-                    assert_eq!(storage.data.entries, expected_data);
+                    assert_eq!(storage.data, expected_data);
                 }
                 StorageOperation::ExternalModify(k)
                 | StorageOperation::ExternalSet(k) => {
