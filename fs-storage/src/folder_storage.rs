@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::time::SystemTime;
 use std::{
     collections::BTreeMap,
@@ -17,12 +17,12 @@ pub struct FolderStorage<K, V> {
     label: String,
     /// Path to the underlying folder where data is persisted
     path: PathBuf,
-    /// `ram_timestamps` can be used to track the last time a file was modified in memory.
+    /// `modified` can be used to track the last time a file was modified in memory.
     /// where the key is the path of the file inside the directory.
-    ram_timestamps: BTreeMap<K, SystemTime>,
-    /// `disk_timestamps` can be used to track the last time a file written or read from disk.
+    modified: BTreeMap<K, SystemTime>,
+    /// `written_to_disk` can be used to track the last time a file written or read from disk.
     /// where the key is the path of the file inside the directory.
-    disk_timestamps: BTreeMap<K, SystemTime>,
+    written_to_disk: BTreeMap<K, SystemTime>,
     data: BTreeMap<K, V>,
     /// Temporary store for deleted keys until storage is synced
     deleted_keys: BTreeSet<K>,
@@ -56,8 +56,8 @@ where
         let mut storage = Self {
             label,
             path: PathBuf::from(path),
-            ram_timestamps: BTreeMap::new(),
-            disk_timestamps: BTreeMap::new(),
+            modified: BTreeMap::new(),
+            written_to_disk: BTreeMap::new(),
             data: BTreeMap::new(),
             deleted_keys: BTreeSet::new(),
         };
@@ -91,25 +91,24 @@ where
             let entry = entry?;
             let path = entry.path();
             if path.is_file()
-                && path.extension().map_or(false, |ext| ext == "bin")
+                && path.extension().map_or(false, |ext| ext == "txt")
             {
                 let key: K = self.extract_key_from_file_path(&path)?;
-                let mut file = File::open(&path)?;
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer)?;
+                let file = File::open(&path)?;
+                let value: V =
+                    serde_json::from_reader(file).map_err(|err| {
+                        ArklibError::Storage(
+                            self.label.clone(),
+                            err.to_string(),
+                        )
+                    })?;
 
-                let value: V = bincode::deserialize(&buffer).map_err(|e| {
-                    ArklibError::Storage(
-                        self.label.clone(),
-                        format!("Failed to deserialize value: {}", e),
-                    )
-                })?;
                 data.insert(key.clone(), value);
 
                 if let Ok(metadata) = fs::metadata(&path) {
                     if let Ok(modified) = metadata.modified() {
-                        self.disk_timestamps.insert(key.clone(), modified);
-                        self.ram_timestamps.insert(key, modified);
+                        self.written_to_disk.insert(key.clone(), modified);
+                        self.modified.insert(key, modified);
                     }
                 }
             }
@@ -118,7 +117,6 @@ where
         self.data = data;
         Ok(())
     }
-
     /// Resolve differences between memory and disk data
     fn resolve_divergence(&mut self) -> Result<()> {
         let new_data = FolderStorage::new("new_data".into(), &self.path)?;
@@ -126,10 +124,10 @@ where
         for (key, new_value) in new_data.data.iter() {
             if let Some(existing_value) = self.data.get(key) {
                 let existing_value_updated = self
-                    .ram_timestamps
+                    .modified
                     .get(key)
                     .and_then(|ram_stamp| {
-                        self.disk_timestamps
+                        self.written_to_disk
                             .get(key)
                             .map(|disk_stamp| ram_stamp > disk_stamp)
                     })
@@ -154,7 +152,7 @@ where
     /// Remove files from disk that are not present in memory
     fn remove_files_not_in_ram(&mut self) -> Result<()> {
         for key in self.deleted_keys.iter() {
-            let file_path = self.path.join(format!("{}.bin", key));
+            let file_path = self.path.join(format!("{}.txt", key));
             if file_path.exists() {
                 fs::remove_file(&file_path).expect("Failed to delete file");
             }
@@ -201,7 +199,7 @@ where
     fn set(&mut self, key: K, value: V) {
         self.data.insert(key.clone(), value);
         self.deleted_keys.remove(&key);
-        self.ram_timestamps.insert(key, SystemTime::now());
+        self.modified.insert(key, SystemTime::now());
     }
 
     /// Remove an entry from the internal mapping given a key
@@ -226,9 +224,9 @@ where
         let mut disk_newer = false;
 
         for key in self.data.keys() {
-            let file_path = self.path.join(format!("{}.bin", key));
+            let file_path = self.path.join(format!("{}.txt", key));
             let ram_timestamp = self
-                .ram_timestamps
+                .modified
                 .get(key)
                 .expect("Data entry key should have ram timestamp");
 
@@ -286,7 +284,7 @@ where
                 let entry = entry?;
                 let path = entry.path();
                 if path.is_file()
-                    && path.extension().map_or(false, |ext| ext == "bin")
+                    && path.extension().map_or(false, |ext| ext == "txt")
                 {
                     let key = self.extract_key_from_file_path(&path)?;
                     if !self.data.contains_key(&key)
@@ -350,35 +348,27 @@ where
         fs::create_dir_all(&self.path)?;
 
         for (key, value) in &self.data {
-            let file_path = self.path.join(format!("{}.bin", key));
-            let encoded: Vec<u8> = bincode::serialize(value).map_err(|e| {
-                ArklibError::Storage(
-                    self.label.clone(),
-                    format!("Failed to serialize value: {}", e),
-                )
-            })?;
-
+            let file_path = self.path.join(format!("{}.txt", key));
             let mut file = File::create(&file_path)?;
-            file.write_all(&encoded)?;
+            file.write_all(serde_json::to_string_pretty(&value)?.as_bytes())?;
             file.flush()?;
 
             let new_timestamp = SystemTime::now();
             file.set_modified(new_timestamp)?;
             file.sync_all()?;
 
-            self.disk_timestamps
+            self.written_to_disk
                 .insert(key.clone(), new_timestamp);
-            self.ram_timestamps
-                .insert(key.clone(), new_timestamp);
+            self.modified.insert(key.clone(), new_timestamp);
         }
 
         // Delete files for previously deleted keys
         self.deleted_keys.iter().for_each(|key| {
             log::debug!("Deleting key: {}", key);
             self.data.remove(key);
-            self.ram_timestamps.remove(key);
-            self.disk_timestamps.remove(key);
-            let file_path = self.path.join(format!("{}.bin", key));
+            self.modified.remove(key);
+            self.written_to_disk.remove(key);
+            let file_path = self.path.join(format!("{}.txt", key));
             if file_path.exists() {
                 fs::remove_file(&file_path).expect("Failed to delete file");
             }
@@ -416,7 +406,7 @@ where
             } else {
                 self.set(key.clone(), value.clone())
             }
-            self.ram_timestamps
+            self.modified
                 .insert(key.clone(), SystemTime::now());
         }
         Ok(())
@@ -756,9 +746,9 @@ mod tests {
         key: &str,
         value: Dummy,
     ) -> Result<()> {
-        let mut file = File::create(path.join(format!("{}.bin", key)))?;
-        let bytes = bincode::serialize(&value).unwrap();
-        file.write_all(&bytes)?;
+        let mut file = File::create(path.join(format!("{}.txt", key)))?;
+        file.write_all(serde_json::to_string_pretty(&value)?.as_bytes())?;
+        file.flush()?;
         let time = SystemTime::now();
         file.set_modified(time).unwrap();
         file.sync_all()?;
