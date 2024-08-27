@@ -75,6 +75,8 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// #### Reactive API
 /// - [`ResourceIndex::update_all`]: Method to update the index by rescanning
 ///   files and returning changes (additions/deletions/updates).
+/// - [`ResourceIndex::update_one`]: Method to update the index for a single
+///   resource.
 ///
 /// #### Snapshot API
 /// - [`ResourceIndex::get_resources_by_id`]: Query resources from the index by
@@ -82,13 +84,7 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// - [`ResourceIndex::get_resource_by_path`]: Query a resource from the index
 ///   by its path.
 ///
-/// #### Track API
-/// Allows for fine-grained control over tracking changes in the index
-/// - [`ResourceIndex::track_addition`]: Track a newly added file (checks if the
-///   file exists in the file system).
-/// - [`ResourceIndex::track_removal`]: Track the deletion of a file (checks if
-///   the file was actually deleted).
-/// - [`ResourceIndex::track_modification`]: Track an update on a single file.
+///
 ///
 /// ## Examples
 /// ```no_run
@@ -97,7 +93,7 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// use dev_hash::Crc32;
 ///
 /// // Define the root path
-/// let root_path = Path::new("animals");
+/// let root_path = Path::new("path/to/animals");
 ///
 /// // Build the index
 /// let index: ResourceIndex<Crc32> = ResourceIndex::build(root_path).expect("Failed to build index");
