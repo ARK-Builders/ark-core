@@ -91,7 +91,9 @@ where
             let entry = entry?;
             let path = entry.path();
             if path.is_file()
-                && path.extension().map_or(false, |ext| ext == "txt")
+                && path
+                    .extension()
+                    .map_or(false, |ext| ext == "json")
             {
                 let key: K = self.extract_key_from_file_path(&path)?;
                 let file = File::open(&path)?;
@@ -152,7 +154,7 @@ where
     /// Remove files from disk that are not present in memory
     fn remove_files_not_in_ram(&mut self) -> Result<()> {
         for key in self.deleted_keys.iter() {
-            let file_path = self.path.join(format!("{}.txt", key));
+            let file_path = self.path.join(format!("{}.json", key));
             if file_path.exists() {
                 fs::remove_file(&file_path).expect("Failed to delete file");
             }
@@ -224,7 +226,7 @@ where
         let mut disk_newer = false;
 
         for key in self.data.keys() {
-            let file_path = self.path.join(format!("{}.txt", key));
+            let file_path = self.path.join(format!("{}.json", key));
             let ram_timestamp = self
                 .modified
                 .get(key)
@@ -284,7 +286,9 @@ where
                 let entry = entry?;
                 let path = entry.path();
                 if path.is_file()
-                    && path.extension().map_or(false, |ext| ext == "txt")
+                    && path
+                        .extension()
+                        .map_or(false, |ext| ext == "json")
                 {
                     let key = self.extract_key_from_file_path(&path)?;
                     if !self.data.contains_key(&key)
@@ -348,7 +352,7 @@ where
         fs::create_dir_all(&self.path)?;
 
         for (key, value) in &self.data {
-            let file_path = self.path.join(format!("{}.txt", key));
+            let file_path = self.path.join(format!("{}.json", key));
             let mut file = File::create(&file_path)?;
             file.write_all(serde_json::to_string_pretty(&value)?.as_bytes())?;
             file.flush()?;
@@ -368,7 +372,7 @@ where
             self.data.remove(key);
             self.modified.remove(key);
             self.written_to_disk.remove(key);
-            let file_path = self.path.join(format!("{}.txt", key));
+            let file_path = self.path.join(format!("{}.json", key));
             if file_path.exists() {
                 fs::remove_file(&file_path).expect("Failed to delete file");
             }
@@ -746,7 +750,7 @@ mod tests {
         key: &str,
         value: Dummy,
     ) -> Result<()> {
-        let mut file = File::create(path.join(format!("{}.txt", key)))?;
+        let mut file = File::create(path.join(format!("{}.json", key)))?;
         file.write_all(serde_json::to_string_pretty(&value)?.as_bytes())?;
         file.flush()?;
         let time = SystemTime::now();
