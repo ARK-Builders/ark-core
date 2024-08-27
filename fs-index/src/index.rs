@@ -8,7 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use data_error::Result;
+use data_error::{ArklibError, Result};
 use data_resource::ResourceId;
 use fs_storage::{ARK_FOLDER, INDEX_PATH};
 
@@ -473,5 +473,83 @@ impl<Id: ResourceId> ResourceIndex<Id> {
         }
 
         Ok(IndexUpdate { added, removed })
+    }
+
+    /// Update the index with the latest information from the file system
+    /// for a single resource
+    ///
+    /// This method accepts the relative path of a single resource and updates
+    /// the index regardless of whether the resource was added, removed, or
+    /// modified.
+    ///
+    /// **Note**: The caller must ensure that:
+    /// - The index is up-to-date with the file system except for the updated
+    ///   resource
+    /// - In case of a addition, the resource was not already in the index
+    /// - In case of a modification or removal, the resource was already in the
+    ///   index
+    pub fn update_one<P: AsRef<Path>>(
+        &mut self,
+        relative_path: P,
+    ) -> Result<()> {
+        let path = relative_path.as_ref();
+        let entry_path = self.root.join(path);
+
+        // Check if the entry exists in the file system
+        if !entry_path.exists() {
+            // If the entry does not exist in the file system, it's a removal
+
+            // Remove the resource from the path to ID map
+            let id = self.path_to_id.remove(path).ok_or_else(|| {
+                ArklibError::Path(format!(
+                    "Path {:?} not found in the index",
+                    path
+                ))
+            })?;
+            self.id_to_paths
+                .get_mut(&id.item)
+                .unwrap()
+                .remove(path);
+            // If the ID has no paths, remove it from the ID to paths map
+            if self.id_to_paths[&id.item].is_empty() {
+                self.id_to_paths.remove(&id.item);
+            }
+
+            log::trace!("Resource removed: {:?}", path);
+        } else {
+            // If the entry exists in the file system, it's an addition or
+            // update. In either case, we need to update the index
+            // with the latest information about the resource
+
+            let id = Id::from_path(entry_path.clone())?;
+            let metadata = fs::metadata(&entry_path)?;
+            let last_modified = metadata.modified()?;
+            let resource_path = Timestamped {
+                item: id.clone(),
+                last_modified,
+            };
+
+            // In case of modification, we need to remove the old path from
+            // the ID to paths map
+            if let Some(prev_id) = self.path_to_id.get(path) {
+                self.id_to_paths
+                    .get_mut(&prev_id.item)
+                    .unwrap()
+                    .remove(path);
+            }
+
+            // Update the path to resource map
+            self.path_to_id
+                .insert(path.to_path_buf(), resource_path);
+            // Update the ID to paths map
+            self.id_to_paths
+                .entry(id.clone())
+                .or_default()
+                .insert(path.to_path_buf());
+
+            log::trace!("Resource added/updated: {:?}", path);
+        }
+
+        Ok(())
     }
 }
