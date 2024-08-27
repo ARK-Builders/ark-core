@@ -534,8 +534,8 @@ fn test_hidden_files() {
 /// - Build a resource index in the temporary directory.
 /// - Create a new file.
 /// - Update the resource index.
-/// - Assert that the return from `update_all` is that `added` includes the
-///  new file.
+/// - Assert that the return from `update_all` is that `added` includes the new
+///   file.
 #[test]
 fn test_update_all_added_files() {
     for_each_type!(Crc32, Blake3 => {
@@ -567,7 +567,7 @@ fn test_update_all_added_files() {
 /// - Update the file.
 /// - Update the resource index.
 /// - Assert that the return from `update_all` is that `added` includes the
-///  updated file.
+///   updated file.
 #[test]
 fn test_update_all_updated_files() {
     for_each_type!(Crc32, Blake3 => {
@@ -663,6 +663,248 @@ fn test_update_all_files_with_same_hash() {
 
         // The length of `collisions` should be 1 because the new file has the
         // same content as the updated file.
+        assert_eq!(index.collisions().len(), 1, "{:?}", index);
+    });
+}
+
+/// Simple test for tracking a single resource addition.
+///
+/// ## Test scenario:
+/// - Create a file within the temporary directory.
+/// - Build a resource index in the temporary directory.
+/// - Create a new file.
+/// - Call `update_one()` with the relative path of the new file.
+/// - Assert that the index contains the expected number of entries after the
+///   addition.
+#[test]
+fn test_track_addition() {
+    for_each_type!(Crc32, Blake3 => {
+        let temp_dir = TempDir::with_prefix("ark_test_track_addition")
+            .expect("Failed to create temp dir");
+        let root_path = temp_dir.path();
+
+        let file_path = root_path.join("file.txt");
+        fs::write(&file_path, "file content").expect("Failed to write to file");
+
+        let mut index: ResourceIndex<Id> =
+            ResourceIndex::build(root_path).expect("Failed to build index");
+
+        let new_file_path = root_path.join("new_file.txt");
+        fs::write(&new_file_path, "new file content")
+            .expect("Failed to write to file");
+        let new_file_id = Id::from_path(&new_file_path).expect("Failed to get checksum");
+
+        index.update_one("new_file.txt").expect("Failed to update index");
+
+        assert_eq!(index.len(), 2, "{:?}", index);
+        let resource = index
+            .get_resource_by_path("new_file.txt")
+            .expect("Failed to get resource");
+        assert_eq!(*resource.id(), new_file_id);
+    });
+}
+
+/// Test for tracking addition of a file with the same checksum as an existing
+/// file in the index.
+///
+/// ## Test scenario:
+/// - Create a file within the temporary directory.
+/// - Build a resource index in the temporary directory.
+/// - Create a new file with the same content as the existing file.
+/// - Calculate the checksum of the new file.
+/// - Call `update_one()` with the relative path of the new file.
+/// - Assert that the index contains the expected number of entries with the
+///   correct IDs and paths.
+#[test]
+fn test_track_addition_with_collision() {
+    for_each_type!(Crc32, Blake3 => {
+        let temp_dir = TempDir::with_prefix("ark_test_track_addition_with_collision")
+            .expect("Failed to create temp dir");
+        let root_path = temp_dir.path();
+
+        let file_path = root_path.join("file1.txt");
+        fs::write(&file_path, "file content").expect("Failed to write to file");
+
+        let file_path2 = root_path.join("file2.txt");
+        fs::write(&file_path2, "file content").expect("Failed to write to file");
+
+        let mut index: ResourceIndex<Id> =
+            ResourceIndex::build(root_path).expect("Failed to build index");
+
+        let new_file_path = root_path.join("file3.txt");
+        fs::write(&new_file_path, "file content")
+            .expect("Failed to write to file");
+        let new_file_id = Id::from_path(&new_file_path).expect("Failed to get checksum");
+
+        index.update_one("file3.txt").expect("Failed to update index");
+
+        assert_eq!(index.len(), 3, "{:?}", index);
+        let resource = index
+            .get_resource_by_path("file3.txt")
+            .expect("Failed to get resource");
+        assert_eq!(*resource.id(), new_file_id);
+        assert_eq!(index.collisions().len(), 1, "{:?}", index);
+        // Collision should contain 3 entries
+        assert_eq!(index.collisions()[&new_file_id].len(), 3, "{:?}", index);
+    });
+}
+
+/// Simple test for tracking a single resource removal.
+///
+/// ## Test scenario:
+/// - Create a file within the temporary directory and get its checksum.
+/// - Build a resource index in the temporary directory.
+/// - Remove the file from the file system.
+/// - Call `update_one()` with the relative path of the removed file.
+/// - Assert that the index contains the expected number of entries after the
+///   removal.
+#[test]
+fn test_track_removal() {
+    for_each_type!(Crc32, Blake3 => {
+        let temp_dir = TempDir::with_prefix("ark_test_track_removal")
+            .expect("Failed to create temp dir");
+        let root_path = temp_dir.path();
+
+        let file_path = root_path.join("file.txt");
+        fs::write(&file_path, "file content").expect("Failed to write to file");
+
+        let mut index: ResourceIndex<Id> =
+            ResourceIndex::build(root_path).expect("Failed to build index");
+
+        fs::remove_file(&file_path).expect("Failed to remove file");
+
+        index.update_one("file.txt").expect("Failed to update index");
+
+        assert_eq!(index.len(), 0, "{:?}", index);
+    });
+}
+
+/// Test for tracking removal of a file with the same checksum as an existing
+/// file in the index.
+///
+/// ## Test scenario:
+/// - Create 2 files with the same content within the temporary directory.
+/// - Build a resource index in the temporary directory.
+/// - Remove one of the files from the file system.
+/// - Call `update_one()` with the relative path of the removed file.
+/// - Assert that the index contains the expected number of entries with the
+///   correct IDs and paths after the removal.
+#[test]
+fn test_track_removal_with_collision() {
+    for_each_type!(Crc32, Blake3 => {
+        let temp_dir = TempDir::with_prefix("ark_test_track_removal_with_collision")
+            .expect("Failed to create temp dir");
+        let root_path = temp_dir.path();
+
+        let file_path = root_path.join("file1.txt");
+        fs::write(&file_path, "file content").expect("Failed to write to file");
+
+        // Create a file with the same content as file1.txt
+        let file_path2 = root_path.join("file2.txt");
+        fs::write(&file_path2, "file content").expect("Failed to write to file");
+
+        let file_id = Id::from_path(&file_path).expect("Failed to get checksum");
+
+        let mut index: ResourceIndex<Id> =
+            ResourceIndex::build(root_path).expect("Failed to build index");
+
+        fs::remove_file(&file_path).expect("Failed to remove file");
+
+        index.update_one("file1.txt").expect("Failed to update index");
+
+        assert_eq!(index.len(), 1, "{:?}", index);
+        let resource_by_path = index
+            .get_resource_by_path("file2.txt")
+            .expect("Failed to get resource");
+        assert_eq!(*resource_by_path.id(), file_id);
+
+        let resources_by_id = index.get_resources_by_id(&file_id).unwrap();
+        assert_eq!(resources_by_id.len(), 1, "{:?}", resources_by_id);
+
+        // The length of `collisions` should be 0 because file1.txt was removed
+        assert_eq!(index.collisions().len(), 0, "{:?}", index);
+    });
+}
+
+/// Simple test for tracking a single resource modification.
+///
+/// ## Test scenario:
+/// - Create a file within the temporary directory and get its checksum.
+/// - Build a resource index in the temporary directory.
+/// - Modify the content of the file.
+/// - Call `update_one()` with the relative path of the modified file.
+/// - Assert that the index has 1 entry with the correct ID and path.
+#[test]
+fn test_track_modification() {
+    for_each_type!(Crc32, Blake3 => {
+        let temp_dir = TempDir::with_prefix("ark_test_track_modification")
+            .expect("Failed to create temp dir");
+        let root_path = temp_dir.path();
+
+        let file_path = root_path.join("file.txt");
+        fs::write(&file_path, "file content").expect("Failed to write to file");
+
+        let mut index: ResourceIndex<Id> =
+            ResourceIndex::build(root_path).expect("Failed to build index");
+
+        fs::write(&file_path, "updated file content")
+            .expect("Failed to write to file");
+        let updated_file_id = Id::from_path(&file_path).expect("Failed to get checksum");
+
+        index.update_one("file.txt").expect("Failed to update index");
+
+        assert_eq!(index.len(), 1, "{:?}", index);
+        let resource = index
+            .get_resource_by_path("file.txt")
+            .expect("Failed to get resource");
+        assert_eq!(*resource.id(), updated_file_id);
+    });
+}
+
+/// Test for tracking modification of a file with the same checksum as an
+/// existing file in the index.
+///
+/// ## Test scenario:
+/// - Create 2 files with the same content within the temporary directory.
+/// - Build a resource index in the temporary directory.
+/// - Modify the content of one of the files.
+/// - Call `update_one()` with the relative path of the modified file.
+/// - Assert that the index contains the expected number of entries with the
+///   correct IDs and paths after the modification.
+#[test]
+fn test_track_modification_with_collision() {
+    for_each_type!(Crc32, Blake3 => {
+        let temp_dir = TempDir::with_prefix("ark_test_track_modification_with_collision")
+            .expect("Failed to create temp dir");
+        let root_path = temp_dir.path();
+
+        let file_path = root_path.join("file1.txt");
+        fs::write(&file_path, "file content").expect("Failed to write to file");
+        let file_id = Id::from_path(&file_path).expect("Failed to get checksum");
+
+        let file_path2 = root_path.join("file2.txt");
+        fs::write(&file_path2, "updated file content").expect("Failed to write to file");
+
+        let mut index: ResourceIndex<Id> =
+            ResourceIndex::build(root_path).expect("Failed to build index");
+
+        fs::write(&file_path, "updated file content")
+            .expect("Failed to write to file");
+        let updated_file_id = Id::from_path(&file_path).expect("Failed to get checksum");
+
+        index.update_one("file1.txt").expect("Failed to update index");
+
+        assert_eq!(index.len(), 2, "{:?}", index);
+        let resource_by_path = index
+            .get_resource_by_path("file1.txt")
+            .expect("Failed to get resource");
+        assert_eq!(*resource_by_path.id(), updated_file_id);
+
+        let resources_by_id = index.get_resources_by_id(&file_id).unwrap();
+        assert_eq!(resources_by_id.len(), 0, "{:?}", resources_by_id);
+
+        // The length of `collisions` should be 1 because file1.txt and file2.txt
+        // have the same content.
         assert_eq!(index.collisions().len(), 1, "{:?}", index);
     });
 }
