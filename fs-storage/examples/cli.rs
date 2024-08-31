@@ -130,7 +130,7 @@ fn file_write_command(args: &[String], path: &str) -> Result<()> {
 }
 
 fn folder_read_command(args: &[String], path: &str) -> Result<()> {
-    let keys = if args.len() > 3 {
+    let keys = if args.len() > 4 {
         args[4]
             .split(',')
             .map(|s| s.to_string())

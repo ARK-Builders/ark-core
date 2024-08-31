@@ -17,12 +17,12 @@ pub struct FolderStorage<K, V> {
     label: String,
     /// Path to the underlying folder where data is persisted
     path: PathBuf,
-    /// `modified` can be used to track the last time a file was modified in memory.
+    /// `timestamps.0` can be used to track the last time a file was modified in memory.
     /// where the key is the path of the file inside the directory.
-    modified: BTreeMap<K, SystemTime>,
-    /// `written_to_disk` can be used to track the last time a file written or read from disk.
+    ///
+    /// `timestamps.1` can be used to track the last time a file written or read from disk.
     /// where the key is the path of the file inside the directory.
-    written_to_disk: BTreeMap<K, SystemTime>,
+    timestamps: BTreeMap<K, (SystemTime, SystemTime)>,
     data: BTreeMap<K, V>,
     /// Temporary store for deleted keys until storage is synced
     deleted_keys: BTreeSet<K>,
@@ -48,16 +48,13 @@ where
     V: Clone + serde::Serialize + serde::de::DeserializeOwned + Monoid<V>,
 {
     /// Create a new folder storage with a diagnostic label and directory path
-    /// The storage will be initialized using the disk data, if the path exists
-    ///
     /// Note: if the folder storage already exists, the data will be read from the folder
     /// without overwriting it.
     pub fn new(label: String, path: &Path) -> Result<Self> {
         let mut storage = Self {
             label,
             path: PathBuf::from(path),
-            modified: BTreeMap::new(),
-            written_to_disk: BTreeMap::new(),
+            timestamps: BTreeMap::new(),
             data: BTreeMap::new(),
             deleted_keys: BTreeSet::new(),
         };
@@ -95,7 +92,7 @@ where
                     .extension()
                     .map_or(false, |ext| ext == "json")
             {
-                let key: K = self.extract_key_from_file_path(&path)?;
+                let key: K = extract_key_from_file_path(&self.label, &path)?;
                 let file = File::open(&path)?;
                 let value: V =
                     serde_json::from_reader(file).map_err(|err| {
@@ -107,32 +104,41 @@ where
 
                 data.insert(key.clone(), value);
 
-                if let Ok(metadata) = fs::metadata(&path) {
-                    if let Ok(modified) = metadata.modified() {
-                        self.written_to_disk.insert(key.clone(), modified);
-                        self.modified.insert(key, modified);
-                    }
-                }
+                let modified = fs::metadata(path)
+                    .map_err(|_| {
+                        ArklibError::Storage(
+                            self.label.clone(),
+                            "Failed to fetch metadata".to_owned(),
+                        )
+                    })?
+                    .modified()
+                    .map_err(|_| {
+                        ArklibError::Storage(
+                            self.label.clone(),
+                            "Failed to fetch modified time from metadata"
+                                .to_owned(),
+                        )
+                    })?;
+
+                self.timestamps.insert(key, (modified, modified));
             }
         }
 
         self.data = data;
         Ok(())
     }
-    /// Resolve differences between memory and disk data
+
+    /// Resolves discrepancies between in-memory data and disk data by combining or
+    /// overwriting values based on which version is more recent, ensuring consistency.
     fn resolve_divergence(&mut self) -> Result<()> {
         let new_data = FolderStorage::new("new_data".into(), &self.path)?;
 
         for (key, new_value) in new_data.data.iter() {
             if let Some(existing_value) = self.data.get(key) {
                 let existing_value_updated = self
-                    .modified
+                    .timestamps
                     .get(key)
-                    .and_then(|ram_stamp| {
-                        self.written_to_disk
-                            .get(key)
-                            .map(|disk_stamp| ram_stamp > disk_stamp)
-                    })
+                    .map(|timestamp| timestamp.0 > timestamp.1)
                     .unwrap_or(false);
 
                 // Use monoid to combine value for the given key
@@ -156,34 +162,12 @@ where
         for key in self.deleted_keys.iter() {
             let file_path = self.path.join(format!("{}.json", key));
             if file_path.exists() {
-                fs::remove_file(&file_path).expect("Failed to delete file");
+                fs::remove_file(&file_path).unwrap_or_else(|_| {
+                    panic!("Failed to delete file at {:?}", file_path)
+                })
             }
         }
         Ok(())
-    }
-
-    pub fn extract_key_from_file_path(&self, path: &Path) -> Result<K> {
-        path.file_stem()
-            .ok_or_else(|| {
-                ArklibError::Storage(
-                    self.label.clone(),
-                    "Failed to extract file stem from filename".to_owned(),
-                )
-            })?
-            .to_str()
-            .ok_or_else(|| {
-                ArklibError::Storage(
-                    self.label.clone(),
-                    "Failed to convert file stem to string".to_owned(),
-                )
-            })?
-            .parse::<K>()
-            .map_err(|_| {
-                ArklibError::Storage(
-                    self.label.clone(),
-                    "Failed to parse key from filename".to_owned(),
-                )
-            })
     }
 }
 
@@ -201,7 +185,12 @@ where
     fn set(&mut self, key: K, value: V) {
         self.data.insert(key.clone(), value);
         self.deleted_keys.remove(&key);
-        self.modified.insert(key, SystemTime::now());
+        self.timestamps
+            .entry(key)
+            .and_modify(|timestamp| {
+                timestamp.0 = SystemTime::now();
+            })
+            .or_insert((SystemTime::now(), SystemTime::now()));
     }
 
     /// Remove an entry from the internal mapping given a key
@@ -218,9 +207,9 @@ where
         }
     }
 
-    /// Compare the timestamp of the storage files
-    /// with the timestamps of the in-memory storage and the last written
-    /// to time to determine if either of the two requires syncing.
+    /// Determines the synchronization status between RAM and disk.
+    /// Compares modification timestamps of files in RAM and on disk,
+    /// checking for newer versions in path.
     fn sync_status(&mut self) -> Result<SyncStatus> {
         let mut ram_newer = !self.deleted_keys.is_empty();
         let mut disk_newer = false;
@@ -228,9 +217,10 @@ where
         for key in self.data.keys() {
             let file_path = self.path.join(format!("{}.json", key));
             let ram_timestamp = self
-                .modified
+                .timestamps
                 .get(key)
-                .expect("Data entry key should have ram timestamp");
+                .map(|(ram_time, _)| ram_time)
+                .expect("Data entry key should have a RAM timestamp");
 
             if let Ok(metadata) = fs::metadata(&file_path) {
                 if let Ok(disk_timestamp) = metadata.modified() {
@@ -290,7 +280,7 @@ where
                         .extension()
                         .map_or(false, |ext| ext == "json")
                 {
-                    let key = self.extract_key_from_file_path(&path)?;
+                    let key = extract_key_from_file_path(&self.label, &path)?;
                     if !self.data.contains_key(&key)
                         && !self.deleted_keys.contains(&key)
                     {
@@ -315,7 +305,12 @@ where
     /// Sync the in-memory storage with the storage on disk
     fn sync(&mut self) -> Result<()> {
         match self.sync_status()? {
-            SyncStatus::InSync => {}
+            SyncStatus::InSync => {
+                log::info!(
+                    "Memory is synchronized with the storage, {}",
+                    self.label
+                );
+            }
             SyncStatus::MappingStale => {
                 self.read_fs()?;
             }
@@ -361,17 +356,15 @@ where
             file.set_modified(new_timestamp)?;
             file.sync_all()?;
 
-            self.written_to_disk
-                .insert(key.clone(), new_timestamp);
-            self.modified.insert(key.clone(), new_timestamp);
+            self.timestamps
+                .insert(key.clone(), (new_timestamp, new_timestamp));
         }
 
         // Delete files for previously deleted keys
         self.deleted_keys.iter().for_each(|key| {
             log::debug!("Deleting key: {}", key);
             self.data.remove(key);
-            self.modified.remove(key);
-            self.written_to_disk.remove(key);
+            self.timestamps.remove(key);
             let file_path = self.path.join(format!("{}.json", key));
             if file_path.exists() {
                 fs::remove_file(&file_path).expect("Failed to delete file");
@@ -410,11 +403,42 @@ where
             } else {
                 self.set(key.clone(), value.clone())
             }
-            self.modified
-                .insert(key.clone(), SystemTime::now());
+            self.timestamps
+                .entry(key.clone())
+                .and_modify(|timestamp| {
+                    timestamp.0 = SystemTime::now();
+                })
+                .or_insert((SystemTime::now(), SystemTime::now()));
         }
         Ok(())
     }
+}
+
+fn extract_key_from_file_path<K>(label: &str, path: &Path) -> Result<K>
+where
+    K: std::str::FromStr,
+{
+    path.file_stem()
+        .ok_or_else(|| {
+            ArklibError::Storage(
+                label.to_owned(),
+                "Failed to extract file stem from filename".to_owned(),
+            )
+        })?
+        .to_str()
+        .ok_or_else(|| {
+            ArklibError::Storage(
+                label.to_owned(),
+                "Failed to convert file stem to string".to_owned(),
+            )
+        })?
+        .parse::<K>()
+        .map_err(|_| {
+            ArklibError::Storage(
+                label.to_owned(),
+                "Failed to parse key from filename".to_owned(),
+            )
+        })
 }
 
 #[cfg(test)]
