@@ -8,7 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use data_error::{ArklibError, Result};
+use data_error::Result;
 use data_resource::ResourceId;
 use fs_storage::{ARK_FOLDER, INDEX_PATH};
 
@@ -500,12 +500,12 @@ impl<Id: ResourceId> ResourceIndex<Id> {
             // If the entry does not exist in the file system, it's a removal
 
             // Remove the resource from the path to ID map
-            let id = self.path_to_id.remove(path).ok_or_else(|| {
-                ArklibError::Path(format!(
-                    "Path {:?} not found in the index",
-                    path
-                ))
-            })?;
+            debug_assert!(
+                self.path_to_id.contains_key(path),
+                "Caller must ensure that the resource exists in the index: {:?}",
+                path
+            );
+            let id = self.path_to_id.remove(path).unwrap();
             self.id_to_paths
                 .get_mut(&id.item)
                 .unwrap()
