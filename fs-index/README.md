@@ -10,10 +10,11 @@ The most important struct in this crate is `ResourceIndex` which comes with:
 
 - **Reactive API**
   - `update_all`: Method to update the index by rescanning files and returning changes (additions/deletions).
-  - `update_one`: Method to update the index by rescanning a single file (addition/deletion/modification).
 - **Snapshot API**
   - `get_resources_by_id`: Query resources from the index by ID.
   - `get_resource_by_path`: Query a resource from the index by its path.
+- **Selective API**
+  - `update_one`: Method to manually update a specific resource by selectively rescanning a single file.
 
 ## Custom Serialization
 

@@ -75,8 +75,7 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// #### Reactive API
 /// - [`ResourceIndex::update_all`]: Method to update the index by rescanning
 ///   files and returning changes (additions/deletions/updates).
-/// - [`ResourceIndex::update_one`]: Method to update the index for a single
-///   resource.
+
 ///
 /// #### Snapshot API
 /// - [`ResourceIndex::get_resources_by_id`]: Query resources from the index by
@@ -84,6 +83,10 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// - [`ResourceIndex::get_resource_by_path`]: Query a resource from the index
 ///   by its path.
 ///
+/// ### Selective API
+/// - [`ResourceIndex::update_one`]: A method to manually update a specific
+///   resource by selectively rescanning a single file. Unlike the reactive
+///   nature of `update_all()`, this method allows for targeted updates.
 ///
 ///
 /// ## Examples
