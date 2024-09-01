@@ -112,24 +112,35 @@ fn resource_index_benchmark(c: &mut Criterion) {
                 ResourceIndex::build(black_box(&update_one_benchmarks_dir))
                     .unwrap();
 
-            // Create a new file
-            let new_file = update_one_benchmarks_dir.join("new_file.txt");
-            std::fs::File::create(&new_file).unwrap();
-            std::fs::write(&new_file, "Hello, World from new file!").unwrap();
+            // Create 1000 new files
+            for i in 5000..6000 {
+                let new_file =
+                    update_one_benchmarks_dir.join(format!("file_{}.txt", i));
+                std::fs::File::create(&new_file).unwrap();
+                std::fs::write(&new_file, format!("Hello, World! {}", i))
+                    .unwrap();
+            }
 
-            // Modify an existing file
-            let modified_file = update_one_benchmarks_dir.join("file_0.txt");
-            std::fs::write(&modified_file, "Hello, World from modified file!")
-                .unwrap();
+            // Modify 1000 files
+            for i in 4000..5000 {
+                let modified_file =
+                    update_one_benchmarks_dir.join(format!("file_{}.txt", i));
+                std::fs::write(&modified_file, format!("Bye, World! {}", i))
+                    .unwrap();
+            }
 
-            // Remove an existing file
-            let removed_file = update_one_benchmarks_dir.join("file_1.txt");
-            std::fs::remove_file(&removed_file).unwrap();
+            // Remove 1000 files
+            for i in 3000..4000 {
+                let removed_file =
+                    update_one_benchmarks_dir.join(format!("file_{}.txt", i));
+                std::fs::remove_file(&removed_file).unwrap();
+            }
 
-            // Update the index
-            let _update_result = index.update_one("new_file.txt").unwrap();
-            let _update_result = index.update_one("file_0.txt").unwrap();
-            let _update_result = index.update_one("file_1.txt").unwrap();
+            // Call update_one for each of the 3000 files
+            for i in 3000..6000 {
+                let file_path = format!("file_{}.txt", i);
+                let _update_result = index.update_one(&file_path).unwrap();
+            }
         });
     });
 
