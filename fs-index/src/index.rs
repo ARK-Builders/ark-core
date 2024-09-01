@@ -83,10 +83,11 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// - [`ResourceIndex::get_resource_by_path`]: Query a resource from the index
 ///   by its path.
 ///
-/// ### Selective API
-/// - [`ResourceIndex::update_one`]: A method to manually update a specific
-///   resource by selectively rescanning a single file. Unlike the reactive
-///   nature of `update_all()`, this method allows for targeted updates.
+/// #### Selective API
+/// - [`ResourceIndex::update_one`]: An experimental method to manually update a
+///   specific resource by rescanning a single file. It provides targeted
+///   control but is less dynamic than the reactive `update_all()`. The reactive
+///   API is typically preferred for broader updates.
 ///
 ///
 /// ## Examples
