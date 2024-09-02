@@ -14,22 +14,26 @@ File system storage implementation for writing key value pairs to disk.
 }
 ```
 
+- Select between two storage options:
+  - file: Stores multiple key-value pairs in a single file.
+  - folder: Stores each value in a separate file within a folder.
+
 - Run Write Command
 
 ```bash
-cargo run --example cli write /tmp/z test.json
+cargo run --example cli [file|folder] write /tmp/z test.json
 ```
 
 Alternatively, you can directly provide the input data as a comma-separated list of key-value pairs
 
 ```bash
-cargo run --example cli write /tmp/z a:1,b:2,c:3
+cargo run --example cli [file|folder] write /tmp/z a:1,b:2,c:3
 ```
 
 - Run Read Command
 
 ```bash
-cargo run --example cli read /tmp/z key1,key2
+cargo run --example cli [file|folder] read /tmp/z key1,key2
 ```
 
 - Get Output
@@ -42,5 +46,5 @@ key2: value2
 - To get all key value pairs
 
 ```bash
-cargo run --example cli read /tmp/z
+cargo run --example cli [file|folder] read /tmp/z
 ```
