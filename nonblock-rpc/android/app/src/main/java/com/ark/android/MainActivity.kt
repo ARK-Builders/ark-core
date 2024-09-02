@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity() {
 
         val res2 = call("sum", listOf("[1,2,3,4,5,6]","10"))
 
+
         val textView2 = TextView(this).apply {
             text = res2
             textSize = 24f
