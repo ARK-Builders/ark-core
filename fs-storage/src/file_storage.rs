@@ -362,7 +362,7 @@ mod tests {
         file_storage.set("key1".to_string(), "value1".to_string());
         file_storage.set("key1".to_string(), "value2".to_string());
         assert!(file_storage.write_fs().is_ok());
-        assert_eq!(storage_path.exists(), true);
+        assert!(storage_path.exists());
 
         if let Err(err) = file_storage.erase() {
             panic!("Failed to delete file: {:?}", err);

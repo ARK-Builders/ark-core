@@ -75,6 +75,7 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// #### Reactive API
 /// - [`ResourceIndex::update_all`]: Method to update the index by rescanning
 ///   files and returning changes (additions/deletions/updates).
+
 ///
 /// #### Snapshot API
 /// - [`ResourceIndex::get_resources_by_id`]: Query resources from the index by
@@ -82,13 +83,12 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// - [`ResourceIndex::get_resource_by_path`]: Query a resource from the index
 ///   by its path.
 ///
-/// #### Track API
-/// Allows for fine-grained control over tracking changes in the index
-/// - [`ResourceIndex::track_addition`]: Track a newly added file (checks if the
-///   file exists in the file system).
-/// - [`ResourceIndex::track_removal`]: Track the deletion of a file (checks if
-///   the file was actually deleted).
-/// - [`ResourceIndex::track_modification`]: Track an update on a single file.
+/// #### Selective API
+/// - [`ResourceIndex::update_one`]: An experimental method to manually update a
+///   specific resource by rescanning a single file. It provides targeted
+///   control but is less dynamic than the reactive `update_all()`. The reactive
+///   API is typically preferred for broader updates.
+///
 ///
 /// ## Examples
 /// ```no_run
@@ -97,7 +97,7 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// use dev_hash::Crc32;
 ///
 /// // Define the root path
-/// let root_path = Path::new("animals");
+/// let root_path = Path::new("path/to/animals");
 ///
 /// // Build the index
 /// let index: ResourceIndex<Crc32> = ResourceIndex::build(root_path).expect("Failed to build index");
@@ -473,5 +473,83 @@ impl<Id: ResourceId> ResourceIndex<Id> {
         }
 
         Ok(IndexUpdate { added, removed })
+    }
+
+    /// Update the index with the latest information from the file system
+    /// for a single resource
+    ///
+    /// This method accepts the relative path of a single resource and updates
+    /// the index regardless of whether the resource was added, removed, or
+    /// modified.
+    ///
+    /// **Note**: The caller must ensure that:
+    /// - The index is up-to-date with the file system except for the updated
+    ///   resource
+    /// - In case of a addition, the resource was not already in the index
+    /// - In case of a modification or removal, the resource was already in the
+    ///   index
+    pub fn update_one<P: AsRef<Path>>(
+        &mut self,
+        relative_path: P,
+    ) -> Result<()> {
+        let path = relative_path.as_ref();
+        let entry_path = self.root.join(path);
+
+        // Check if the entry exists in the file system
+        if !entry_path.exists() {
+            // If the entry does not exist in the file system, it's a removal
+
+            // Remove the resource from the path to ID map
+            debug_assert!(
+                self.path_to_id.contains_key(path),
+                "Caller must ensure that the resource exists in the index: {:?}",
+                path
+            );
+            let id = self.path_to_id.remove(path).unwrap();
+            self.id_to_paths
+                .get_mut(&id.item)
+                .unwrap()
+                .remove(path);
+            // If the ID has no paths, remove it from the ID to paths map
+            if self.id_to_paths[&id.item].is_empty() {
+                self.id_to_paths.remove(&id.item);
+            }
+
+            log::trace!("Resource removed: {:?}", path);
+        } else {
+            // If the entry exists in the file system, it's an addition or
+            // update. In either case, we need to update the index
+            // with the latest information about the resource
+
+            let id = Id::from_path(entry_path.clone())?;
+            let metadata = fs::metadata(&entry_path)?;
+            let last_modified = metadata.modified()?;
+            let resource_path = Timestamped {
+                item: id.clone(),
+                last_modified,
+            };
+
+            // In case of modification, we need to remove the old path from
+            // the ID to paths map
+            if let Some(prev_id) = self.path_to_id.get(path) {
+                self.id_to_paths
+                    .get_mut(&prev_id.item)
+                    .unwrap()
+                    .remove(path);
+            }
+
+            // Update the path to resource map
+            self.path_to_id
+                .insert(path.to_path_buf(), resource_path);
+            // Update the ID to paths map
+            self.id_to_paths
+                .entry(id.clone())
+                .or_default()
+                .insert(path.to_path_buf());
+
+            log::trace!("Resource added/updated: {:?}", path);
+        }
+
+        Ok(())
     }
 }

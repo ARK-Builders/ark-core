@@ -84,6 +84,66 @@ fn resource_index_benchmark(c: &mut Criterion) {
         });
     });
 
+    // Benchmark `ResourceIndex::update_one()`
+
+    // First, create a new temp directory specifically for the update_one
+    // benchmark since we will be creating new files, removing files, and
+    // modifying files
+
+    let update_one_benchmarks_dir =
+        TempDir::with_prefix("ark-fs-index-benchmarks-update-one").unwrap();
+    let update_one_benchmarks_dir = update_one_benchmarks_dir.path();
+
+    group.bench_function("index_update_one", |b| {
+        b.iter(|| {
+            // Clear the directory
+            std::fs::remove_dir_all(&update_one_benchmarks_dir).unwrap();
+            std::fs::create_dir(&update_one_benchmarks_dir).unwrap();
+
+            // Create 5000 new files
+            for i in 0..5000 {
+                let new_file =
+                    update_one_benchmarks_dir.join(format!("file_{}.txt", i));
+                std::fs::File::create(&new_file).unwrap();
+                std::fs::write(&new_file, format!("Hello, World! {}", i))
+                    .unwrap();
+            }
+            let mut index: ResourceIndex<Crc32> =
+                ResourceIndex::build(black_box(&update_one_benchmarks_dir))
+                    .unwrap();
+
+            // Create 1000 new files
+            for i in 5000..6000 {
+                let new_file =
+                    update_one_benchmarks_dir.join(format!("file_{}.txt", i));
+                std::fs::File::create(&new_file).unwrap();
+                std::fs::write(&new_file, format!("Hello, World! {}", i))
+                    .unwrap();
+            }
+
+            // Modify 1000 files
+            for i in 4000..5000 {
+                let modified_file =
+                    update_one_benchmarks_dir.join(format!("file_{}.txt", i));
+                std::fs::write(&modified_file, format!("Bye, World! {}", i))
+                    .unwrap();
+            }
+
+            // Remove 1000 files
+            for i in 3000..4000 {
+                let removed_file =
+                    update_one_benchmarks_dir.join(format!("file_{}.txt", i));
+                std::fs::remove_file(&removed_file).unwrap();
+            }
+
+            // Call update_one for each of the 3000 files
+            for i in 3000..6000 {
+                let file_path = format!("file_{}.txt", i);
+                let _update_result = index.update_one(&file_path).unwrap();
+            }
+        });
+    });
+
     group.finish();
 }
 
