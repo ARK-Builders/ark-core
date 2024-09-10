@@ -13,7 +13,8 @@ members = [
     "fs-index",
     "fs-storage",
     "dev-hash", 
-    "rpc", "rpc_example",
+    "rpc", 
+    "rpc_example",
 ]
 
 default-members = [

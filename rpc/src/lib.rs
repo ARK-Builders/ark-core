@@ -1,15 +1,11 @@
-
-// uniffi::setup_scaffolding!() Must be called in the lib.rs file of the crate
-mod router;
+pub mod router;
+pub use once_cell;
 
 #[macro_export]
-macro_rules! define_rpc {
+macro_rules! uniffi_rpc_server {
     ($($name:ident),*) => {
-        use once_cell::sync::Lazy;
-        use router::Router;
-        
-        pub static ROUTER: Lazy<Router> = Lazy::new(|| {
-            let mut router = Router::new(); 
+        pub static ROUTER: rpc::once_cell::sync::Lazy<Router> = rpc::once_cell::sync::Lazy::new(|| {
+            let mut router = Router::new();
             $(
                 router.add(stringify!($name), $name);
             )*
@@ -18,7 +14,7 @@ macro_rules! define_rpc {
 
         #[uniffi::export]
         pub fn call(path: String, data: Vec<String>) -> String {
-            &ROUTER.call(path, data);
+            ROUTER.call(&path, data)
         }
     };
 }

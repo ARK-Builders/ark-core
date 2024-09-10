@@ -13,11 +13,15 @@ impl Router {
         }
     }
 
+    pub fn from_routes(routes: HashMap<String, Box<dyn Handler + 'static + Send + Sync>>) -> Self {
+        Router { routes }
+    }
+
     pub fn add<Marker: 'static + Send + Sync>(
-        mut self,
+        &mut self,
         name: &str,
         function: impl HandlerFunction<Marker>,
-    ) -> Self {
+    )  {
         self.routes.insert(
             name.to_owned(),
             Box::new(FunctionHandler {
@@ -25,7 +29,6 @@ impl Router {
                 marker: PhantomData,
             }),
         );
-        self
     }
 
     pub fn call(&self, name: &str, args: Vec<String>) -> String {

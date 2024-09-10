@@ -1,0 +1,18 @@
+[package]
+name = "rpc_example"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+name = "rpc_example"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+uniffi = { version = "0.28.1", features = [ "cli" ] }
+rpc = { path = "../rpc" }
+
+

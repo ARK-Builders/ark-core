@@ -5,12 +5,11 @@ edition = "2021"
 
 [lib]
 crate-type = ["lib"]
-name = "rpc_core"
+name = "rpc"
 
 [dependencies]
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.121"
-uniffi = "0.28.0"
 proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "1.0", features = ["full"] }
