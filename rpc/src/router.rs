@@ -13,7 +13,9 @@ impl Router {
         }
     }
 
-    pub fn from_routes(routes: HashMap<String, Box<dyn Handler + 'static + Send + Sync>>) -> Self {
+    pub fn from_routes(
+        routes: HashMap<String, Box<dyn Handler + 'static + Send + Sync>>,
+    ) -> Self {
         Router { routes }
     }
 
@@ -21,7 +23,7 @@ impl Router {
         &mut self,
         name: &str,
         function: impl HandlerFunction<Marker>,
-    )  {
+    ) {
         self.routes.insert(
             name.to_owned(),
             Box::new(FunctionHandler {
@@ -84,9 +86,7 @@ where
                 &args.next().unwrap_or("{}".to_string()),
             );
             match T0 {
-                core::result::Result::Ok(T0) => {
-                    Response::success((self)(T0))
-                }
+                core::result::Result::Ok(T0) => Response::success((self)(T0)),
                 _ => {
                     Response::error(format!("Failed to deserialize arguments"))
                 }
