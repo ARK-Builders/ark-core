@@ -25,6 +25,8 @@ pub trait ResourceId:
     + Hash
     + Serialize
     + DeserializeOwned
+    + Sync
+    + Send
 {
     /// Computes the resource identifier from the given file path
     fn from_path<P: AsRef<Path>>(file_path: P) -> Result<Self>;

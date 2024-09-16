@@ -18,6 +18,7 @@ serde_json = "1.0.82"
 chrono = "0.4.34"
 anyhow = "1.0.80"
 thiserror = "1.0.57"
+futures = "0.3"
 
 # REGISTRAR
 log = { version = "0.4.17", features = ["release_max_level_off"] }
@@ -25,7 +26,7 @@ lazy_static = "1.4.0"
 canonical-path = "2.0.2"
 
 
-fs-index = { path = "../fs-index" }
+fs-index = { path = "../fs-index", features = ["watch"] }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
 fs-metadata = { path = "../fs-metadata" }
 fs-properties = { path = "../fs-properties" }
