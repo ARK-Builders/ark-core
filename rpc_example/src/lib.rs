@@ -12,5 +12,3 @@ pub fn add_array(left: u64, array: Vec<u64>) -> u64 {
 }
 
 uniffi_rpc_server!(add, add_array);
-
-
