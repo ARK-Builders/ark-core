@@ -93,9 +93,9 @@ where
             );
             match T0 {
                 core::result::Result::Ok(T0) => Response::success((self)(T0)),
-                _ => {
-                    Response::error("Failed to deserialize arguments".to_string())
-                }
+                _ => Response::error(
+                    "Failed to deserialize arguments".to_string(),
+                ),
             }
         };
         serde_json::to_string(&response).unwrap_or(CATASTROPHIC_ERROR.into())
