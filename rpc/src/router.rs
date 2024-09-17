@@ -41,6 +41,12 @@ impl Router {
     }
 }
 
+impl Default for Router {
+    fn default() -> Self {
+        Router::new()
+    }
+}
+
 #[derive(Serialize)]
 pub struct Response<T> {
     pub result: Option<T>,
@@ -88,7 +94,7 @@ where
             match T0 {
                 core::result::Result::Ok(T0) => Response::success((self)(T0)),
                 _ => {
-                    Response::error(format!("Failed to deserialize arguments"))
+                    Response::error("Failed to deserialize arguments".to_string())
                 }
             }
         };
