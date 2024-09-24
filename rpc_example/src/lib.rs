@@ -11,4 +11,9 @@ pub fn add_array(left: u64, array: Vec<u64>) -> u64 {
     return a + left;
 }
 
-uniffi_rpc_server!(add, add_array);
+pub fn add_with_wait(left: u64, right: u64) -> u64 {
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    left + right
+}
+
+uniffi_rpc_server!(add, add_array,add_with_wait);

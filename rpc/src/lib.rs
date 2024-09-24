@@ -16,5 +16,10 @@ macro_rules! uniffi_rpc_server {
         pub fn call(path: String, data: Vec<String>) -> String {
             ROUTER.call(&path, data)
         }
+
+        #[uniffi::export]
+        pub async fn call_async(path:String,data:Vec<String>) -> String {
+            ROUTER.call(&path,data)
+        }
     };
 }
