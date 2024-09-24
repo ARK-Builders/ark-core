@@ -16,4 +16,4 @@ pub fn add_with_wait(left: u64, right: u64) -> u64 {
     left + right
 }
 
-uniffi_rpc_server!(add, add_array,add_with_wait);
+uniffi_rpc_server!(add, add_array, add_with_wait);
