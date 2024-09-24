@@ -12,7 +12,9 @@ members = [
     "fs-properties",
     "fs-index",
     "fs-storage",
-    "dev-hash",
+    "dev-hash", 
+    "rpc", 
+    "rpc_example",
 ]
 
 default-members = [
@@ -32,3 +34,4 @@ default-members = [
 ]
 
 resolver = "2"
+    
