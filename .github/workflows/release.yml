@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+
+      - name: Run tests
+        run: cargo test --workspace --verbose
+
+      - name: Build Release
+        run: cargo build --verbose --release
+
+      - name: Install JDK
+        uses: actions/setup-java@v4.2.1
+        with:
+          distribution: "temurin"
+          java-version: "22"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Java tests
+        run: gradle test
+        working-directory: ./java
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Build fs-storage JNI libs
+        run: cargo ndk -o ./target/release/fs-storage/jniLibs --target aarch64-linux-android --target armv7-linux-androideabi --target i686-linux-android --target x86_64-linux-android build -p fs-storage --release
+
+      - name: Create JNI Libraries ZIP
+        run: |
+          cd target/release/fs-storage
+          zip -r ../../../jniLibs.zip jniLibs
+          cd -
+
+      - name: Release JNI Libraries ZIP
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          artifacts: "jniLibs.zip"
+
+      - name: Publish Java release
+        run: gradle publish
+        working-directory: ./java
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -25,6 +25,11 @@ jobs:
           toolchain: nightly # nightly is required for fmt
           components: rustfmt, clippy
 
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+
       - name: Check
         run: cargo check
 
@@ -32,9 +37,6 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo clippy --workspace --bins -- -D warnings
-
-      - name: Build Debug
-        run: cargo build --verbose
 
       - name: Run tests
         run: cargo test --verbose
@@ -68,11 +70,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Release
-        run: cargo build --verbose --release
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
 
       - name: Run tests
         run: cargo test --workspace --verbose
+
+      - name: Build Release
+        run: cargo build --verbose --release
 
       - name: Run `ark-cli watch` test
         run: ./integration/ark-cli-watch.sh
@@ -100,11 +107,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Release
-        run: cargo build --verbose --release
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
 
       - name: Run tests
         run: cargo test --workspace --verbose
+
+      - name: Build Release
+        run: cargo build --verbose --release
 
       - name: Run `ark-cli watch` test
         run: ./integration/ark-cli-watch.sh
