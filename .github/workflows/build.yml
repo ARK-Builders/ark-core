@@ -55,6 +55,12 @@ jobs:
         run: gradle test
         working-directory: ./java
 
+      - name: Publish Java release
+        run: gradle publish
+        working-directory: ./java
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   windows:
     name: Test on Windows
     runs-on: windows-latest
