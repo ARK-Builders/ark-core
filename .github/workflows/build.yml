@@ -61,6 +61,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Release fs-storage NDK binaries
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Add Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Build fs-storage
+        run: cargo ndk -o ./target/release/fs-storage/jniLibs --target aarch64-linux-android --target armv7-linux-androideabi --target i686-linux-android --target x86_64-linux-android build -p fs-storage --release
+
+      - name: Upload fs-storage
+        uses: actions/upload-artifact@v4
+        with:
+          name: fs-storage
+          path: ./target/release/fs-storage/jniLibs
+
   windows:
     name: Test on Windows
     runs-on: windows-latest
