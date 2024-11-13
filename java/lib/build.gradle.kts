@@ -40,6 +40,10 @@ publishing {
     publications {
         create<MavenPublication>("Maven") {
             from(components["java"])
+            pom {
+                name.set("fs_storage")
+                description.set("File system storage bindings for writing key value pairs to disk.")
+            }
         }
     }
     repositories {
