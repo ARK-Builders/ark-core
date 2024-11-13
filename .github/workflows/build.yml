@@ -22,8 +22,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly # nightly is required for fmt
+          toolchain: stable
           components: rustfmt, clippy
+          targets: aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
       - name: Set up Cargo Cache
         uses: Swatinem/rust-cache@v2
@@ -63,12 +64,6 @@ jobs:
       # Upload fs-storage JNI libs
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
-
-      - name: Add Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
       - name: Build fs-storage JNI libs
         run: cargo ndk -o ./target/release/fs-storage/jniLibs --target aarch64-linux-android --target armv7-linux-androideabi --target i686-linux-android --target x86_64-linux-android build -p fs-storage --release
