@@ -25,6 +25,11 @@ jobs:
           toolchain: nightly # nightly is required for fmt
           components: rustfmt, clippy
 
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+
       - name: Check
         run: cargo check
 
@@ -91,6 +96,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+
       - name: Build Release
         run: cargo build --verbose --release
 
@@ -119,6 +129,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
 
       - name: Build Release
         run: cargo build --verbose --release
