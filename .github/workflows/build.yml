@@ -73,7 +73,6 @@ jobs:
         with:
           name: fs-storage-jni-libs
           path: ./target/release/fs-storage/jniLibs
-      # ---
 
       - name: Publish Java release
         run: gradle publish
