@@ -208,18 +208,18 @@ where
         //     let path = entry.path();
         //     if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
         //         let key = extract_key_from_file_path(&self.label, &path)?;
-                
+
         //         // Only handle completely new keys
-        //         if !self.memory_cache.contains_key(&key) 
-        //            && !self.disk_timestamps.contains_key(&key) 
+        //         if !self.memory_cache.contains_key(&key)
+        //            && !self.disk_timestamps.contains_key(&key)
         //            && !self.deleted_keys.contains(&key) {
-                    
+
         //             if let Ok(metadata) = fs::metadata(&path) {
         //                 if let Ok(modified) = metadata.modified() {
         //                     // New key found - load it
         //                     if let Ok(value) = self.load_value_from_disk(&key) {
         //                         self.disk_timestamps.insert(key.clone(), modified);
-                                
+
         //                         // Only add to memory if we have space or it's newer than oldest
         //                         if self.memory_cache.len() < self.max_memory_items {
         //                             self.add_to_memory_cache(key, value);
@@ -231,7 +231,7 @@ where
         //         }
         //     }
         // }
-    
+
         self.deleted_keys.clear();
         Ok(())
     }
