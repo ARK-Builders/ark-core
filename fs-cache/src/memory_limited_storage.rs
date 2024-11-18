@@ -43,7 +43,7 @@ where
         path: &Path,
         max_memory_items: usize,
     ) -> Result<Self> {
-        let storage = Self {
+        let mut storage = Self {
             label,
             path: PathBuf::from(path),
             memory_cache: LinkedHashMap::with_capacity(max_memory_items),
@@ -52,17 +52,24 @@ where
             deleted_keys: BTreeSet::new(),
         };
 
-        // TODO: add load_fs;
-
-        // Create directory if it doesn't exist
-        fs::create_dir_all(&storage.path)?;
+        storage.load_fs()?;
 
         Ok(storage)
     }
 
     pub fn load_fs(&mut self) -> Result<()> {
         if !self.path.exists() {
-            return Ok(());
+            return Err(ArklibError::Storage(
+                self.label.clone(),
+                "Folder does not exist".to_owned(),
+            ));
+        }
+
+        if !self.path.is_dir() {
+            return Err(ArklibError::Storage(
+                self.label.clone(),
+                "Path is not a directory".to_owned(),
+            ));
         }
 
         // Collect all files with their timestamps
@@ -110,6 +117,7 @@ where
                 .insert(key.clone(), *timestamp);
         }
 
+        // TODO: WHY?: Later used in sync-status to detect is it recently externally modified or not
         // Add remaining timestamps to disk_timestamps without loading values
         for (key, timestamp, _) in entries.iter().skip(self.max_memory_items) {
             self.disk_timestamps
@@ -193,7 +201,7 @@ where
     }
 
     pub fn sync(&mut self) -> Result<()> {
-        // Since we write through on set(), we only need to handle removals
+        // Handle removals
         for key in self.deleted_keys.iter() {
             let file_path = self.path.join(format!("{}.json", key));
             if file_path.exists() {
@@ -202,35 +210,48 @@ where
             }
         }
 
-        // Also add latest externally added cache in memory, by comparing timestamps
-        // for entry in fs::read_dir(&self.path)? {
-        //     let entry = entry?;
-        //     let path = entry.path();
-        //     if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
-        //         let key = extract_key_from_file_path(&self.label, &path)?;
+        // Collect and sort all entries by timestamp
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(&self.path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file()
+                && path
+                    .extension()
+                    .map_or(false, |ext| ext == "json")
+            {
+                if let Ok(metadata) = fs::metadata(&path) {
+                    if let Ok(modified) = metadata.modified() {
+                        let key =
+                            extract_key_from_file_path(&self.label, &path)?;
+                        if !self.deleted_keys.contains(&key) {
+                            entries.push((key, modified, path));
+                        }
+                    }
+                }
+            }
+        }
 
-        //         // Only handle completely new keys
-        //         if !self.memory_cache.contains_key(&key)
-        //            && !self.disk_timestamps.contains_key(&key)
-        //            && !self.deleted_keys.contains(&key) {
+        // Sort by timestamp, newest first
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
 
-        //             if let Ok(metadata) = fs::metadata(&path) {
-        //                 if let Ok(modified) = metadata.modified() {
-        //                     // New key found - load it
-        //                     if let Ok(value) = self.load_value_from_disk(&key) {
-        //                         self.disk_timestamps.insert(key.clone(), modified);
+        // Clear current cache and rebuild with most recent entries
+        self.memory_cache.clear();
 
-        //                         // Only add to memory if we have space or it's newer than oldest
-        //                         if self.memory_cache.len() < self.max_memory_items {
-        //                             self.add_to_memory_cache(key, value);
-        //                         }
-        //                         // Could add logic here to compare with oldest memory item
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+        // Take most recent entries up to max_memory_items
+        for (key, timestamp, _) in entries.iter().take(self.max_memory_items) {
+            if let Ok(value) = self.load_value_from_disk(key) {
+                self.memory_cache.insert(key.clone(), value);
+                self.disk_timestamps
+                    .insert(key.clone(), *timestamp);
+            }
+        }
+
+        // Track remaining timestamps without loading values
+        for (key, timestamp, _) in entries.iter().skip(self.max_memory_items) {
+            self.disk_timestamps
+                .insert(key.clone(), *timestamp);
+        }
 
         self.deleted_keys.clear();
         Ok(())
