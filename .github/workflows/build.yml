@@ -42,6 +42,9 @@ jobs:
       - name: Build Release
         run: cargo build --verbose --release
 
+      - name: Run `ark-cli watch` test
+        run: ./integration/ark-cli-watch.sh
+
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
         with:
@@ -71,6 +74,9 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --verbose
 
+      - name: Run `ark-cli watch` test
+        run: ./integration/ark-cli-watch.sh
+
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
         with:
@@ -99,6 +105,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --verbose
+
+      - name: Run `ark-cli watch` test
+        run: ./integration/ark-cli-watch.sh
 
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
