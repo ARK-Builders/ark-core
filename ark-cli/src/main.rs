@@ -71,6 +71,7 @@ async fn run() -> Result<()> {
         Monitor(monitor) => monitor.run()?,
         Render(render) => render.run()?,
         List(list) => list.run()?,
+        Watch(watch) => watch.run().await?,
         Link { subcommand } => match subcommand {
             Create(create) => create.run().await?,
             Load(load) => load.run()?,
