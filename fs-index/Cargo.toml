@@ -14,6 +14,12 @@ walkdir = "2.3.2"
 anyhow = "1.0.58"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+# For the watch API
+notify = { version = "6.1", optional = true }
+notify-debouncer-full = { version = "0.3", optional = true }
+futures = { version = "0.3", optional = true }
+async-stream = { version = "0.3", optional = true }
+tokio = { version = "1.40", features = ["full"], optional = true }
 
 
 fs-storage = { path = "../fs-storage" }
@@ -21,8 +27,13 @@ fs-storage = { path = "../fs-storage" }
 data-error = { path = "../data-error" }
 data-resource = { path = "../data-resource" }
 
+
+[features]
+watch = ["notify", "notify-debouncer-full", "futures", "async-stream", "tokio"]
+
 [dev-dependencies]
 uuid = { version = "1.6.1", features = ["v4"] }
+env_logger = "0.11"
 # benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.10"

@@ -65,6 +65,17 @@ pub struct Timestamped<Item> {
     pub(crate) last_modified: SystemTime,
 }
 
+impl<Item> Timestamped<Item> {
+    pub fn item(&self) -> &Item {
+        &self.item
+    }
+
+    /// Return the last modified time
+    pub fn last_modified(&self) -> SystemTime {
+        self.last_modified
+    }
+}
+
 type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 
 /// Represents the index of resources in a directory.
@@ -486,14 +497,21 @@ impl<Id: ResourceId> ResourceIndex<Id> {
     /// - The index is up-to-date with the file system except for the updated
     ///   resource
     /// - In case of a addition, the resource was not already in the index
-    /// - In case of a modification or removal, the resource was already in the
-    ///   index
+    /// - In case of a removal, the resource was already in the index
+    /// - In case of a move or rename, `update_one()` should be called twice:
+    ///   once with the old path to remove the previous entry, and once with the
+    ///   new path to add the updated entry
     pub fn update_one<P: AsRef<Path>>(
         &mut self,
         relative_path: P,
-    ) -> Result<()> {
+    ) -> Result<IndexUpdate<Id>> {
         let path = relative_path.as_ref();
         let entry_path = self.root.join(path);
+
+        let mut result = IndexUpdate {
+            added: HashMap::new(),
+            removed: HashSet::new(),
+        };
 
         // Check if the entry exists in the file system
         if !entry_path.exists() {
@@ -505,16 +523,18 @@ impl<Id: ResourceId> ResourceIndex<Id> {
                 "Caller must ensure that the resource exists in the index: {:?}",
                 path
             );
-            let id = self.path_to_id.remove(path).unwrap();
+            let id = self.path_to_id.remove(path).ok_or_else(
+                || anyhow::anyhow!("Resource with path {} is neither in the index nor in the file system. Make sure the index is up-to-date.", path.display())
+            )?;
             self.id_to_paths
                 .get_mut(&id.item)
-                .unwrap()
+                .expect("Resource ID not found in the ID to paths map")
                 .remove(path);
             // If the ID has no paths, remove it from the ID to paths map
             if self.id_to_paths[&id.item].is_empty() {
                 self.id_to_paths.remove(&id.item);
+                result.removed.insert(id.item);
             }
-
             log::trace!("Resource removed: {:?}", path);
         } else {
             // If the entry exists in the file system, it's an addition or
@@ -534,7 +554,7 @@ impl<Id: ResourceId> ResourceIndex<Id> {
             if let Some(prev_id) = self.path_to_id.get(path) {
                 self.id_to_paths
                     .get_mut(&prev_id.item)
-                    .unwrap()
+                    .expect("Resource ID not found in the ID to paths map")
                     .remove(path);
             }
 
@@ -547,9 +567,16 @@ impl<Id: ResourceId> ResourceIndex<Id> {
                 .or_default()
                 .insert(path.to_path_buf());
 
+            let timpestamped_path = Timestamped {
+                item: path.to_path_buf(),
+                last_modified,
+            };
+            result
+                .added
+                .insert(id, HashSet::from([timpestamped_path]));
             log::trace!("Resource added/updated: {:?}", path);
         }
 
-        Ok(())
+        Ok(result)
     }
 }
