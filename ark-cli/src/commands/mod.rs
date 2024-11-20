@@ -8,6 +8,7 @@ mod list;
 mod monitor;
 mod render;
 pub mod storage;
+mod watch;
 
 pub use file::{file_append, file_insert, format_file, format_line};
 
@@ -18,6 +19,7 @@ pub enum Commands {
     Monitor(monitor::Monitor),
     Render(render::Render),
     List(list::List),
+    Watch(watch::Watch),
     #[command(about = "Manage links")]
     Link {
         #[clap(subcommand)]
