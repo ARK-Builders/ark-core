@@ -810,7 +810,12 @@ fn test_track_removal_with_collision() {
 
         fs::remove_file(&file_path).expect("Failed to remove file");
 
-        index.update_one("file1.txt").expect("Failed to update index");
+        let result = index.update_one("file1.txt").expect("Failed to update index");
+
+        // Assert that `update_one` result is empty
+        // Rational: There is still a file with the same content as file1.txt so the
+        //           resource was not removed.
+        assert_eq!(result.removed().len(), 0, "{:?}", result);
 
         assert_eq!(index.len(), 1, "{:?}", index);
         let resource_by_path = index
@@ -906,5 +911,48 @@ fn test_track_modification_with_collision() {
         // The length of `collisions` should be 1 because file1.txt and file2.txt
         // have the same content.
         assert_eq!(index.collisions().len(), 1, "{:?}", index);
+    });
+}
+
+/// Test for calling `update_one()` on a file that was moved from the root
+/// directory to a subdirectory.
+///
+/// ## Test scenario:
+/// - Create a file within the temporary directory.
+/// - Build a resource index in the temporary directory.
+/// - Move the file to a subdirectory.
+/// - Call `update_one()` 2 times with the relative path of the moved file.
+/// - Assert that the index contains the expected number of entries with the
+///  correct IDs and paths after the move.
+#[test]
+fn test_track_move_to_subdirectory() {
+    for_each_type!(Crc32, Blake3 => {
+        let temp_dir = TempDir::with_prefix("ark_test_track_move_to_subdirectory")
+            .expect("Failed to create temp dir");
+        let root_path = temp_dir.path();
+
+        let file_path = root_path.join("file.txt");
+        fs::write(&file_path, "file content").expect("Failed to write to file");
+        let file_id = Id::from_path(&file_path).expect("Failed to get checksum");
+
+        let mut index: ResourceIndex<Id> =
+            ResourceIndex::build(root_path).expect("Failed to build index");
+
+        let subdirectory_path = root_path.join("subdirectory");
+        fs::create_dir(&subdirectory_path).expect("Failed to create subdirectory");
+
+        let moved_file_path = subdirectory_path.join("file.txt");
+        fs::rename(&file_path, &moved_file_path).expect("Failed to move file");
+
+        // We need to call `update_one()` 2 times because the file was moved to a
+        // subdirectory.
+        index.update_one("file.txt").expect("Failed to update index");
+        index.update_one("subdirectory/file.txt").expect("Failed to update index");
+
+        assert_eq!(index.len(), 1, "{:?}", index);
+        let resource_by_path = index
+            .get_resource_by_path("subdirectory/file.txt")
+            .expect("Failed to get resource");
+        assert_eq!(*resource_by_path.id(), file_id);
     });
 }
