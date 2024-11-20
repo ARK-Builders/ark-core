@@ -1,32 +1,5 @@
 # Ark-CLI
 
-### Installation
-
-To compile you will need openssl libraries and headers:
-
-```shell
-# macOS (Homebrew)
-$ brew install openssl@3
-
-# macOS (MacPorts)
-$ sudo port install openssl
-
-# macOS (pkgsrc)
-$ sudo pkgin install openssl
-
-# Arch Linux
-$ sudo pacman -S pkg-config openssl
-
-# Debian and Ubuntu
-$ sudo apt-get install pkg-config libssl-dev
-
-# Fedora
-$ sudo dnf install pkg-config perl-FindBin openssl-devel
-
-# Alpine Linux
-$ apk add pkgconfig openssl-dev
-```
-
 ### Usage
 
 ```shell
