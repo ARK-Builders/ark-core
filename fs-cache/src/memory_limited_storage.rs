@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::Write;
 use std::time::SystemTime;
@@ -8,8 +7,6 @@ use std::{
 };
 
 use data_error::{ArklibError, Result};
-use fs_storage::base_storage::SyncStatus;
-use fs_storage::monoid::Monoid;
 use linked_hash_map::LinkedHashMap;
 
 pub struct MemoryLimitedStorage<K, V> {
@@ -23,8 +20,6 @@ pub struct MemoryLimitedStorage<K, V> {
     max_memory_items: usize,
     /// Track disk timestamps only
     disk_timestamps: BTreeMap<K, SystemTime>,
-    /// Temporary store for deleted keys until storage is synced
-    deleted_keys: BTreeSet<K>,
 }
 
 impl<K, V> MemoryLimitedStorage<K, V>
@@ -36,7 +31,7 @@ where
         + std::fmt::Display
         + std::hash::Hash
         + std::str::FromStr,
-    V: Clone + serde::Serialize + serde::de::DeserializeOwned + Monoid<V>,
+    V: Clone + serde::Serialize + serde::de::DeserializeOwned,
 {
     pub fn new(
         label: String,
@@ -49,12 +44,15 @@ where
             memory_cache: LinkedHashMap::with_capacity(max_memory_items),
             max_memory_items,
             disk_timestamps: BTreeMap::new(),
-            deleted_keys: BTreeSet::new(),
         };
 
         storage.load_fs()?;
 
         Ok(storage)
+    }
+
+    pub fn label(&self) -> String {
+        self.label.clone()
     }
 
     pub fn load_fs(&mut self) -> Result<()> {
@@ -172,7 +170,7 @@ where
 
         // Try to load from disk
         let file_path = self.path.join(format!("{}.json", key));
-        if file_path.exists() && !self.deleted_keys.contains(key) {
+        if file_path.exists() {
             let value = self.load_value_from_disk(key)?;
             self.add_to_memory_cache(key.clone(), value.clone());
             return Ok(Some(value));
@@ -195,100 +193,8 @@ where
 
         // Then update memory cache
         self.add_to_memory_cache(key.clone(), value);
-        self.deleted_keys.remove(&key);
 
         Ok(())
-    }
-
-    pub fn sync(&mut self) -> Result<()> {
-        // Handle removals
-        for key in self.deleted_keys.iter() {
-            let file_path = self.path.join(format!("{}.json", key));
-            if file_path.exists() {
-                fs::remove_file(&file_path)?;
-                self.disk_timestamps.remove(key);
-            }
-        }
-
-        // Collect and sort all entries by timestamp
-        let mut entries = Vec::new();
-        for entry in fs::read_dir(&self.path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file()
-                && path
-                    .extension()
-                    .map_or(false, |ext| ext == "json")
-            {
-                if let Ok(metadata) = fs::metadata(&path) {
-                    if let Ok(modified) = metadata.modified() {
-                        let key =
-                            extract_key_from_file_path(&self.label, &path)?;
-                        if !self.deleted_keys.contains(&key) {
-                            entries.push((key, modified, path));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sort by timestamp, newest first
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Clear current cache and rebuild with most recent entries
-        self.memory_cache.clear();
-
-        // Take most recent entries up to max_memory_items
-        for (key, timestamp, _) in entries.iter().take(self.max_memory_items) {
-            if let Ok(value) = self.load_value_from_disk(key) {
-                self.memory_cache.insert(key.clone(), value);
-                self.disk_timestamps
-                    .insert(key.clone(), *timestamp);
-            }
-        }
-
-        // Track remaining timestamps without loading values
-        for (key, timestamp, _) in entries.iter().skip(self.max_memory_items) {
-            self.disk_timestamps
-                .insert(key.clone(), *timestamp);
-        }
-
-        self.deleted_keys.clear();
-        Ok(())
-    }
-
-    pub fn sync_status(&self) -> Result<SyncStatus> {
-        // Since we write-through on set(), the only thing that can make storage stale
-        // is pending deletions
-        let ram_newer = !self.deleted_keys.is_empty();
-
-        // Check for new files on disk that we don't know about
-        let mut disk_newer = false;
-        for entry in fs::read_dir(&self.path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file()
-                && path
-                    .extension()
-                    .map_or(false, |ext| ext == "json")
-            {
-                let key = extract_key_from_file_path(&self.label, &path)?;
-                if !self.memory_cache.contains_key(&key)
-                    && !self.disk_timestamps.contains_key(&key)
-                    && !self.deleted_keys.contains(&key)
-                {
-                    disk_newer = true;
-                    break;
-                }
-            }
-        }
-
-        Ok(match (ram_newer, disk_newer) {
-            (false, false) => SyncStatus::InSync,
-            (true, false) => SyncStatus::StorageStale,
-            (false, true) => SyncStatus::MappingStale,
-            (true, true) => SyncStatus::Diverge,
-        })
     }
 }
 
