@@ -32,18 +32,28 @@ where
         })
     }
 
-    pub fn get(&mut self, key: &K) -> Result<Option<V>> {
-        let result = self.storage.get(key)?;
+    pub fn get(&mut self, key: &K) -> Option<V> {
+        let result = self.storage.get(key);
         log::debug!(
             "{} cache: get key={} -> found={}",
             self.storage.label(),
             key,
             result.is_some()
         );
-        Ok(result)
+        result
     }
 
     pub fn set(&mut self, key: K, value: V) -> Result<()> {
+        // Check if value already exists
+        if self.storage.get(&key).is_some() {
+            log::debug!(
+                "{} cache: skip setting existing key={}",
+                self.storage.label(),
+                key
+            );
+            return Ok(());
+        }
+
         log::debug!("{} cache: set key={}", self.storage.label(), key);
         self.storage.set(key, value)
     }

@@ -1,10 +1,7 @@
 use std::fs::{self, File};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
 
 use data_error::{ArklibError, Result};
 use linked_hash_map::LinkedHashMap;
@@ -16,10 +13,10 @@ pub struct MemoryLimitedStorage<K, V> {
     path: PathBuf,
     /// In-memory LRU cache combining map and queue functionality
     memory_cache: LinkedHashMap<K, V>,
-    /// Maximum number of items to keep in memory
-    max_memory_items: usize,
-    /// Track disk timestamps only
-    disk_timestamps: BTreeMap<K, SystemTime>,
+    // Bytes present in memory
+    current_memory_bytes: usize,
+    /// Maximum bytes to keep in memory
+    max_memory_bytes: usize,
 }
 
 impl<K, V> MemoryLimitedStorage<K, V>
@@ -36,14 +33,14 @@ where
     pub fn new(
         label: String,
         path: &Path,
-        max_memory_items: usize,
+        max_memory_bytes: usize,
     ) -> Result<Self> {
         let mut storage = Self {
             label,
             path: PathBuf::from(path),
-            memory_cache: LinkedHashMap::with_capacity(max_memory_items),
-            max_memory_items,
-            disk_timestamps: BTreeMap::new(),
+            memory_cache: LinkedHashMap::new(),
+            current_memory_bytes: 0,
+            max_memory_bytes,
         };
 
         storage.load_fs()?;
@@ -53,6 +50,46 @@ where
 
     pub fn label(&self) -> String {
         self.label.clone()
+    }
+
+    pub fn get(&mut self, key: &K) -> Option<V> {
+        // Check memory cache first - will update LRU order automatically
+        if let Some(value) = self.memory_cache.get_refresh(key) {
+            return Some(value.clone());
+        }
+
+        // Try to load from disk
+        let file_path = self.path.join(format!("{}.json", key));
+        if file_path.exists() {
+            // Doubt: Update file's modiied time (in disk) on read to preserve LRU across app restarts?
+            match self.load_value_from_disk(key) {
+                Ok(value) => {
+                    self.add_to_memory_cache(key.clone(), value.clone());
+                    Some(value)
+                }
+                Err(err) => {
+                    log::error!(
+                        "{} cache: failed to load key={}: {}",
+                        self.label,
+                        key,
+                        err
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn set(&mut self, key: K, value: V) -> Result<()> {
+        // Always write to disk first
+        self.write_value_to_disk(&key, &value)?;
+
+        // Then update memory cache
+        self.add_to_memory_cache(key, value);
+
+        Ok(())
     }
 
     pub fn load_fs(&mut self) -> Result<()> {
@@ -70,8 +107,8 @@ where
             ));
         }
 
-        // Collect all files with their timestamps
-        let mut entries = Vec::new();
+        // First pass: collect metadata only
+        let mut file_metadata = Vec::new();
         for entry in fs::read_dir(&self.path)? {
             let entry = entry?;
             let path = entry.path();
@@ -81,55 +118,65 @@ where
                     .map_or(false, |ext| ext == "json")
             {
                 if let Ok(metadata) = fs::metadata(&path) {
-                    if let Ok(modified) = metadata.modified() {
-                        let key: K =
-                            extract_key_from_file_path(&self.label, &path)?;
-                        entries.push((key, modified, path));
-                    }
+                    let key = extract_key_from_file_path(&self.label, &path)?;
+                    file_metadata.push((key, metadata.len() as usize));
                 }
             }
         }
 
-        // Sort by timestamp, newest first
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        // Sort by timestamp (newest first) before loading any values
+        file_metadata.sort_by(|a, b| b.1.cmp(&a.1));
 
-        // Clear current cache and timestamps
+        // Clear existing cache
         self.memory_cache.clear();
-        self.disk_timestamps.clear();
+        self.current_memory_bytes = 0;
 
-        // Load only up to max_memory_items, newest first
-        for (key, timestamp, path) in entries.iter().take(self.max_memory_items)
-        {
-            match File::open(path) {
-                Ok(file) => {
-                    if let Ok(value) = serde_json::from_reader(file) {
-                        self.memory_cache.insert(key.clone(), value);
+        // TODO: Need some work here
+        // Second pass: load only the values that will fit in memory
+        let mut loaded_bytes = 0;
+        let mut total_bytes = 0;
+
+        for (key, approx_size) in file_metadata {
+            total_bytes += approx_size;
+
+            // Only load value if it will likely fit in memory
+            if loaded_bytes + approx_size <= self.max_memory_bytes {
+                match self.load_value_from_disk(&key) {
+                    Ok(value) => {
+                        let actual_size = Self::estimate_size(&value);
+                        if loaded_bytes + actual_size <= self.max_memory_bytes {
+                            self.memory_cache.insert(key, value);
+                            loaded_bytes += actual_size;
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "{} cache: failed to load key={}: {}",
+                            self.label,
+                            key,
+                            err
+                        );
                     }
                 }
-                Err(err) => {
-                    log::warn!("Failed to read file for key {}: {}", key, err);
-                    continue;
-                }
             }
-            self.disk_timestamps
-                .insert(key.clone(), *timestamp);
         }
 
-        // TODO: WHY?: Later used in sync-status to detect is it recently externally modified or not
-        // Add remaining timestamps to disk_timestamps without loading values
-        for (key, timestamp, _) in entries.iter().skip(self.max_memory_items) {
-            self.disk_timestamps
-                .insert(key.clone(), *timestamp);
-        }
+        self.current_memory_bytes = loaded_bytes;
 
-        log::info!(
-            "{} loaded {} items in memory, {} total on disk",
+        log::debug!(
+            "{} loaded {}/{} bytes in memory",
             self.label,
-            self.memory_cache.len(),
-            self.disk_timestamps.len()
+            self.current_memory_bytes,
+            total_bytes
         );
 
         Ok(())
+    }
+
+    fn estimate_size(value: &V) -> usize {
+        serde_json::to_vec(value)
+            .map(|v| v.len())
+            .unwrap_or(0)
     }
 
     // Write a single value to disk
@@ -142,9 +189,6 @@ where
         let new_timestamp = SystemTime::now();
         file.set_modified(new_timestamp)?;
         file.sync_all()?;
-
-        self.disk_timestamps
-            .insert(key.clone(), new_timestamp);
 
         Ok(())
     }
@@ -162,39 +206,42 @@ where
         Ok(value)
     }
 
-    pub fn get(&mut self, key: &K) -> Result<Option<V>> {
-        // Check memory cache first - will update LRU order automatically
-        if let Some(value) = self.memory_cache.get_refresh(key) {
-            return Ok(Some(value.clone()));
-        }
-
-        // Try to load from disk
-        let file_path = self.path.join(format!("{}.json", key));
-        if file_path.exists() {
-            let value = self.load_value_from_disk(key)?;
-            self.add_to_memory_cache(key.clone(), value.clone());
-            return Ok(Some(value));
-        }
-
-        Ok(None)
-    }
-
     fn add_to_memory_cache(&mut self, key: K, value: V) {
-        // If at capacity, LinkedHashMap will remove oldest entry automatically
-        if self.memory_cache.len() >= self.max_memory_items {
-            self.memory_cache.pop_front(); // Removes least recently used
+        let value_size = Self::estimate_size(&value);
+
+        // If single value is larger than total limit, just skip memory caching
+        if value_size > self.max_memory_bytes {
+            log::debug!(
+                "{} cache: value size {} exceeds limit {}",
+                self.label,
+                value_size,
+                self.max_memory_bytes
+            );
+            return;
         }
+
+        // Remove oldest entries until we have space for new value
+        while self.current_memory_bytes + value_size > self.max_memory_bytes
+            && !self.memory_cache.is_empty()
+        {
+            if let Some((_, old_value)) = self.memory_cache.pop_front() {
+                self.current_memory_bytes = self
+                    .current_memory_bytes
+                    .saturating_sub(Self::estimate_size(&old_value));
+            }
+        }
+
+        // Add new value and update size
         self.memory_cache.insert(key, value);
-    }
+        self.current_memory_bytes += value_size;
 
-    pub fn set(&mut self, key: K, value: V) -> Result<()> {
-        // Always write to disk first
-        self.write_value_to_disk(&key, &value)?;
-
-        // Then update memory cache
-        self.add_to_memory_cache(key.clone(), value);
-
-        Ok(())
+        log::debug!(
+            "{} cache: added {} bytes, total {}/{}",
+            self.label,
+            value_size,
+            self.current_memory_bytes,
+            self.max_memory_bytes
+        );
     }
 }
 
