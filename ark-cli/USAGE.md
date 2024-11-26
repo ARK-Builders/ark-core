@@ -136,6 +136,16 @@ $ /tmp/ark-cli list -t --filter=search
 22-207093268  search,engine
 ```
 
+### Watch a Directory for Changes
+
+You can watch a directory for changes and automatically update the index by running the following command:
+
+```sh
+ark-cli watch [PATH]
+```
+
+If you don't provide a path, the current directory (`.`) will be used by default. This command continuously monitors the specified directory for file changes (create, modify, or remove) and updates the index accordingly. It's useful for keeping your index in sync with the latest changes in the folder.
+
 ## :zap: Low-level utilities :zap:
 
 There are commands which could be useful with time, when you grasp the basic concepts. Some of these commands also can be useful for debugging [ArkLib](https://github.com/ARK-Builders/ark-rust).

@@ -179,10 +179,9 @@ pub fn translate_storage(
     root: &Option<PathBuf>,
     storage: &str,
 ) -> Option<(PathBuf, Option<StorageType>)> {
-    if let Ok(path) = PathBuf::from_str(storage) {
-        if path.exists() && path.is_dir() {
-            return Some((path, None));
-        }
+    let Ok(path) = PathBuf::from_str(storage);
+    if path.exists() && path.is_dir() {
+        return Some((path, None));
     }
 
     match storage.to_lowercase().as_str() {
