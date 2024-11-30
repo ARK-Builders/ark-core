@@ -6,7 +6,7 @@ pub mod folder_storage;
 pub mod jni;
 pub mod monoid;
 
-mod utils;
+pub mod utils;
 pub const ARK_FOLDER: &str = ".ark";
 
 // Should not be lost if possible

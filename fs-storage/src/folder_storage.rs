@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File};
-use std::io::Write;
 use std::time::SystemTime;
 use std::{
     collections::BTreeMap,
@@ -9,6 +8,7 @@ use std::{
 
 use crate::base_storage::{BaseStorage, SyncStatus};
 use crate::monoid::Monoid;
+use crate::utils::{extract_key_from_file_path, write_json_file};
 use data_error::{ArklibError, Result};
 
 /// Represents a folder storage system that persists data to disk.
@@ -92,7 +92,8 @@ where
                     .extension()
                     .map_or(false, |ext| ext == "json")
             {
-                let key: K = extract_key_from_file_path(&self.label, &path)?;
+                let key: K =
+                    extract_key_from_file_path(&self.label, &path, false)?;
                 let file = File::open(&path)?;
                 let value: V =
                     serde_json::from_reader(file).map_err(|err| {
@@ -280,7 +281,8 @@ where
                         .extension()
                         .map_or(false, |ext| ext == "json")
                 {
-                    let key = extract_key_from_file_path(&self.label, &path)?;
+                    let key =
+                        extract_key_from_file_path(&self.label, &path, false)?;
                     if !self.data.contains_key(&key)
                         && !self.deleted_keys.contains(&key)
                     {
@@ -348,13 +350,9 @@ where
 
         for (key, value) in &self.data {
             let file_path = self.path.join(format!("{}.json", key));
-            let mut file = File::create(&file_path)?;
-            file.write_all(serde_json::to_string_pretty(&value)?.as_bytes())?;
-            file.flush()?;
 
             let new_timestamp = SystemTime::now();
-            file.set_modified(new_timestamp)?;
-            file.sync_all()?;
+            write_json_file(&file_path, &value, new_timestamp)?;
 
             self.timestamps
                 .insert(key.clone(), (new_timestamp, new_timestamp));
@@ -412,33 +410,6 @@ where
         }
         Ok(())
     }
-}
-
-fn extract_key_from_file_path<K>(label: &str, path: &Path) -> Result<K>
-where
-    K: std::str::FromStr,
-{
-    path.file_stem()
-        .ok_or_else(|| {
-            ArklibError::Storage(
-                label.to_owned(),
-                "Failed to extract file stem from filename".to_owned(),
-            )
-        })?
-        .to_str()
-        .ok_or_else(|| {
-            ArklibError::Storage(
-                label.to_owned(),
-                "Failed to convert file stem to string".to_owned(),
-            )
-        })?
-        .parse::<K>()
-        .map_err(|_| {
-            ArklibError::Storage(
-                label.to_owned(),
-                "Failed to parse key from filename".to_owned(),
-            )
-        })
 }
 
 #[cfg(test)]
