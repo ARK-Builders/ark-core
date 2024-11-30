@@ -51,8 +51,7 @@ jobs:
       - name: Create JNI libs release
         uses: ncipollo/release-action@v1
         with:
-          allowUpdates: true
-          artifacts: "./target/release/fs-storage/jniLibs"
+          artifacts: "./target/release/fs-storage/jniLibs/**"
 
       - name: Publish Java release
         run: gradle publish
