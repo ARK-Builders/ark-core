@@ -37,7 +37,12 @@ pub struct Cache<K, V> {
 
 impl<K, V> Cache<K, V>
 where
-    K: Ord + Clone + std::fmt::Display + std::hash::Hash + std::str::FromStr,
+    K: Ord
+        + Clone
+        + std::fmt::Display
+        + std::hash::Hash
+        + std::str::FromStr
+        + std::fmt::Debug,
     V: Clone + std::fmt::Debug + AsRef<[u8]> + From<Vec<u8>>,
 {
     /// Creates a new cache instance.
@@ -144,7 +149,7 @@ where
             .filter_map(|entry| {
                 let path = entry.path();
                 if path.is_file() {
-                    extract_key_from_file_path(&self.label, &path, false).ok()
+                    extract_key_from_file_path(&self.label, &path, true).ok()
                 } else {
                     None
                 }
@@ -170,19 +175,23 @@ where
             ));
         }
 
-        // First pass: collect metadata only
+        // Collect metadata for all files
         let mut file_metadata = Vec::new();
         for entry in fs::read_dir(&self.path)? {
-            let path = entry?.path();
+            let entry = entry?;
+            let path = entry.path();
             if path.is_file() {
                 let key: K =
                     extract_key_from_file_path(&self.label, &path, true)?;
-                file_metadata.push((key.clone(), self.get_file_size(&key)?));
+                let metadata = entry.metadata()?;
+                let modified = metadata.modified()?;
+                let size = metadata.len() as usize;
+                file_metadata.push((key, size, modified));
             }
         }
 
-        // Sort by size before loading
-        file_metadata.sort_by(|a, b| b.1.cmp(&a.1));
+        // Sort by modified time (most recent first)
+        file_metadata.sort_by(|a, b| b.2.cmp(&a.2));
 
         // Clear existing cache
         self.memory_cache.clear();
@@ -190,25 +199,18 @@ where
 
         // Load files that fit in memory
         let mut loaded_bytes = 0;
-        let total_bytes: usize =
-            file_metadata.iter().map(|(_, size)| size).sum();
+        let total_bytes: usize = file_metadata
+            .iter()
+            .map(|(_, size, _)| size)
+            .sum();
 
-        for (key, approx_size) in file_metadata {
-            if loaded_bytes + approx_size <= self.max_memory_bytes {
+        for (key, size, _) in file_metadata {
+            if loaded_bytes + size <= self.max_memory_bytes {
                 match self.read_from_disk(&key) {
                     Ok(value) => {
-                        // let actual_size = Self::estimate_size(&value);
-                        let actual_size = self.get_file_size(&key)?;
-                        if loaded_bytes + actual_size <= self.max_memory_bytes {
-                            self.memory_cache.put(
-                                key,
-                                CacheEntry {
-                                    value,
-                                    size: actual_size,
-                                },
-                            );
-                            loaded_bytes += actual_size;
-                        }
+                        self.memory_cache
+                            .put(key, CacheEntry { value, size });
+                        loaded_bytes += size;
                     }
                     Err(err) => {
                         log::warn!(
@@ -310,19 +312,7 @@ where
     // First checks the memory cache for size information to avoid disk access.
     // Falls back to checking the file size on disk if not found in memory.
     fn get_file_size(&self, key: &K) -> Result<usize> {
-        if let Some(entry) = self.memory_cache.peek(key) {
-            return Ok(entry.size);
-        }
-
-        let file_path = self.path.join(key.to_string());
-        fs::metadata(&file_path)
-            .map(|m| m.len() as usize)
-            .map_err(|err| {
-                ArklibError::Storage(
-                    self.label.clone(),
-                    format!("Failed to get size for key {}: {}", key, err),
-                )
-            })
+        Ok(fs::metadata(self.path.join(key.to_string()))?.len() as usize)
     }
 
     // Adds or updates a value in the memory cache, evicting old entries if needed.
@@ -383,7 +373,11 @@ where
 mod tests {
     use super::*;
     use rstest::{fixture, rstest};
-    use std::fs;
+    use std::{
+        fs::File,
+        io::Write,
+        time::{Duration, SystemTime},
+    };
     use tempdir::TempDir;
 
     // Helper struct that implements required traits
@@ -609,23 +603,43 @@ mod tests {
     }
 
     #[rstest]
-    fn test_load_fs(temp_dir: TempDir) {
-        let path = temp_dir.path();
+    fn test_loads_recent_files_first(temp_dir: TempDir) {
+        let mut cache: Cache<String, TestValue> = Cache::new(
+            "test".to_string(),
+            temp_dir.path(),
+            4, // Small limit to force selection
+            false,
+        )
+        .expect("Failed to create cache");
 
-        // Manually create some files
-        fs::write(path.join("key1"), vec![1, 2, 3])
-            .expect("Failed to write file 1");
-        fs::write(path.join("key2"), vec![4, 5, 6])
-            .expect("Failed to write file 2");
+        // Create files with different timestamps
+        let files = vec![
+            (
+                "old.txt",
+                vec![1, 2, 3],
+                SystemTime::now() - Duration::from_secs(100),
+            ),
+            ("new.txt", vec![3, 4], SystemTime::now()),
+        ];
 
-        // Create new cache instance to load existing files
-        let mut cache2: Cache<String, TestValue> =
-            Cache::new("test".to_string(), path, 1024, false)
-                .expect("Failed to create cache");
+        for (name, data, time) in files {
+            let path = temp_dir.path().join(name);
+            let mut file = File::create(path).unwrap();
+            file.write_all(&data).unwrap();
+            file.set_modified(time).unwrap();
+            file.sync_all().unwrap();
+        }
 
-        // Check if files were loaded
-        assert!(cache2.get(&"key1".to_string()).is_some());
-        assert!(cache2.get(&"key2".to_string()).is_some());
+        // Reload cache
+        cache.load_fs().expect("Failed to load files");
+
+        // Verify newer file is in memory
+        assert!(cache
+            .memory_cache
+            .contains(&"new.txt".to_string()));
+        assert!(!cache
+            .memory_cache
+            .contains(&"old.txt".to_string()));
     }
 
     #[rstest]
