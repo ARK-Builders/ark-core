@@ -28,18 +28,19 @@ The core crate is `fs-index` which provides us with [content addressing](https:/
 
 <div align="center">
 
-| Package         | Description                              |
-| --------------- | ---------------------------------------- |
-| `ark-cli`       | The CLI tool to interact with ark crates |
-| `data-resource` | Resource hashing and ID construction     |
-| `fs-index`      | Resource Index construction and updating |
-| `fs-storage`    | Filesystem storage for resources         |
-| `fs-metadata`   | Metadata management                      |
-| `fs-properties` | Properties management                    |
-| `data-link`     | Linking resources                        |
-| `data-pdf`      | PDF handling                             |
-| `data-error`    | Error handling                           |
-| `data-json`     | JSON serialization and deserialization   |
+| Package         | Description                               |
+| --------------- | ----------------------------------------  |
+| `ark-cli`       | The CLI tool to interact with ark crates  |
+| `data-resource` | Resource hashing and ID construction      |
+| `fs-cache`      | Memory and disk caching with LRU eviction |
+| `fs-index`      | Resource Index construction and updating  |
+| `fs-storage`    | Filesystem storage for resources          |
+| `fs-metadata`   | Metadata management                       |
+| `fs-properties` | Properties management                     |
+| `data-link`     | Linking resources                         |
+| `data-pdf`      | PDF handling                              |
+| `data-error`    | Error handling                            |
+| `data-json`     | JSON serialization and deserialization    |
 
 </div>
 

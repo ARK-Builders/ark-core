@@ -1,5 +1,7 @@
-use data_error::Result;
-use std::{collections::BTreeMap, path::Path};
+use data_error::{ArklibError, Result};
+use serde::Serialize;
+use std::io::Write;
+use std::{collections::BTreeMap, fs::File, path::Path, time::SystemTime};
 
 /// Parses version 2 `FileStorage` format and returns the data as a BTreeMap
 ///
@@ -49,6 +51,56 @@ where
     }
 
     Ok(data)
+}
+
+/// Writes a serializable value to a file and returns the timestamp of the write
+pub fn write_json_file<T: Serialize>(
+    path: &Path,
+    value: &T,
+    time: SystemTime,
+) -> Result<()> {
+    let mut file = File::create(path)?;
+    file.write_all(serde_json::to_string_pretty(value)?.as_bytes())?;
+    file.flush()?;
+
+    file.set_modified(time)?;
+    file.sync_all()?;
+
+    Ok(())
+}
+
+pub fn extract_key_from_file_path<K>(
+    label: &str,
+    path: &Path,
+    include_extension: bool,
+) -> Result<K>
+where
+    K: std::str::FromStr,
+{
+    match include_extension {
+        true => path.file_name(), // ("tmp/foo.txt").file_name() -> ("foo.txt")
+        false => path.file_stem(), // ("tmp/foo.txt").file_stem() -> ("foo")
+    }
+    .ok_or_else(|| {
+        ArklibError::Storage(
+            label.to_owned(),
+            "Failed to extract file stem from filename".to_owned(),
+        )
+    })?
+    .to_str()
+    .ok_or_else(|| {
+        ArklibError::Storage(
+            label.to_owned(),
+            "Failed to convert file stem to string".to_owned(),
+        )
+    })?
+    .parse::<K>()
+    .map_err(|_| {
+        ArklibError::Storage(
+            label.to_owned(),
+            "Failed to parse key from filename".to_owned(),
+        )
+    })
 }
 
 #[cfg(test)]

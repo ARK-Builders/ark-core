@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
-    io::Write,
+    fs,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -10,7 +9,7 @@ use std::{
 use crate::{
     base_storage::{BaseStorage, SyncStatus},
     monoid::Monoid,
-    utils::read_version_2_fs,
+    utils::{read_version_2_fs, write_json_file},
 };
 use data_error::{ArklibError, Result};
 
@@ -262,13 +261,9 @@ where
             )
         })?;
         fs::create_dir_all(parent_dir)?;
-        let mut file = File::create(&self.path)?;
-        file.write_all(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
-        file.flush()?;
 
         let new_timestamp = SystemTime::now();
-        file.set_modified(new_timestamp)?;
-        file.sync_all()?;
+        write_json_file(&self.path, &self.data, new_timestamp)?;
 
         self.modified = new_timestamp;
         self.written_to_disk = new_timestamp;
