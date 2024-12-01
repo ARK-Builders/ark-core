@@ -159,7 +159,12 @@ where
         Ok(keys.into_iter())
     }
 
-    // Internal Methods:
+    /// Internal Methods:
+    /// Initializes the memory cache by loading the most recently modified files up to the memory limit.
+    ///
+    /// First collects metadata for all files, sorts them by modification time, and then loads as many
+    /// recent files as possible within the memory limit. Files that don't fit in memory remain only
+    /// on disk.
     fn load_fs(&mut self) -> Result<()> {
         if !self.path.exists() {
             return Err(ArklibError::Storage(
@@ -236,14 +241,14 @@ where
         Ok(())
     }
 
-    // Retrieves a value from the memory cache.
+    /// Retrieves a value from the memory cache.
     fn fetch_from_memory(&mut self, key: &K) -> Option<V> {
         self.memory_cache
             .get(key)
             .map(|entry| entry.value.clone())
     }
 
-    // Retrieves a value from disk and caches it in memory if possible.
+    /// Retrieves a value from disk and caches it in memory if possible.
     fn fetch_from_disk(&mut self, key: &K) -> Option<V> {
         let file_path = self.path.join(key.to_string());
         if !file_path.exists() {
@@ -276,7 +281,7 @@ where
         }
     }
 
-    // Writes a value to disk using atomic operations.
+    /// Writes a value to disk using atomic operations.
     fn persist_to_disk(&mut self, key: &K, value: &V) -> Result<()> {
         log::debug!("cache/{}: writing to disk for key {}", self.label, key);
         fs::create_dir_all(&self.path)?;
@@ -297,7 +302,7 @@ where
             })
     }
 
-    // Reads a value from disk.
+    /// Reads a value from disk.
     fn read_from_disk(&self, key: &K) -> Result<V>
     where
         V: From<Vec<u8>>, // Add trait bound for reading binary data
@@ -307,16 +312,16 @@ where
         Ok(V::from(contents))
     }
 
-    // Returns the size of a value in bytes.
-    //
-    // First checks the memory cache for size information to avoid disk access.
-    // Falls back to checking the file size on disk if not found in memory.
+    /// Returns the size of a value in bytes.
+    ///
+    /// First checks the memory cache for size information to avoid disk access.
+    /// Falls back to checking the file size on disk if not found in memory.
     fn get_file_size(&self, key: &K) -> Result<usize> {
         Ok(fs::metadata(self.path.join(key.to_string()))?.len() as usize)
     }
 
-    // Adds or updates a value in the memory cache, evicting old entries if needed.
-    // Returns error if value is larger than maximum memory limit.
+    /// Adds or updates a value in the memory cache, evicting old entries if needed.
+    /// Returns error if value is larger than maximum memory limit.
     fn update_memory_cache(&mut self, key: &K, value: &V) -> Result<()> {
         log::debug!("cache/{}: caching in memory for key {}", self.label, key);
         let size = self.get_file_size(key)?;
