@@ -480,25 +480,24 @@ mod tests {
 
     #[rstest]
     fn test_memory_eviction(temp_dir: TempDir) {
-        // Create cache with small memory limit
         let mut cache = Cache::new(
             "test".to_string(),
             temp_dir.path(),
-            5, // Very small limit to force eviction
+            8, // Very small limit to force eviction
             false,
         )
         .expect("Failed to create cache");
 
         // Add first value
-        let key1 = "key1".to_string();
-        let value1 = TestValue(vec![1, 2, 3, 4]);
+        let key1 = "key1.txt".to_string();
+        let value1 = TestValue(vec![1, 2, 3, 4, 5, 7]);
         cache
             .set(key1.clone(), value1.clone())
             .expect("Failed to set value1");
 
         // Add second value to trigger eviction
-        let key2 = "key2".to_string();
-        let value2 = TestValue(vec![5, 6, 7, 8]);
+        let key2 = "key2.json".to_string();
+        let value2 = TestValue(vec![5, 6, 8]);
         cache
             .set(key2.clone(), value2.clone())
             .expect("Failed to set value2");
