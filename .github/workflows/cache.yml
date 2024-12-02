@@ -1,12 +1,12 @@
-name: Weekly testing
+name: Cache build
 
 on:
   push:
     branches:
       - main
-  schedule:
-    # Run each week
-    - cron: "0 0 * * 0"
+  pull_request:
+    branches:
+      - main
 
 jobs:
   linux:
