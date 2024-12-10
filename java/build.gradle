@@ -1,0 +1,21 @@
+buildscript {
+    repositories {
+        google()
+        maven { url "https://plugins.gradle.org/m2/" }
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath libs.gradle
+        classpath libs.rust.android
+        classpath libs.axion.release.plugin
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        gradlePluginPortal()
+        maven { url "https://jitpack.io"}
+        maven { url "https://plugins.gradle.org/m2/" }
+    }
+}
