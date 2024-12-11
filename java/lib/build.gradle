@@ -6,17 +6,11 @@ apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 android {
     ndkVersion "28.0.12433566"
     namespace "dev.arkbuilders.core"
-
     defaultConfig {
+        compileSdk 35
         minSdkVersion 26
         targetSdkVersion 35
     }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
     publishing {
         singleVariant('release') {
             withSourcesJar()
@@ -29,30 +23,14 @@ android {
 
 cargo {
     libname = "fs_storage"
-    module = "../fs-storage"
+    module = "../../fs-storage"
     prebuiltToolchains = true
+    targetDirectory = "../../target"
     targets = ["arm64", "x86", "x86_64", "arm"]
     profile = gradle.startParameter.taskNames.any { it.toLowerCase().contains("debug") } ? "debug" : "release"
 }
 
-dependencies {
-    implementation fileTree(dir: "libs", include: ["*.jar"])
-
-    implementation 'androidx.core:core-ktx:1.15.0'
-    implementation 'org.apache.tika:tika-core:2.4.0'
-    implementation "com.google.dagger:dagger:2.50"
-    implementation 'com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0'
-    implementation 'com.github.wseemann:FFmpegMediaMetadataRetriever:1.0.14'
-
-    def coilVersion = "2.4.0"
-    implementation "io.coil-kt:coil:$coilVersion"
-    implementation "io.coil-kt:coil-gif:$coilVersion"
-    implementation "io.coil-kt:coil-svg:$coilVersion"
-    implementation "io.coil-kt:coil-video:$coilVersion"
-
-    testImplementation "junit:junit:4.13.2"
-    testImplementation "io.mockk:mockk:1.13.7"
-}
+dependencies {}
 
 tasks.configureEach { task ->
     if ((task.name == 'mergeDebugJniLibFolders' || task.name == 'mergeReleaseJniLibFolders')) {
@@ -61,7 +39,6 @@ tasks.configureEach { task ->
 }
 
 def libVersion = scmVersion.version
-
 publishing {
     publications {
         release(MavenPublication) {
@@ -81,7 +58,6 @@ publishing {
             }
         }
     }
-
     repositories {
         maven {
             name = "GithubPackages"
@@ -91,6 +67,5 @@ publishing {
                 password = System.getenv("GITHUB_TOKEN")
             }
         }
-
     }
 }

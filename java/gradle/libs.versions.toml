@@ -1,5 +1,5 @@
 [versions]
-gradle = "8.1.4"
+gradle = "8.7.3"
 rustAndroid = "0.9.4"
 axionReleasePlugin = "1.17.0"
 
