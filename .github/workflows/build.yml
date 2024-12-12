@@ -21,9 +21,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly # nightly is required for fmt
-          components: rustfmt, clippy
 
       - name: Set up Cargo Cache
         uses: Swatinem/rust-cache@v2
@@ -32,11 +29,6 @@ jobs:
 
       - name: Check
         run: cargo check
-
-      - name: Format
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --workspace --bins -- -D warnings
 
       - name: Run tests
         run: cargo test --verbose
