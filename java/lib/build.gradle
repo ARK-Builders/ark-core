@@ -4,8 +4,8 @@ apply plugin: 'pl.allegro.tech.build.axion-release'
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 android {
-    ndkVersion "28.0.12433566"
-    namespace "dev.arkbuilders.core"
+    ndkVersion '28.0.12433566'
+    namespace 'dev.arkbuilders.core'
     defaultConfig {
         compileSdk 35
         minSdkVersion 26
@@ -22,18 +22,42 @@ android {
 }
 
 cargo {
-    libname = "fs_storage"
-    module = "../../fs-storage"
+    libname = 'fs_storage'
+    module = '../../fs-storage'
     prebuiltToolchains = true
-    targetDirectory = "../../target"
-    targets = ["arm64", "x86", "x86_64", "arm"]
-    profile = gradle.startParameter.taskNames.any { it.toLowerCase().contains("debug") } ? "debug" : "release"
+    targetDirectory = '../../target'
+    targets = ['arm64', 'x86', 'x86_64', 'arm']
+    profile = gradle.startParameter.taskNames.any { it.containsIgnoreCase('debug') } ? 'debug' : 'release'
 }
 
-dependencies {}
+dependencies {
+    testImplementation(libs.junit.jupiter.api)
+    testImplementation(libs.junit.jupiter.engine)
+}
+
+tasks.register('buildRustDebug', Exec) {
+    workingDir '../../fs-storage'
+    commandLine 'cargo', 'build'
+}
+
+tasks.register('buildRustRelease', Exec) {
+    workingDir '../../fs-storage'
+    commandLine 'cargo', 'build', '--release'
+}
+
+tasks.withType(Test).configureEach { it ->
+    useJUnitPlatform()
+    if (it.name.containsIgnoreCase('debug')) {
+        it.dependsOn 'buildRustDebug'
+        systemProperty('java.library.path', projectDir.toPath().resolve('../../target/debug').toString())
+    } else if (it.name.containsIgnoreCase('release')) {
+        it.dependsOn 'buildRustRelease'
+        systemProperty('java.library.path', projectDir.toPath().resolve('../../target/release').toString())
+    }
+}
 
 tasks.configureEach { task ->
-    if ((task.name == 'mergeDebugJniLibFolders' || task.name == 'mergeReleaseJniLibFolders')) {
+    if (task.name == 'mergeDebugJniLibFolders' || task.name == 'mergeReleaseJniLibFolders') {
         task.dependsOn 'cargoBuild'
     }
 }
@@ -42,16 +66,16 @@ def libVersion = scmVersion.version
 publishing {
     publications {
         release(MavenPublication) {
-            groupId = "dev.arkbuilders"
-            artifactId = "core"
+            groupId = 'dev.arkbuilders'
+            artifactId = 'core'
             version = libVersion
             afterEvaluate {
                 from components.release
             }
         }
         debug(MavenPublication) {
-            groupId = "dev.arkbuilders"
-            artifactId = "core-debug"
+            groupId = 'dev.arkbuilders'
+            artifactId = 'core-debug'
             version = libVersion
             afterEvaluate {
                 from components.debug
@@ -60,11 +84,11 @@ publishing {
     }
     repositories {
         maven {
-            name = "GithubPackages"
-            url = "https://maven.pkg.github.com/ARK-Builders/ark-core"
+            name = 'GithubPackages'
+            url = 'https://maven.pkg.github.com/ARK-Builders/ark-core'
             credentials {
-                username = System.getenv("GITHUB_ACTOR")
-                password = System.getenv("GITHUB_TOKEN")
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
             }
         }
     }
