@@ -3,6 +3,9 @@ apply plugin: 'com.android.library'
 apply plugin: 'pl.allegro.tech.build.axion-release'
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
+version = scmVersion.version
+group = "dev.arkbuilders.core"
+
 android {
     ndkVersion '28.0.12433566'
     namespace 'dev.arkbuilders.core'
@@ -62,23 +65,11 @@ tasks.configureEach { task ->
     }
 }
 
-def libVersion = scmVersion.version
 publishing {
     publications {
-        release(MavenPublication) {
-            groupId = 'dev.arkbuilders'
-            artifactId = 'core'
-            version = libVersion
+        Maven(MavenPublication) {
             afterEvaluate {
                 from components.release
-            }
-        }
-        debug(MavenPublication) {
-            groupId = 'dev.arkbuilders'
-            artifactId = 'core-debug'
-            version = libVersion
-            afterEvaluate {
-                from components.debug
             }
         }
     }
