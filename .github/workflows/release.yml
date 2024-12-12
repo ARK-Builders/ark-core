@@ -15,6 +15,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
       - name: Set up Cargo Cache
         uses: Swatinem/rust-cache@v2
@@ -23,9 +25,6 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --verbose
-
-      - name: Build Release
-        run: cargo build --verbose --release
 
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
