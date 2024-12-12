@@ -1,6 +1,5 @@
 apply plugin: 'maven-publish'
 apply plugin: 'com.android.library'
-apply plugin: 'pl.allegro.tech.build.axion-release'
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 android {
@@ -62,13 +61,12 @@ tasks.configureEach { task ->
     }
 }
 
-def libVersion = scmVersion.version
 publishing {
     publications {
         release(MavenPublication) {
-            groupId = 'dev.arkbuilders'
             artifactId = 'core'
-            version = libVersion
+            groupId = 'dev.arkbuilders'
+            version = System.getenv('RELEASE_VERSION')
             afterEvaluate {
                 from components.release
             }

@@ -2,11 +2,9 @@
 gradle = "8.7.3"
 rustAndroid = "0.9.4"
 junitJupiterApi = "5.11.3"
-axionReleasePlugin = "1.17.0"
 
 [libraries]
 gradle = { module = "com.android.tools.build:gradle", version.ref = "gradle" }
 rust-android = { module = "org.mozilla.rust-android-gradle:plugin", version.ref = "rustAndroid" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junitJupiterApi" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junitJupiterApi" }
-axion-release-plugin = { module = "pl.allegro.tech.build:axion-release-plugin", version.ref = "axionReleasePlugin" }

@@ -7,7 +7,6 @@ buildscript {
     dependencies {
         classpath libs.gradle
         classpath libs.rust.android
-        classpath libs.axion.release.plugin
     }
 }
 
