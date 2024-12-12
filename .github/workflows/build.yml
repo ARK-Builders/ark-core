@@ -60,8 +60,7 @@ jobs:
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
-          link-to-sdk: true
+          ndk-version: 28.0.12433566
 
       - name: Java tests
         run: gradle test
@@ -106,8 +105,7 @@ jobs:
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
-          link-to-sdk: true
+          ndk-version: 28.0.12433566
 
       - name: Java tests
         run: gradle test
@@ -152,8 +150,7 @@ jobs:
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
-          link-to-sdk: true
+          ndk-version: 28.0.12433566
 
       - name: Java tests
         run: gradle test
