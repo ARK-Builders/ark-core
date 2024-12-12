@@ -56,6 +56,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Set up NDK
+        uses: nttld/setup-ndk@v1
+          id: setup-ndk
+          with:
+            ndk-version: r26d
+            link-to-sdk: true
+
       - name: Java tests
         run: gradle test
         working-directory: ./java
@@ -93,6 +100,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Set up NDK
+        uses: nttld/setup-ndk@v1
+          id: setup-ndk
+          with:
+            ndk-version: r26d
+            link-to-sdk: true
+
       - name: Java tests
         run: gradle test
         working-directory: ./java
@@ -129,6 +143,13 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
+
+      - name: Set up NDK
+        uses: nttld/setup-ndk@v1
+          id: setup-ndk
+          with:
+            ndk-version: r26d
+            link-to-sdk: true
 
       - name: Java tests
         run: gradle test
