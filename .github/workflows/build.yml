@@ -12,6 +12,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  format:
+    name: Code Formatting Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nightly Rust with rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          components: rustfmt
+
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+
   linux:
     name: Build on Linux
     runs-on: ubuntu-latest
