@@ -50,8 +50,9 @@ jobs:
         working-directory: ./java
 
       - name: Publish Java release
-        run: gradle publish
+        run: |
+          export RELEASE_VERSION=$(echo "${{ github.ref_name }}" | cut -c2-)
+          gradle publish
         working-directory: ./java
         env:
-          RELEASE_VERSION: ${GITHUB_REF_NAME:1}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
