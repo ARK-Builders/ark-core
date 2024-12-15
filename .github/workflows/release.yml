@@ -53,5 +53,5 @@ jobs:
         run: gradle publish
         working-directory: ./java
         env:
-          RELEASE_VERSION: ${{ github.ref_name:1 }}
+          RELEASE_VERSION: ${{ github.ref_name[1] }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
