@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+
+      - name: Run tests
+        run: cargo test --workspace --verbose
+
+      - name: Install JDK
+        uses: actions/setup-java@v4.2.1
+        with:
+          distribution: "temurin"
+          java-version: "22"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          link-to-sdk: true
+          ndk-version: r28-beta2
+
+      - name: Java tests
+        run: gradle test
+        working-directory: ./java
+
+      - name: Publish Java release
+        run: |
+          export RELEASE_VERSION=$(echo "${{ github.ref_name }}" | cut -c2-)
+          gradle publish
+        working-directory: ./java
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
