@@ -3,7 +3,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 android {
-    ndkVersion '28.0.12433566'
+    ndkVersion '28.0.12674087'
     namespace 'dev.arkbuilders.core'
     defaultConfig {
         compileSdk 35

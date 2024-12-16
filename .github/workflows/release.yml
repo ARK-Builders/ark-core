@@ -43,7 +43,7 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           link-to-sdk: true
-          ndk-version: r28-beta1
+          ndk-version: r28-beta2
 
       - name: Java tests
         run: gradle test
