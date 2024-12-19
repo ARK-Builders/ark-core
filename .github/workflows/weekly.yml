@@ -1,4 +1,4 @@
-name: Weekly testing
+name: Weekly Testing
 
 on:
   push:
@@ -9,63 +9,12 @@ on:
     - cron: "0 0 * * 0"
 
 jobs:
-  linux:
-    name: Linux
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up Cargo Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Run tests
-        run: cargo test --workspace --verbose --release
-
-  windows:
-    name: Windows
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up Cargo Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Run tests
-        run: cargo test --workspace --verbose --release
-
-  mac-intel:
-    name: MacOS Intel
-    runs-on: macos-14
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up Cargo Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Run tests
-        run: cargo test --workspace --verbose --release
-
-  mac-arm:
-    name: MacOS ARM
-    runs-on: macos-13-xlarge
+  build-and-test:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14, macos-13-xlarge]
 
     steps:
       - uses: actions/checkout@v4
