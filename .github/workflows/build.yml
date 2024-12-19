@@ -98,3 +98,19 @@ jobs:
       - name: Run Java Tests
         run: gradle test
         working-directory: ./java
+
+  benchmarks:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    needs: java-bindings
+    # We only want to run benchmarks in case of a pull request
+    if: ${{ github.event_name == 'pull_request' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Criterion
+        uses: boa-dev/criterion-compare-action@v3
+        with:
+          branchName: ${{ github.base_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
