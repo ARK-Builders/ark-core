@@ -231,7 +231,7 @@ pub extern "system" fn Java_dev_arkbuilders_core_FileStorage_merge(
     other_file_storage_ptr: jlong,
 ) {
     FileStorage::from_jlong(file_storage_ptr)
-        .merge_from(FileStorage::from_jlong(other_file_storage_ptr))
+        .merge_from(FileStorage::from_jlong(other_file_storage_ptr).as_ref())
         .unwrap_or_else(|err| {
             env.throw_new("java/lang/RuntimeException", err.to_string())
                 .unwrap();

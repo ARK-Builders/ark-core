@@ -226,7 +226,7 @@ where
             SyncStatus::StorageStale => self.write_fs().map(|_| ()),
             SyncStatus::Diverge => {
                 let data = self.load_fs_data()?;
-                self.merge_from(&data)?;
+                self.merge_from(&data.entries)?;
                 self.write_fs()?;
                 Ok(())
             }
@@ -289,12 +289,11 @@ where
     }
 
     /// Merge the data from another storage instance into this storage instance
-    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>
+    fn merge_from(&mut self, other: &BTreeMap<K, V>) -> Result<()>
     where
         V: Monoid<V>,
     {
-        let other_entries = other.as_ref();
-        for (key, value) in other_entries {
+        for (key, value) in other {
             if let Some(existing_value) = self.data.entries.get(key) {
                 let resolved_value = V::combine(existing_value, value);
                 self.set(key.clone(), resolved_value);
@@ -463,7 +462,7 @@ mod tests {
         file_storage_2.set("key3".to_string(), 9);
 
         file_storage_1
-            .merge_from(&file_storage_2)
+            .merge_from(&file_storage_2.data.entries)
             .unwrap();
         assert_eq!(file_storage_1.as_ref().get("key1"), Some(&3));
         assert_eq!(file_storage_1.as_ref().get("key2"), Some(&6));
