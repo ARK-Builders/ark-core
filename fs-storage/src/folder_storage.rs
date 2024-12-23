@@ -391,12 +391,11 @@ where
     }
 
     /// Merge the data from another folder storage instance into this folder storage instance
-    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>
+    fn merge_from(&mut self, other: &BTreeMap<K, V>) -> Result<()>
     where
         V: Monoid<V>,
     {
-        let other_entries = other.as_ref();
-        for (key, value) in other_entries {
+        for (key, value) in other {
             if let Some(existing_value) = self.data.get(key) {
                 let resolved_value = V::combine(existing_value, value);
                 self.set(key.clone(), resolved_value);
@@ -580,7 +579,7 @@ mod tests {
         storage2.set("key1".to_string(), 3);
         storage2.set("key3".to_string(), 9);
 
-        storage1.merge_from(&storage2).unwrap();
+        storage1.merge_from(&storage2.data).unwrap();
         assert_eq!(storage1.as_ref().get("key1"), Some(&3));
         assert_eq!(storage1.as_ref().get("key2"), Some(&6));
         assert_eq!(storage1.as_ref().get("key3"), Some(&9));

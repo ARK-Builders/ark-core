@@ -74,5 +74,5 @@ pub trait BaseStorage<K, V>: AsRef<BTreeMap<K, V>> {
     fn erase(&self) -> Result<()>;
 
     /// Merge values from another key-value mapping.
-    fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>;
+    fn merge_from(&mut self, other: &BTreeMap<K, V>) -> Result<()>;
 }
