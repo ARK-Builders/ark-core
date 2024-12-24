@@ -30,11 +30,11 @@ The core crate is `fs-index` which provides us with [content addressing](https:/
 
 | Package         | Description                               |
 | --------------- | ----------------------------------------  |
-| `ark-cli`       | The CLI tool to interact with ark crates  |
+| `ark-cli`       | The CLI tool to interact with ARK crates  |
 | `data-resource` | Resource hashing and ID construction      |
 | `fs-cache`      | Memory and disk caching with LRU eviction |
 | `fs-index`      | Resource Index construction and updating  |
-| `fs-storage`    | Filesystem storage for resources          |
+| `fs-storage`    | Key-value storage persisted on filesystem |
 | `fs-metadata`   | Metadata management                       |
 | `fs-properties` | Properties management                     |
 | `data-link`     | Linking resources                         |

@@ -17,4 +17,3 @@ lru = "0.12.5"
 
 [dev-dependencies]
 tempdir = "0.3.7"
-rstest = "0.23"
