@@ -83,29 +83,6 @@ where
         Ok(cache)
     }
 
-    /// Validates the provided path.
-    ///
-    /// # Arguments
-    /// * `path` - The path to validate
-    /// * `label` - Identifier used in logs
-    fn validate_path(path: &Path, label: &str) -> Result<()> {
-        if !path.exists() {
-            return Err(ArklibError::Storage(
-                label.to_owned(),
-                "Folder does not exist".to_owned(),
-            ));
-        }
-
-        if !path.is_dir() {
-            return Err(ArklibError::Storage(
-                label.to_owned(),
-                "Path is not a directory".to_owned(),
-            ));
-        }
-
-        Ok(())
-    }
-
     /// Retrieves a value by its key, checking memory first then disk.
     /// Returns None if the key doesn't exist.
     pub fn get(&mut self, key: &K) -> Option<V> {
@@ -161,17 +138,26 @@ where
             || self.path.join(key.to_string()).exists()
     }
 
-    /// Returns an ordered iterator over all cached keys.
+    /// Returns an iterator over all cached keys.
+    /// The keys are returned in filesystem directory order,
+    /// which should not be relied upon for any specific ordering.
     pub fn keys(&self) -> Result<impl Iterator<Item = K>> {
-        let keys: Vec<K> = fs::read_dir(&self.path)?
-            .filter_map(|entry| entry.ok())
-            .filter_map(|entry| {
-                let path = entry.path();
-                if path.is_file() {
-                    extract_key_from_file_path(&self.label, &path, true).ok()
-                } else {
-                    None
+        let entries = fs::read_dir(&self.path).map_err(|e| {
+            ArklibError::Storage(self.label.clone(), e.to_string())
+        })?;
+
+        let keys: Vec<K> = entries
+            .filter_map(|entry| match entry {
+                Ok(entry) => {
+                    let path = entry.path();
+                    if path.is_file() {
+                        extract_key_from_file_path(&self.label, &path, true)
+                            .ok()
+                    } else {
+                        None
+                    }
                 }
+                Err(_) => None,
             })
             .collect();
 
@@ -246,6 +232,29 @@ where
         Ok(())
     }
 
+    /// Validates the provided path.
+    ///
+    /// # Arguments
+    /// * `path` - The path to validate
+    /// * `label` - Identifier used in logs
+    fn validate_path(path: &Path, label: &str) -> Result<()> {
+        if !path.exists() {
+            return Err(ArklibError::Storage(
+                label.to_owned(),
+                "Folder does not exist".to_owned(),
+            ));
+        }
+
+        if !path.is_dir() {
+            return Err(ArklibError::Storage(
+                label.to_owned(),
+                "Path is not a directory".to_owned(),
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Retrieves a value from the memory cache.
     fn fetch_from_memory(&mut self, key: &K) -> Option<V> {
         self.memory_cache
@@ -307,13 +316,14 @@ where
             file_path.display()
         );
 
-        temp_and_move(value.as_ref(), self.path.clone(), &key.to_string())
-            .map_err(|err| {
+        temp_and_move(value.as_ref(), &self.path, &key.to_string()).map_err(
+            |err| {
                 ArklibError::Storage(
                     self.label.clone(),
                     format!("Failed to write value for key {}: {}", key, err),
                 )
-            })
+            },
+        )
     }
 
     /// Reads a value from disk.
@@ -328,8 +338,8 @@ where
 
     /// Returns the size of a value in bytes.
     ///
-    /// First checks the memory cache for size information to avoid disk access.
-    /// Falls back to checking the file size on disk if not found in memory.
+    /// First checks the memory cache for size information,
+    /// falls back to checking the file size on disk if not found in memory.
     fn get_file_size(&self, key: &K) -> Result<usize> {
         if let Some(entry) = self.memory_cache.peek(key) {
             return Ok(entry.size);
@@ -338,7 +348,7 @@ where
     }
 
     /// Adds or updates a value in the memory cache, evicting old entries if needed.
-    /// Logs error if value is larger than maximum memory limit.
+    /// Logs error and skips caching if the value is larger than the maximum memory limit.
     fn update_memory_cache(&mut self, key: &K, value: &V) -> Result<()> {
         log::debug!("cache/{}: caching in memory for key {}", self.label, key);
         let size = self.get_file_size(key)?;
@@ -356,27 +366,36 @@ where
 
         // Remove oldest entries until we have space for new value
         while self.current_memory_bytes + size > self.max_memory_bytes {
-            let (_, old_entry) = self
-                .memory_cache
-                .pop_lru()
-                .expect("Cache should have entries to evict");
-            debug_assert!(
-                self.current_memory_bytes >= old_entry.size,
-                "Memory tracking inconsistency detected"
-            );
-            self.current_memory_bytes = self
-                .current_memory_bytes
-                .saturating_sub(old_entry.size);
+            if let Some((_, old_entry)) = self.memory_cache.pop_lru() {
+                if self.current_memory_bytes < old_entry.size {
+                    log::error!(
+                        "cache/{}: Memory tracking inconsistency - current: {}, entry size: {}", 
+                        self.label,
+                        self.current_memory_bytes,
+                        old_entry.size
+                    );
+                    self.current_memory_bytes = 0;
+                } else {
+                    self.current_memory_bytes -= old_entry.size;
+                }
+            }
         }
 
         // Add new value and update size
-        self.memory_cache.put(
+        if let Some((evicted_key, _)) = self.memory_cache.push(
             key.clone(),
             CacheEntry {
                 value: value.clone(),
                 size,
             },
-        );
+        ) {
+            log::debug!(
+                "cache/{}: evicted key {} from memory cache",
+                self.label,
+                evicted_key
+            );
+        }
+
         self.current_memory_bytes += size;
 
         log::debug!(
@@ -681,5 +700,62 @@ mod tests {
         assert_eq!(cache.current_memory_bytes, 4);
     }
 
-    // TODO: Add More Test
+    #[test]
+    fn test_preload_behavior() {
+        let temp_dir = create_temp_dir();
+
+        // First create and populate a cache
+        let mut initial_cache = Cache::new(
+            "test".to_string(),
+            temp_dir.path(),
+            1024,
+            false, // Don't preload yet
+        )
+        .expect("Failed to create initial cache");
+
+        // Add some test data
+        let test_data = vec![
+            ("key1".to_string(), vec![1, 2, 3]),
+            ("key2".to_string(), vec![4, 5, 6]),
+        ];
+
+        for (key, value) in &test_data {
+            initial_cache
+                .set(key.clone(), value.clone())
+                .expect("Failed to set value");
+        }
+
+        // Drop the initial cache
+        drop(initial_cache);
+
+        // Create new cache instances with different preload settings
+        let mut no_preload_cache: Cache<String, Vec<u8>> = Cache::new(
+            "test".to_string(),
+            temp_dir.path(),
+            1024,
+            false, // Don't preload
+        )
+        .expect("Failed to create no-preload cache");
+
+        let mut preload_cache: Cache<String, Vec<u8>> = Cache::new(
+            "test".to_string(),
+            temp_dir.path(),
+            1024,
+            true, // Do preload
+        )
+        .expect("Failed to create preload cache");
+
+        // Check memory cache state
+        for (key, _) in &test_data {
+            // No-preload cache should not have items in memory
+            assert!(no_preload_cache.memory_cache.get(key).is_none());
+
+            // Preload cache should have items in memory
+            assert!(preload_cache.memory_cache.get(key).is_some());
+
+            // Both should still be able to get the values
+            assert!(no_preload_cache.get(key).is_some());
+            assert!(preload_cache.get(key).is_some());
+        }
+    }
 }
