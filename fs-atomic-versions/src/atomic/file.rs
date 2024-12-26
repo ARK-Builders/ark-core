@@ -126,7 +126,7 @@ impl AtomicFile {
 
     /// Return the latest version together with vector of the
     /// files matching this version. Multiple files for the same version
-    /// can appear due to usage of file syncronization. Different devices
+    /// can appear due to usage of file synchronization. Different devices
     /// can create same version simultaneously.
     pub fn latest_version(&self) -> Result<(usize, Vec<ReadOnlyFile>)> {
         let files_iterator = fs::read_dir(&self.directory)?.flatten();
