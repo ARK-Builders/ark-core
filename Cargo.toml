@@ -13,6 +13,7 @@ members = [
     "fs-index",
     "fs-storage",
     "dev-hash",
+    "drop-core",
 ]
 
 default-members = [
@@ -29,6 +30,7 @@ default-members = [
     "fs-index",
     "fs-storage",
     "dev-hash",
+    "drop-core",
 ]
 
 resolver = "2"
