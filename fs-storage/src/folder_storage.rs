@@ -1,14 +1,15 @@
-use std::collections::BTreeSet;
-use std::fs::{self, File};
-use std::io::Write;
-use std::time::SystemTime;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
+    fs::{self, File},
+    io::Write,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
-use crate::base_storage::{BaseStorage, SyncStatus};
-use crate::monoid::Monoid;
+use crate::{
+    base_storage::{BaseStorage, SyncStatus},
+    monoid::Monoid,
+};
 use data_error::{ArklibError, Result};
 
 /// Represents a folder storage system that persists data to disk.
@@ -17,11 +18,13 @@ pub struct FolderStorage<K, V> {
     label: String,
     /// Path to the underlying folder where data is persisted
     path: PathBuf,
-    /// `timestamps.0` can be used to track the last time a file was modified in memory.
-    /// where the key is the path of the file inside the directory.
+    /// `timestamps.0` can be used to track the last time a file was modified
+    /// in memory. where the key is the path of the file inside the
+    /// directory.
     ///
-    /// `timestamps.1` can be used to track the last time a file written or read from disk.
-    /// where the key is the path of the file inside the directory.
+    /// `timestamps.1` can be used to track the last time a file written or
+    /// read from disk. where the key is the path of the file inside the
+    /// directory.
     timestamps: BTreeMap<K, (SystemTime, SystemTime)>,
     data: BTreeMap<K, V>,
     /// Temporary store for deleted keys until storage is synced
@@ -48,8 +51,8 @@ where
     V: Clone + serde::Serialize + serde::de::DeserializeOwned + Monoid<V>,
 {
     /// Create a new folder storage with a diagnostic label and directory path
-    /// Note: if the folder storage already exists, the data will be read from the folder
-    /// without overwriting it.
+    /// Note: if the folder storage already exists, the data will be read from
+    /// the folder without overwriting it.
     pub fn new(label: String, path: &Path) -> Result<Self> {
         let mut storage = Self {
             label,
@@ -128,8 +131,9 @@ where
         Ok(())
     }
 
-    /// Resolves discrepancies between in-memory data and disk data by combining or
-    /// overwriting values based on which version is more recent, ensuring consistency.
+    /// Resolves discrepancies between in-memory data and disk data by combining
+    /// or overwriting values based on which version is more recent,
+    /// ensuring consistency.
     fn resolve_divergence(&mut self) -> Result<()> {
         let new_data = FolderStorage::new("new_data".into(), &self.path)?;
 
@@ -260,7 +264,8 @@ where
                 );
             }
 
-            // If we've found both RAM and disk modifications, we can stop checking
+            // If we've found both RAM and disk modifications, we can stop
+            // checking
             if ram_newer && disk_newer {
                 log::debug!(
                     "Both RAM and disk modifications found, stopping check"
@@ -340,9 +345,11 @@ where
 
     /// Writes the data to a folder.
     ///
-    /// Updates the file's modified timestamp to avoid OS timing issues, which may arise due to file system timestamp precision.
-    /// EXT3 has 1-second precision, while EXT4 can be more precise but not always.
-    /// This is addressed by modifying the metadata and calling `sync_all()` after file writes.
+    /// Updates the file's modified timestamp to avoid OS timing issues, which
+    /// may arise due to file system timestamp precision. EXT3 has 1-second
+    /// precision, while EXT4 can be more precise but not always.
+    /// This is addressed by modifying the metadata and calling `sync_all()`
+    /// after file writes.
     fn write_fs(&mut self) -> Result<()> {
         fs::create_dir_all(&self.path)?;
 
@@ -390,7 +397,8 @@ where
         })
     }
 
-    /// Merge the data from another folder storage instance into this folder storage instance
+    /// Merge the data from another folder storage instance into this folder
+    /// storage instance
     fn merge_from(&mut self, other: impl AsRef<BTreeMap<K, V>>) -> Result<()>
     where
         V: Monoid<V>,
@@ -589,7 +597,8 @@ mod tests {
     use quickcheck::{Arbitrary, Gen};
     use std::collections::{BTreeMap, HashSet};
 
-    // Assuming FolderStorage, BaseStorage, SyncStatus, and other necessary types are in scope
+    // Assuming FolderStorage, BaseStorage, SyncStatus, and other necessary
+    // types are in scope
 
     #[derive(Clone, Debug)]
     enum StorageOperation {
