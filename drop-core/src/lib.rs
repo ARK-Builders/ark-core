@@ -15,14 +15,15 @@ use iroh_blobs::{
 };
 use metadata::CollectionMetadata;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use std::{
     collections::BTreeMap,
+    io::Write,
     iter::Iterator,
+    path::PathBuf,
+    str::FromStr,
     sync::{mpsc::Sender, Arc},
     vec,
 };
-use std::{path::PathBuf, str::FromStr};
 
 pub struct IrohNode(pub Node<iroh_blobs::store::mem::Store>);
 
@@ -168,8 +169,9 @@ impl IrohInstance {
                             IrohError::InvalidMetadata(e.to_string())
                         })?;
 
-                    // The hash sequence should have one more element than the metadata
-                    // because the first element is the metadata itself
+                    // The hash sequence should have one more element than the
+                    // metadata because the first element is
+                    // the metadata itself
                     if metadata.names.len() + 1 != hashseq.len() {
                         return Err(IrohError::InvalidMetadata(
                             "metadata does not match hashseq".to_string(),
