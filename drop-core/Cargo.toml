@@ -6,6 +6,7 @@ edition = "2021"
 [lib]
 name = "drop_core"
 crate-type = ["staticlib", "cdylib", "rlib"]
+bench = false
 
 [dependencies]
 iroh = "0.22.0"
