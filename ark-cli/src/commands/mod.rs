@@ -2,6 +2,7 @@ use clap::Subcommand;
 
 mod backup;
 mod collisions;
+pub mod drop;
 pub mod file;
 pub mod link;
 mod list;
@@ -34,5 +35,10 @@ pub enum Commands {
     Storage {
         #[clap(subcommand)]
         subcommand: storage::Storage,
+    },
+    #[command(about = "Send and receive files")]
+    Drop {
+        #[clap(subcommand)]
+        subcommand: drop::Drop,
     },
 }

@@ -1,6 +1,8 @@
+use thiserror::Error;
+
 pub type IrohResult<T> = Result<T, IrohError>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum IrohError {
     NodeError(String),
     DownloadError(String),
