@@ -91,9 +91,7 @@ where
             let entry = entry?;
             let path = entry.path();
             if path.is_file()
-                && path
-                    .extension()
-                    .map_or(false, |ext| ext == "json")
+                && path.extension().is_some_and(|ext| ext == "json")
             {
                 let key: K = extract_key_from_file_path(&self.label, &path)?;
                 let file = File::open(&path)?;
@@ -281,9 +279,7 @@ where
                 let entry = entry?;
                 let path = entry.path();
                 if path.is_file()
-                    && path
-                        .extension()
-                        .map_or(false, |ext| ext == "json")
+                    && path.extension().is_some_and(|ext| ext == "json")
                 {
                     let key = extract_key_from_file_path(&self.label, &path)?;
                     if !self.data.contains_key(&key)

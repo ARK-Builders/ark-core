@@ -222,7 +222,7 @@ impl IrohInstance {
                         );
                     }
 
-                    return Ok(collection.into());
+                    return Ok(collection);
                 }
 
                 DownloadProgress::Done { id } => {
@@ -338,11 +338,11 @@ impl IrohInstance {
             .await
             .map_err(|e| IrohError::DownloadError(e.to_string()))?;
 
-        Ok(collection.into())
+        Ok(collection)
     }
 }
 
-pub async fn import_blobs<'a>(
+pub async fn import_blobs(
     iroh: &IrohInstance,
     paths: Vec<PathBuf>,
 ) -> IrohResult<Vec<(PathBuf, AddOutcome)>> {
