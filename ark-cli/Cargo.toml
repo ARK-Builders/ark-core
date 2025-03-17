@@ -19,6 +19,7 @@ chrono = "0.4.34"
 anyhow = "1.0.80"
 thiserror = "1.0.57"
 futures = "0.3"
+dirs = "5.0.1"
 
 # REGISTRAR
 log = { version = "0.4.17", features = ["release_max_level_off"] }
@@ -30,6 +31,7 @@ fs-index = { path = "../fs-index", features = ["watch"] }
 fs-atomic-versions = { path = "../fs-atomic-versions" }
 fs-metadata = { path = "../fs-metadata" }
 fs-properties = { path = "../fs-properties" }
+drop-core = { path = "../drop-core" }
 fs-storage = { path = "../fs-storage" }
 
 data-error = { path = "../data-error" }
