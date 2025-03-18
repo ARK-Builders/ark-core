@@ -86,7 +86,6 @@ type IndexedPaths = HashSet<Timestamped<PathBuf>>;
 /// #### Reactive API
 /// - [`ResourceIndex::update_all`]: Method to update the index by rescanning
 ///   files and returning changes (additions/deletions/updates).
-
 ///
 /// #### Snapshot API
 /// - [`ResourceIndex::get_resources_by_id`]: Query resources from the index by

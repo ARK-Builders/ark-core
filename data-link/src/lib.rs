@@ -136,7 +136,7 @@ impl<Id: ResourceId> Link<Id> {
     pub fn get_preview_synced(&self) -> Result<OpenGraph> {
         let runtime =
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-        return runtime.block_on(self.get_preview());
+        runtime.block_on(self.get_preview())
     }
 
     /// Get OGP metadata of the link.
