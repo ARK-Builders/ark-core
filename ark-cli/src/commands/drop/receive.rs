@@ -39,11 +39,9 @@ impl Receive {
                 .blobs()
                 .read_to_bytes(*hash)
                 .await
-                .expect(format!("Failed to read blob: {}", hash).as_str());
+                .expect("Failed to read blob");
             let file_path = outpath.join(name);
-            std::fs::write(&file_path, content).expect(
-                format!("Failed to write file: {:?}", file_path).as_str(),
-            );
+            std::fs::write(&file_path, content).expect("Failed to write file");
         }
 
         println!("Files saved to {:?}", outpath);
