@@ -12,19 +12,20 @@ To build the bindings and set up the environment, follow these steps:
 
 ### Prerequisites
 
+- Ensure you have Gradle installed. You can install it from [Gradle](https://gradle.org/install/_)
 - Ensure you have the Rust toolchain installed. You can install it from [rustup](https://rustup.rs/).
 - Ensure you have a JDK installed. You can download it from [AdoptOpenJDK](https://adoptopenjdk.net/).
-- Ensure you have Gradle installed. You can install it from [Gradle](https://gradle.org/install/_)
+- Ensure you have Android NDK version `28.0.12674087` installed. You can install it from [NDK](https://github.com/android/ndk/releases/tag/r28-rc1)
 
 ### Steps
 
-1. **Build the Rust Library:** Run the following command to compile the Rust code and generate the dynamic library:
+1. **Add Android Architecture Targets:** Run the following command to add support for different Android OS architectures:
 
 ```sh
-cargo build --release
+rustup add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 ```
 
-This will compile the Rust code and generate the dynamic library in the `target/release` directory.
+This will make possible to compile the Rust code for different Android OS architectures.
 
 2. **Build the Java Project:** To compile build the project, run:
 
@@ -33,16 +34,6 @@ This will compile the Rust code and generate the dynamic library in the `target/
 ```
 
 This will compile the Java code and generate the JAR file in the `lib/build/libs` directory. This will also run the unit tests.
-
-## Documentation
-
-To generate the Javadoc documentation, run:
-
-```sh
-./gradlew javadoc
-```
-
-The documentation will be generated in the `lib/build/docs/javadoc` directory.
 
 ## Cleaning the Build
 

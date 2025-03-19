@@ -1,5 +1,10 @@
 package dev.arkbuilders.core;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -7,13 +12,9 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import java.util.Objects;
 
 public class FileStorageTest {
-    FileStorage fileStorage = new FileStorage("test", "test.txt");
-
     @TempDir
     Path tempDir;
 
@@ -129,7 +130,7 @@ public class FileStorageTest {
     }
 
     @Test
-    public void testBTreeMapIterator(){
+    public void testBTreeMapIterator() {
         Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
 
@@ -144,7 +145,7 @@ public class FileStorageTest {
 
         BTreeMapIterator bTreeMapIterator = fileStorage.iterator();
         Map<String, String> iteratorData = new LinkedHashMap<>();
-        while(bTreeMapIterator.hasNext()){
+        while (bTreeMapIterator.hasNext()) {
             Map.Entry<String, String> entry = bTreeMapIterator.next();
             iteratorData.put(entry.getKey(), entry.getValue());
         }
@@ -156,37 +157,37 @@ public class FileStorageTest {
         Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
         Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.remove("invalid_id"));
-        assertTrue(exception.getMessage().matches("Storage error.*"));
+        assertTrue(Objects.requireNonNull(exception.getMessage()).matches("Storage error.*"));
     }
 
     @Test
     public void testSyncException() {
         Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.sync());
-        assertTrue(exception.getMessage().matches("IO error.*"));
+        Exception exception = assertThrows(RuntimeException.class, fileStorage::sync);
+        assertTrue(Objects.requireNonNull(exception.getMessage()).matches("IO error.*"));
     }
 
     @Test
     public void testCreateException() {
         Path storagePath = tempDir.resolve("");
         Exception exception = assertThrows(RuntimeException.class, () -> new FileStorage("", storagePath.toString()));
-        assertTrue(exception.getMessage().matches("IO error.*"));
+        assertTrue(Objects.requireNonNull(exception.getMessage()).matches("IO error.*"));
     }
 
     @Test
     public void testEraseException() {
         Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.erase());
-        assertTrue(exception.getMessage().matches("Storage error.*"));
+        Exception exception = assertThrows(RuntimeException.class, fileStorage::erase);
+        assertTrue(Objects.requireNonNull(exception.getMessage()).matches("Storage error.*"));
     }
 
     @Test
     public void testReadException() {
         Path storagePath = tempDir.resolve("test.txt");
         FileStorage fileStorage = new FileStorage("test", storagePath.toString());
-        Exception exception = assertThrows(RuntimeException.class, () -> fileStorage.readFS());
-        assertTrue(exception.getMessage().matches("Storage error.*"));
+        Exception exception = assertThrows(RuntimeException.class, fileStorage::readFS);
+        assertTrue(Objects.requireNonNull(exception.getMessage()).matches("Storage error.*"));
     }
 }
