@@ -386,8 +386,6 @@ mod test {
         sync::{mpsc::channel, Arc},
     };
 
-    use tokio;
-
     use crate::{FileTransfer, IrohInstance};
 
     #[tokio::test]
@@ -430,7 +428,7 @@ mod test {
         let ticket = send_instance.send_files(files).await.unwrap();
         let ticket_str = ticket.to_string();
 
-        let (tx, mut rx) = channel::<Vec<FileTransfer>>();
+        let (tx, _rx) = channel::<Vec<FileTransfer>>();
         let handle = Arc::new(crate::FileTransferHandle(tx)); // Assuming FileTransferHandle wraps the sender
 
         let collection = receive_instance

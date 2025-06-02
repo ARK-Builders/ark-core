@@ -923,7 +923,7 @@ fn test_track_modification_with_collision() {
 /// - Move the file to a subdirectory.
 /// - Call `update_one()` 2 times with the relative path of the moved file.
 /// - Assert that the index contains the expected number of entries with the
-///  correct IDs and paths after the move.
+/// - correct IDs and paths after the move.
 #[test]
 fn test_track_move_to_subdirectory() {
     for_each_type!(Crc32, Blake3 => {

@@ -497,7 +497,7 @@ mod tests {
         storage.set("key1".to_string(), "value1".to_string());
         storage.set("key1".to_string(), "value2".to_string());
         assert!(storage.write_fs().is_ok());
-        assert_eq!(temp_dir.path().exists(), true);
+        assert!(temp_dir.path().exists());
 
         if let Err(err) = storage.erase() {
             panic!("Failed to delete folder: {:?}", err);
@@ -514,13 +514,13 @@ mod tests {
         storage.write_fs().unwrap();
 
         storage.set("key1".to_string(), "value1".to_string());
-        let before_write = fs::metadata(&temp_dir.path())
+        let before_write = fs::metadata(temp_dir.path())
             .unwrap()
             .modified()
             .unwrap();
         thread::sleep(Duration::from_millis(10));
         storage.write_fs().unwrap();
-        let after_write = fs::metadata(&temp_dir.path())
+        let after_write = fs::metadata(temp_dir.path())
             .unwrap()
             .modified()
             .unwrap();
@@ -616,7 +616,7 @@ mod tests {
 
             for _ in 0..size {
                 let op = match u8::arbitrary(g) % 9 {
-                    0 | 1 | 2 | 3 | 4 => {
+                    0..=4 => {
                         let key = u8::arbitrary(g).to_string();
                         existing_keys.insert(key.clone());
                         StorageOperation::Set(key)
@@ -682,7 +682,7 @@ mod tests {
         let path = temp_dir.path();
 
         let mut storage =
-            FolderStorage::<String, Dummy>::new("test".to_string(), &path)
+            FolderStorage::<String, Dummy>::new("test".to_string(), path)
                 .unwrap();
         let mut expected_data: BTreeMap<String, Dummy> = BTreeMap::new();
         let mut pending_deletes = BTreeSet::new();
@@ -797,11 +797,11 @@ mod tests {
         let ram_newer = ram_newer
             || pending_sets
                 .iter()
-                .any(|(k, v)| pending_external.get(k).map_or(true, |e| v > e));
+                .any(|(k, v)| pending_external.get(k).is_none_or(|e| v > e));
         let disk_newer = pending_external
             .iter()
             .filter(|(k, _)| !pending_deletes.contains(*k))
-            .any(|(k, v)| pending_sets.get(k).map_or(true, |s| v > s));
+            .any(|(k, v)| pending_sets.get(k).is_none_or(|s| v > s));
 
         match (ram_newer, disk_newer) {
             (false, false) => SyncStatus::InSync,
