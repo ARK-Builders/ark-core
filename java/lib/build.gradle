@@ -1,0 +1,85 @@
+apply plugin: 'maven-publish'
+apply plugin: 'com.android.library'
+apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
+
+android {
+    ndkVersion '28.0.12674087'
+    namespace 'dev.arkbuilders.core'
+    defaultConfig {
+        compileSdk 35
+        minSdkVersion 26
+        targetSdkVersion 35
+    }
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+        singleVariant('debug') {
+            withSourcesJar()
+        }
+    }
+}
+
+cargo {
+    libname = 'fs_storage'
+    module = '../../fs-storage'
+    prebuiltToolchains = true
+    targetDirectory = '../../target'
+    targets = ['arm64', 'x86', 'x86_64', 'arm']
+    profile = gradle.startParameter.taskNames.any { it.containsIgnoreCase('debug') } ? 'debug' : 'release'
+}
+
+dependencies {
+    testImplementation(libs.junit.jupiter.api)
+    testImplementation(libs.junit.jupiter.engine)
+}
+
+tasks.register('buildRustDebug', Exec) {
+    workingDir '../../fs-storage'
+    commandLine 'cargo', 'build'
+}
+
+tasks.register('buildRustRelease', Exec) {
+    workingDir '../../fs-storage'
+    commandLine 'cargo', 'build', '--release'
+}
+
+tasks.withType(Test).configureEach { it ->
+    useJUnitPlatform()
+    if (it.name.containsIgnoreCase('debug')) {
+        it.dependsOn 'buildRustDebug'
+        systemProperty('java.library.path', projectDir.toPath().resolve('../../target/debug').toString())
+    } else if (it.name.containsIgnoreCase('release')) {
+        it.dependsOn 'buildRustRelease'
+        systemProperty('java.library.path', projectDir.toPath().resolve('../../target/release').toString())
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'mergeDebugJniLibFolders' || task.name == 'mergeReleaseJniLibFolders') {
+        task.dependsOn 'cargoBuild'
+    }
+}
+
+publishing {
+    publications {
+        release(MavenPublication) {
+            artifactId = 'core'
+            groupId = 'dev.arkbuilders'
+            version = System.getenv('RELEASE_VERSION')
+            afterEvaluate {
+                from components.release
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'GithubPackages'
+            url = uri('https://maven.pkg.github.com/ARK-Builders/ark-core')
+            credentials {
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}

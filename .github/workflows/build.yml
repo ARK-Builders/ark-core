@@ -1,4 +1,4 @@
-name: Verify build
+name: Verify Build
 
 on:
   push:
@@ -12,70 +12,70 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  linux:
-    name: Build on Linux
+  format:
+    name: Code Formatting Check
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nightly Rust with rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          components: rustfmt
+
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # We also run on macOS arm in the weekly workflow.
+        os: [ubuntu-latest, windows-latest, macos-14]
 
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Set up Cargo Cache
+        uses: Swatinem/rust-cache@v2
         with:
-          toolchain: nightly # nightly is required for fmt
-          components: rustfmt, clippy
-
-      - name: Check
-        run: cargo check
-
-      - name: Format
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --workspace --bins -- -D warnings
-
-      - name: Build Debug
-        run: cargo build --verbose
-
-      - name: Run tests
-        run: cargo test --verbose
-
-      - name: Build Release
-        run: cargo build --verbose --release
-
-      - name: Run `ark-cli watch` test
-        run: ./integration/ark-cli-watch.sh
-
-      - name: Install JDK
-        uses: actions/setup-java@v4.2.1
-        with:
-          distribution: "temurin"
-          java-version: "22"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Java tests
-        run: gradle test
-        working-directory: ./java
-
-  windows:
-    name: Test on Windows
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Release
-        run: cargo build --verbose --release
+          save-if: false
 
       - name: Run tests
         run: cargo test --workspace --verbose
 
+      - name: Build Release
+        run: cargo build --verbose --release
+
+      # `ark-cli-watch.sh` script tests the functionality of `ark-cli watch`,
+      # which monitors a directory for file changes using a filesystem watcher and updates the index file.
+      # We need to run it on each platform to ensure it works across all OSes.
       - name: Run `ark-cli watch` test
         run: ./integration/ark-cli-watch.sh
+
+      - name: Upload Release Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-build-${{ matrix.os }}
+          path: target/release/
+
+  java-bindings:
+    name: Java Bindings
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    needs: build-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: release-build-${{ matrix.os }}
+          path: ./release
 
       - name: Install JDK
         uses: actions/setup-java@v4.2.1
@@ -86,38 +86,31 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Java tests
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          link-to-sdk: true
+          ndk-version: r28-beta2
+
+      - name: Run Java Tests
         run: gradle test
         working-directory: ./java
 
-  mac-intel:
-    name: Test on macOS Intel
-    runs-on: macos-14
+  benchmarks:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    needs: java-bindings
+    # We only want to run benchmarks in case of a pull request
+    if: ${{ github.event_name == 'pull_request' }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Release
-        run: cargo build --verbose --release
-
-      - name: Run tests
-        run: cargo test --workspace --verbose
-
-      - name: Run `ark-cli watch` test
-        run: ./integration/ark-cli-watch.sh
-
-      - name: Install JDK
-        uses: actions/setup-java@v4.2.1
+      - name: Run Criterion
+        uses: boa-dev/criterion-compare-action@v3
         with:
-          distribution: "temurin"
-          java-version: "22"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Java tests
-        run: gradle test
-        working-directory: ./java
+          branchName: ${{ github.base_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
