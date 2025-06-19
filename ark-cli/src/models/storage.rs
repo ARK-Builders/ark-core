@@ -376,10 +376,7 @@ impl Storage {
                                 false
                             }
                         })
-                        .filter_map(|e| match AtomicFile::new(e.path()) {
-                            Ok(file) => Some(file),
-                            Err(_) => None,
-                        });
+                        .filter_map(|e| AtomicFile::new(e.path()).ok());
 
                     writeln!(
                         output,
