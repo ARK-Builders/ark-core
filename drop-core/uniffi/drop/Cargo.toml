@@ -1,0 +1,24 @@
+[package]
+name = "drop"
+version = "1.1.0"
+edition = "2024"
+
+[lib]
+name = "drop"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+sender = { path = "../../exchanges/sender" }
+receiver = { path = "../../exchanges/receiver" }
+
+tokio = "1.44.2"
+thiserror = "2.0.12"
+
+uniffi = { version = "0.29.1", features = [ "cli" ] }
+
+[build-dependencies]
+uniffi = { version = "0.29.1", features = [ "build" ] }

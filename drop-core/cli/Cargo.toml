@@ -1,0 +1,13 @@
+[package]
+name = "drop-cli"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+sender = { path = "../exchanges/sender" }
+receiver = { path = "../exchanges/receiver" }
+
+uuid = "1.16.0"
+tokio = "1.44.2"
+anyhow = "1.0.98"
+thiserror = "1.0"

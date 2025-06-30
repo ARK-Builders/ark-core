@@ -1,0 +1,6 @@
+[package]
+name = "entities"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]

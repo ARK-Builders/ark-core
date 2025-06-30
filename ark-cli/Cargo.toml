@@ -38,3 +38,5 @@ data-link = { path = "../data-link" }
 data-pdf = { path = "../data-pdf" }
 # Depending on `dev-hash` to get `ResourceId` reference implementations
 dev-hash = { path = "../dev-hash" }
+
+drop-cli = { path = "../drop-core/cli" }

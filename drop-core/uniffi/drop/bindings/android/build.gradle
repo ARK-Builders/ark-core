@@ -1,0 +1,127 @@
+repositories {
+    mavenCentral()
+    gradlePluginPortal()
+    google()
+}
+
+buildscript {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21'
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'maven-publish'
+
+android {
+    compileSdk 36
+    namespace 'dev.arkbuilders.drop'
+    ndkVersion '29.0.13113456'
+
+    defaultConfig {
+        minSdkVersion 22
+        targetSdkVersion 36
+        externalNativeBuild {
+            ndkBuild {}
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
+
+    packaging {
+        jniLibs.pickFirsts.add("META-INF/AL2.0")
+    }
+}
+
+dependencies {
+    compileOnly 'net.java.dev.jna:jna:5.17.0'
+    compileOnly 'net.java.dev.jna:jna-platform:5.17.0'
+    implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+}
+
+publishing {
+    publications {
+        release(MavenPublication) {
+            groupId = 'dev.arkbuilders'
+            artifactId = 'drop'
+            version = project.findProperty('releaseVersion') ?: System.getenv('RELEASE_VERSION')
+            afterEvaluate {
+                from components.release
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = uri('https://maven.pkg.github.com/oluiscabral/drop-core')
+            credentials {
+                username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
+                password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}
+
+tasks.register('generateDropBindings', Exec) {
+    workingDir '../..'
+    commandLine 'cargo', 'run', '--bin', 'uniffi-bindgen', 'generate', './src/drop.udl', '--config', './bindings/android/uniffi.toml',
+            '--language', 'kotlin', '--out-dir', './bindings/android/src/main/kotlin'
+    environment 'RUST_BACKTRACE', '1'
+}
+
+afterEvaluate {
+    tasks.named('compileReleaseKotlin') {
+        dependsOn tasks.named('generateDropBindings')
+    }
+    tasks.named('compileDebugKotlin') {
+        dependsOn tasks.named('generateDropBindings')
+    }
+}
+
+tasks.register('buildDropJNILibs', Exec) {
+    workingDir = file('../..')
+    environment 'ANDROID_NDK_HOME', System.getenv('ANDROID_NDK_HOME') ?: android.ndkDirectory.absolutePath
+    commandLine 'cargo', 'ndk',
+            '--output-dir', './bindings/android/src/main/jniLibs',
+            '--target', 'aarch64-linux-android',
+            '--target', 'armv7-linux-androideabi',
+            '--target', 'i686-linux-android',
+            '--target', 'x86_64-linux-android',
+            'build', '--release'
+}
+
+preBuild.dependsOn(generateDropBindings, buildDropJNILibs)
+
+tasks.configureEach { task ->
+    if (task.name.startsWith('publish')) {
+        task.dependsOn tasks.named('build')
+    }
+}

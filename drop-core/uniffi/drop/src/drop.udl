@@ -1,0 +1,101 @@
+[Error]
+enum DropError {
+    "TODO",
+};
+
+
+dictionary SenderProfile {
+    string name;
+};
+dictionary SenderFile {
+    string name;
+    SenderFileData data;
+};
+[Trait, WithForeign]
+interface SenderFileData {
+    u64 len();
+    u8? read();
+};
+dictionary SendFilesRequest {
+    SenderProfile profile;
+    sequence<SenderFile> files;
+};
+interface SendFilesBubble {
+    string get_ticket();
+    u8 get_confirmation();
+    [Throws=DropError, Async]
+    void cancel();
+    boolean is_finished();
+    boolean is_connected();
+    string get_created_at();
+    void subscribe(SendFilesSubscriber subscriber);
+    void unsubscribe(SendFilesSubscriber subscriber);
+};
+[Trait, WithForeign]
+interface SendFilesSubscriber {
+    string get_id();
+    void notify_sending(SendFilesSendingEvent event);
+    void notify_connecting(SendFilesConnectingEvent event);
+};
+dictionary SendFilesSendingEvent  {
+    string name;
+    u64 sent;
+    u64 remaining;
+};
+dictionary SendFilesConnectingEvent   {
+    SendFilesProfile receiver;
+};
+dictionary SendFilesProfile {
+    string id;
+    string name;
+};
+
+
+dictionary ReceiverProfile {
+    string name;
+};
+dictionary ReceiveFilesRequest {
+    string ticket;
+    u8 confirmation;
+    ReceiverProfile profile;
+};
+interface ReceiveFilesBubble {
+    [Throws=DropError]
+    void start();
+    void cancel();
+    boolean is_finished();
+    boolean is_cancelled();
+    void subscribe(ReceiveFilesSubscriber subscriber);
+    void unsubscribe(ReceiveFilesSubscriber subscriber);
+};
+[Trait, WithForeign]
+interface ReceiveFilesSubscriber {
+    string get_id();
+    void notify_receiving(ReceiveFilesReceivingEvent event);
+    void notify_connecting(ReceiveFilesConnectingEvent event);
+};
+dictionary ReceiveFilesReceivingEvent  {
+    string id;
+    sequence<u8> data;
+};
+dictionary ReceiveFilesConnectingEvent   {
+    ReceiveFilesProfile sender;
+    sequence<ReceiveFilesFile> files;
+};
+dictionary ReceiveFilesProfile {
+    string id;
+    string name;
+};
+dictionary ReceiveFilesFile {
+    string id;
+    string name;
+    u64 len;
+};
+
+
+namespace drop {
+    [Throws=DropError, Async]
+    SendFilesBubble send_files(SendFilesRequest request);
+    [Throws=DropError, Async]
+    ReceiveFilesBubble receive_files(ReceiveFilesRequest request);
+};
