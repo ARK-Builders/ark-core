@@ -1,9 +1,14 @@
 use anyhow::{Ok, Result};
-use common::{FileProjection, HandshakeProfile, ReceiverHandshake, SenderHandshake};
+use common::{
+    FileProjection, HandshakeProfile, ReceiverHandshake, SenderHandshake,
+};
 use entities::Profile;
 use iroh::{
     Endpoint,
-    endpoint::{ApplicationClose, Connection, ConnectionError, RecvStream, SendStream, VarInt},
+    endpoint::{
+        ApplicationClose, Connection, ConnectionError, RecvStream, SendStream,
+        VarInt,
+    },
 };
 use iroh_base::ticket::NodeTicket;
 use std::{
@@ -31,7 +36,11 @@ pub struct ReceiveFilesBubble {
     subscribers: Arc<RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>>,
 }
 impl ReceiveFilesBubble {
-    pub fn new(profile: Profile, endpoint: Endpoint, connection: Connection) -> Self {
+    pub fn new(
+        profile: Profile,
+        endpoint: Endpoint,
+        connection: Connection,
+    ) -> Self {
         return Self {
             profile,
             endpoint: endpoint,
@@ -92,19 +101,27 @@ impl ReceiveFilesBubble {
     }
 
     fn is_running(&self) -> bool {
-        return self.is_running.load(std::sync::atomic::Ordering::Acquire);
+        return self
+            .is_running
+            .load(std::sync::atomic::Ordering::Acquire);
     }
 
     fn is_consumed(&self) -> bool {
-        return self.is_consumed.load(std::sync::atomic::Ordering::Acquire);
+        return self
+            .is_consumed
+            .load(std::sync::atomic::Ordering::Acquire);
     }
 
     pub fn is_finished(&self) -> bool {
-        return self.is_finished.load(std::sync::atomic::Ordering::Acquire);
+        return self
+            .is_finished
+            .load(std::sync::atomic::Ordering::Acquire);
     }
 
     pub fn is_cancelled(&self) -> bool {
-        return self.is_cancelled.load(std::sync::atomic::Ordering::Relaxed);
+        return self
+            .is_cancelled
+            .load(std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
@@ -143,7 +160,10 @@ impl Carrier {
         return Ok(());
     }
 
-    async fn send_handshake(&self, bi: &mut (SendStream, RecvStream)) -> Result<()> {
+    async fn send_handshake(
+        &self,
+        bi: &mut (SendStream, RecvStream),
+    ) -> Result<()> {
         let handshake = ReceiverHandshake {
             profile: HandshakeProfile {
                 id: self.profile.id.clone(),
@@ -152,19 +172,28 @@ impl Carrier {
         };
         let serialized_handshake = serde_json::to_vec(&handshake).unwrap();
         let serialized_handshake_len = serialized_handshake.len() as u32;
-        let serialized_handshake_header = serialized_handshake_len.to_be_bytes();
-        bi.0.write_all(&serialized_handshake_header).await?;
+        let serialized_handshake_header =
+            serialized_handshake_len.to_be_bytes();
+        bi.0.write_all(&serialized_handshake_header)
+            .await?;
         bi.0.write_all(&serialized_handshake).await?;
         return Ok(());
     }
 
-    async fn receive_handshake(&self, bi: &mut (SendStream, RecvStream)) -> Result<()> {
+    async fn receive_handshake(
+        &self,
+        bi: &mut (SendStream, RecvStream),
+    ) -> Result<()> {
         let mut serialized_handshake_header = [0u8; 4];
-        bi.1.read_exact(&mut serialized_handshake_header).await?;
-        let serialized_handshake_len = u32::from_be_bytes(serialized_handshake_header);
-        let mut serialized_handshake = vec![0u8; serialized_handshake_len as usize];
+        bi.1.read_exact(&mut serialized_handshake_header)
+            .await?;
+        let serialized_handshake_len =
+            u32::from_be_bytes(serialized_handshake_header);
+        let mut serialized_handshake =
+            vec![0u8; serialized_handshake_len as usize];
         bi.1.read_exact(&mut serialized_handshake).await?;
-        let handshake: SenderHandshake = serde_json::from_slice(&serialized_handshake)?;
+        let handshake: SenderHandshake =
+            serde_json::from_slice(&serialized_handshake)?;
         self.subscribers
             .read()
             .unwrap()
@@ -194,20 +223,27 @@ impl Carrier {
             if self.is_cancelled() {
                 self.connection.close(
                     VarInt::from_u32(0),
-                    String::from("Receive files has been cancelled.").as_bytes(),
+                    String::from("Receive files has been cancelled.")
+                        .as_bytes(),
                 );
-                return Err(anyhow::Error::msg("Receive files has been cancelled."));
+                return Err(anyhow::Error::msg(
+                    "Receive files has been cancelled.",
+                ));
             }
             let uni_result = self.connection.accept_uni().await;
             if uni_result.is_err() {
                 let err = uni_result.unwrap_err();
-                if err.eq(&ConnectionError::ApplicationClosed(ApplicationClose {
-                    error_code: VarInt::from_u32(200),
-                    reason: String::from("Finished.").into(),
-                })) {
+                if err.eq(&ConnectionError::ApplicationClosed(
+                    ApplicationClose {
+                        error_code: VarInt::from_u32(200),
+                        reason: String::from("Finished.").into(),
+                    },
+                )) {
                     break;
                 }
-                return Err(anyhow::Error::msg("Connection unexpectedly closed."));
+                return Err(anyhow::Error::msg(
+                    "Connection unexpectedly closed.",
+                ));
             }
             let mut uni = uni_result.unwrap();
             let projection = self.read_next_projection(&mut uni).await?;
@@ -215,42 +251,62 @@ impl Carrier {
                 break;
             }
             let projection = projection.unwrap();
-            self.subscribers.read().unwrap().iter().for_each(|(_, s)| {
-                s.notify_receiving(ReceiveFilesReceivingEvent {
-                    id: projection.to_owned().id,
-                    data: projection.to_owned().data,
+            self.subscribers
+                .read()
+                .unwrap()
+                .iter()
+                .for_each(|(_, s)| {
+                    s.notify_receiving(ReceiveFilesReceivingEvent {
+                        id: projection.to_owned().id,
+                        data: projection.to_owned().data,
+                    });
                 });
-            });
         }
         return Ok(());
     }
 
     fn is_cancelled(&self) -> bool {
-        return self.is_cancelled.load(std::sync::atomic::Ordering::Relaxed);
+        return self
+            .is_cancelled
+            .load(std::sync::atomic::Ordering::Relaxed);
     }
 
-    async fn read_next_projection(&self, uni: &mut RecvStream) -> Result<Option<FileProjection>> {
-        let serialized_projection_len = self.read_serialized_projection_len(uni).await?;
+    async fn read_next_projection(
+        &self,
+        uni: &mut RecvStream,
+    ) -> Result<Option<FileProjection>> {
+        let serialized_projection_len =
+            self.read_serialized_projection_len(uni).await?;
         if serialized_projection_len.is_none() {
             return Ok(None);
         }
-        let mut serialized_projection = vec![0u8; serialized_projection_len.unwrap()];
+        let mut serialized_projection =
+            vec![0u8; serialized_projection_len.unwrap()];
         uni.read_exact(&mut serialized_projection).await?;
-        let projection: FileProjection = serde_json::from_slice(&serialized_projection)?;
+        let projection: FileProjection =
+            serde_json::from_slice(&serialized_projection)?;
         return Ok(Some(projection));
     }
 
-    async fn read_serialized_projection_len(&self, uni: &mut RecvStream) -> Result<Option<usize>> {
+    async fn read_serialized_projection_len(
+        &self,
+        uni: &mut RecvStream,
+    ) -> Result<Option<usize>> {
         let mut serialized_projection_header = [0u8; 2];
-        let read = uni.read(&mut serialized_projection_header).await?;
+        let read = uni
+            .read(&mut serialized_projection_header)
+            .await?;
         if read.is_none() {
             return Ok(None);
         }
         if read.unwrap() != 2 {
             return Err(anyhow::Error::msg("Invalid data chunk length."));
         }
-        let serialized_projection_len =
-            u16::from_be_bytes(serialized_projection_header[..2].try_into().unwrap());
+        let serialized_projection_len = u16::from_be_bytes(
+            serialized_projection_header[..2]
+                .try_into()
+                .unwrap(),
+        );
         return Ok(Some(serialized_projection_len as usize));
     }
 }
@@ -282,10 +338,14 @@ pub struct ReceiveFilesFile {
     pub len: u64,
 }
 
-pub async fn receive_files(request: ReceiveFilesRequest) -> Result<ReceiveFilesBubble> {
+pub async fn receive_files(
+    request: ReceiveFilesRequest,
+) -> Result<ReceiveFilesBubble> {
     let ticket: NodeTicket = request.ticket.parse()?;
     let endpoint = Endpoint::builder().discovery_n0().bind().await?;
-    let connection = endpoint.connect(ticket, &[request.confirmation]).await?;
+    let connection = endpoint
+        .connect(ticket, &[request.confirmation])
+        .await?;
     return Ok(ReceiveFilesBubble::new(
         Profile {
             id: Uuid::new_v4().to_string(),

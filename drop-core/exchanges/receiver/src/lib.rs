@@ -39,14 +39,23 @@ impl ReceiverFileData {
     }
 
     pub fn read(&self) -> Option<u8> {
-        if self.is_finished.load(std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .is_finished
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             return None;
         }
         if self.reader.read().unwrap().is_none() {
             let file = std::fs::File::open(&self.path).unwrap();
             self.reader.write().unwrap().replace(file.bytes());
         }
-        let next = self.reader.write().unwrap().as_mut().unwrap().next();
+        let next = self
+            .reader
+            .write()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .next();
         if next.is_some() {
             let read_result = next.unwrap();
             if read_result.is_ok() {

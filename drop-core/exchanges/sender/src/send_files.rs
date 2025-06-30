@@ -11,7 +11,9 @@ use rand::Rng;
 use std::sync::Arc;
 use uuid::Uuid;
 
-pub use handler::{SendFilesConnectingEvent, SendFilesSendingEvent, SendFilesSubscriber};
+pub use handler::{
+    SendFilesConnectingEvent, SendFilesSendingEvent, SendFilesSubscriber,
+};
 
 pub struct SendFilesRequest {
     pub profile: SenderProfile,
@@ -54,7 +56,8 @@ impl SendFilesBubble {
     }
 
     pub fn is_finished(&self) -> bool {
-        let is_finished = self.router.is_shutdown() || self.handler.is_finished();
+        let is_finished =
+            self.router.is_shutdown() || self.handler.is_finished();
         if is_finished {
             let _ = self.router.shutdown();
         }
