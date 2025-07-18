@@ -66,6 +66,7 @@ pub struct ReceiveFilesConnectingEvent {
 pub struct ReceiveFilesProfile {
     pub id: String,
     pub name: String,
+    pub avatar_b64: String,
 }
 
 pub struct ReceiveFilesFile {
@@ -94,6 +95,7 @@ impl receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
             sender: ReceiveFilesProfile {
                 id: event.sender.id,
                 name: event.sender.name,
+                avatar_b64: event.sender.avatar_b64
             },
             files: event
                 .files
