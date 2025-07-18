@@ -54,7 +54,4 @@ pub enum AppError {
 
     #[error(transparent)]
     InlineJsonParseError(#[from] InlineJsonParseError),
-
-    #[error("Drop error: {0}")]
-    DropError(String),
 }

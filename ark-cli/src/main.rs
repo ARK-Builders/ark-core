@@ -28,7 +28,6 @@ use home::home_dir;
 use crate::{
     cli::Cli,
     commands::{
-        drop::Drop::{Receive, Send},
         file::File::{Append, Insert, Read},
         link::Link::{Create, Load},
         Commands::{Link, Storage, *},
@@ -84,10 +83,6 @@ async fn run() -> Result<()> {
         },
         Storage { subcommand } => match subcommand {
             crate::commands::storage::Storage::List(list) => list.run()?,
-        },
-        crate::commands::Commands::Drop { subcommand } => match subcommand {
-            Send(send) => send.run().await?,
-            Receive(receive) => receive.run().await?,
         },
     };
 

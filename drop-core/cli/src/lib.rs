@@ -18,14 +18,14 @@ use sender::{
 };
 use uuid::Uuid;
 
-/// Configuration for the CLI application
+/// profile for the CLI application
 #[derive(Debug, Clone)]
-pub struct Config {
+pub struct Profile {
     pub name: String,
     pub avatar_b64: Option<String>,
 }
 
-impl Default for Config {
+impl Default for Profile {
     fn default() -> Self {
         Self {
             name: "drop-cli".to_string(),
@@ -34,8 +34,8 @@ impl Default for Config {
     }
 }
 
-impl Config {
-    /// Create a new config with custom name and optional avatar
+impl Profile {
+    /// Create a new profile with custom name and optional avatar
     pub fn new(name: String, avatar_b64: Option<String>) -> Self {
         Self { name, avatar_b64 }
     }
@@ -58,12 +58,12 @@ impl Config {
 
 /// Enhanced file sender with better error handling and progress tracking
 pub struct FileSender {
-    config: Config,
+    profile: Profile,
 }
 
 impl FileSender {
-    pub fn new(config: Config) -> Self {
-        Self { config }
+    pub fn new(profile: Profile) -> Self {
+        Self { profile }
     }
 
     pub async fn send_files(&self, file_paths: Vec<PathBuf>) -> Result<()> {
@@ -128,20 +128,20 @@ impl FileSender {
 
     fn get_sender_profile(&self) -> SenderProfile {
         SenderProfile {
-            name: self.config.name.clone(),
-            avatar_b64: self.config.avatar_b64.clone(),
+            name: self.profile.name.clone(),
+            avatar_b64: self.profile.avatar_b64.clone(),
         }
     }
 }
 
 /// Enhanced file receiver with better error handling and progress tracking
 pub struct FileReceiver {
-    config: Config,
+    profile: Profile,
 }
 
 impl FileReceiver {
-    pub fn new(config: Config) -> Self {
-        Self { config }
+    pub fn new(profile: Profile) -> Self {
+        Self { profile }
     }
 
     pub async fn receive_files(&self, output_dir: PathBuf, ticket: String, confirmation: u8) -> Result<()> {
@@ -188,8 +188,8 @@ impl FileReceiver {
 
     fn get_receiver_profile(&self) -> ReceiverProfile {
         ReceiverProfile {
-            name: self.config.name.clone(),
-            avatar_b64: self.config.avatar_b64.clone(),
+            name: self.profile.name.clone(),
+            avatar_b64: self.profile.avatar_b64.clone(),
         }
     }
 }
@@ -384,16 +384,16 @@ impl SenderFileData for FileData {
 }
 
 /// Public API functions for the CLI
-pub async fn run_send_files(file_paths: Vec<String>, config: Config) -> Result<()> {
+pub async fn run_send_files(file_paths: Vec<String>, profile: Profile) -> Result<()> {
     let paths: Vec<PathBuf> = file_paths.into_iter().map(PathBuf::from).collect();
-    let sender = FileSender::new(config);
+    let sender = FileSender::new(profile);
     sender.send_files(paths).await
 }
 
-pub async fn run_receive_files(output_dir: String, ticket: String, confirmation: String, config: Config) -> Result<()> {
+pub async fn run_receive_files(output_dir: String, ticket: String, confirmation: String, profile: Profile) -> Result<()> {
     let confirmation_code = u8::from_str(&confirmation)
         .with_context(|| format!("Invalid confirmation code: {}", confirmation))?;
     
-    let receiver = FileReceiver::new(config);
+    let receiver = FileReceiver::new(profile);
     receiver.receive_files(PathBuf::from(output_dir), ticket, confirmation_code).await
 }

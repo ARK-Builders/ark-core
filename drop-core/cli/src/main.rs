@@ -24,8 +24,8 @@ async fn main() -> Result<()> {
 fn build_cli() -> Command {
     Command::new("drop-cli")
         .about("A CLI tool for sending and receiving files")
-        .version("1.0.0")
-        .author("Your Name <your.email@example.com>")
+        .version("0.8.0")
+        .author("@oluiscabral")
         .arg_required_else_help(true)
         .subcommand(
             Command::new("send")
