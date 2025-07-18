@@ -10,6 +10,7 @@ pub struct SenderHandshake {
 pub struct HandshakeProfile {
     pub id: String,
     pub name: String,
+    pub avatar_b64: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

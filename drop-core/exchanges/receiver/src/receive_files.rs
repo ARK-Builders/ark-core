@@ -168,6 +168,7 @@ impl Carrier {
             profile: HandshakeProfile {
                 id: self.profile.id.clone(),
                 name: self.profile.name.clone(),
+                avatar_b64: self.profile.avatar_b64.clone(),
             },
         };
         let serialized_handshake = serde_json::to_vec(&handshake).unwrap();
@@ -350,6 +351,7 @@ pub async fn receive_files(
         Profile {
             id: Uuid::new_v4().to_string(),
             name: request.profile.name,
+            avatar_b64: request.profile.avatar_b64,
         },
         endpoint,
         connection,

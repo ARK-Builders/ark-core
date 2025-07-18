@@ -175,6 +175,7 @@ impl Carrier {
             profile: HandshakeProfile {
                 id: self.profile.id.clone(),
                 name: self.profile.name.clone(),
+                avatar_b64: self.profile.avatar_b64.clone(),
             },
             files: self
                 .files

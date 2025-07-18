@@ -92,6 +92,7 @@ pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
         Profile {
             id: Uuid::new_v4().to_string(),
             name: request.profile.name,
+            avatar_b64: request.profile.avatar_b64,
         },
         request
             .files

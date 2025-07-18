@@ -6,6 +6,7 @@ enum DropError {
 
 dictionary SenderProfile {
     string name;
+    string? avatar_b64;
 };
 dictionary SenderFile {
     string name;
@@ -48,11 +49,13 @@ dictionary SendFilesConnectingEvent   {
 dictionary SendFilesProfile {
     string id;
     string name;
+    string? avatar_b64;
 };
 
 
 dictionary ReceiverProfile {
     string name;
+    string? avatar_b64;
 };
 dictionary ReceiveFilesRequest {
     string ticket;
@@ -85,6 +88,7 @@ dictionary ReceiveFilesConnectingEvent   {
 dictionary ReceiveFilesProfile {
     string id;
     string name;
+    string? avatar_b64;
 };
 dictionary ReceiveFilesFile {
     string id;
