@@ -204,6 +204,7 @@ impl Carrier {
                     sender: ReceiveFilesProfile {
                         id: handshake.profile.id.clone(),
                         name: handshake.profile.name.clone(),
+                        avatar_b64: handshake.profile.avatar_b64.clone(),
                     },
                     files: handshake
                         .files
