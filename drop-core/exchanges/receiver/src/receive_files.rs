@@ -331,6 +331,7 @@ pub struct ReceiveFilesConnectingEvent {
 pub struct ReceiveFilesProfile {
     pub id: String,
     pub name: String,
+    pub avatar_b64: Option<String>
 }
 
 pub struct ReceiveFilesFile {
