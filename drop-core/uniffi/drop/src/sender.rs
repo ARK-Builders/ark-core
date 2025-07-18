@@ -6,6 +6,7 @@ pub use send_files::*;
 
 pub struct SenderProfile {
     pub name: String,
+    pub avatar_b64: Option<String>
 }
 
 pub struct SenderFile {

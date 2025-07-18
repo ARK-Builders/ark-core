@@ -127,6 +127,7 @@ pub async fn receive_files(
 fn create_adapted_request(request: ReceiveFilesRequest) -> receiver::ReceiveFilesRequest {
     let profile = receiver::ReceiverProfile {
         name: request.profile.name,
+        avatar_b64: request.profile.avatar_b64,
     };
     return receiver::ReceiveFilesRequest {
         profile,

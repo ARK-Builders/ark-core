@@ -116,6 +116,7 @@ pub async fn send_files(request: SendFilesRequest) -> Result<Arc<SendFilesBubble
 fn create_adapted_request(request: SendFilesRequest) -> sender::SendFilesRequest {
     let profile = sender::SenderProfile {
         name: request.profile.name,
+        avatar_b64: request.profile.avatar_b64,
     };
     let files = request
         .files
