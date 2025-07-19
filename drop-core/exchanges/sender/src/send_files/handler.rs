@@ -11,11 +11,9 @@ use iroh::{
 use std::{
     collections::HashMap,
     fmt::Debug,
-    future::Future,
     pin::Pin,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub trait SendFilesSubscriber: Send + Sync {
     fn get_id(&self) -> String;
@@ -45,8 +43,6 @@ pub struct SendFilesHandler {
     profile: Profile,
     files: Vec<File>,
     subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
-    chunk_size: usize,
-    max_concurrent_streams: usize,
 }
 impl Debug for SendFilesHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -55,31 +51,18 @@ impl Debug for SendFilesHandler {
             .field("is_finished", &self.is_finished)
             .field("profile", &self.profile)
             .field("files", &self.files)
-            .field("chunk_size", &self.chunk_size)
-            .field("max_concurrent_streams", &self.max_concurrent_streams)
             .finish()
     }
 }
 impl SendFilesHandler {
     pub fn new(profile: Profile, files: Vec<File>) -> Self {
-        Self::with_config(profile, files, 1024 * 1024, 8) // 1MB chunks, 8 concurrent streams
-    }
-
-    pub fn with_config(
-        profile: Profile,
-        files: Vec<File>,
-        chunk_size: usize,
-        max_concurrent_streams: usize,
-    ) -> Self {
-        Self {
+        return Self {
             is_consumed: AtomicBool::new(false),
             is_finished: Arc::new(AtomicBool::new(false)),
             profile,
             files,
             subscribers: Arc::new(RwLock::new(HashMap::new())),
-            chunk_size,
-            max_concurrent_streams,
-        }
+        };
     }
 
     pub fn is_consumed(&self) -> bool {
@@ -99,6 +82,7 @@ impl SendFilesHandler {
             .write()
             .unwrap()
             .insert(subscriber.get_id(), subscriber);
+        return ();
     }
 
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
@@ -106,6 +90,7 @@ impl SendFilesHandler {
             .write()
             .unwrap()
             .remove(&subscriber.get_id());
+        return ();
     }
 }
 impl ProtocolHandler for SendFilesHandler {
@@ -135,7 +120,9 @@ impl ProtocolHandler for SendFilesHandler {
                 ));
             });
         }
-        return Box::pin(async { return Ok(connecting.await?) });
+        return Box::pin(async {
+            return Ok(connecting.await?);
+        });
     }
 
     fn shutdown(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
@@ -148,8 +135,7 @@ impl ProtocolHandler for SendFilesHandler {
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'static>> {
         let carrier = Carrier {
             is_finished: self.is_finished.clone(),
-            chunk_size: self.chunk_size,
-            max_concurrent_streams: self.max_concurrent_streams,
+            limiter: 10240, // TODO: FLEXIBILIZE CHUNK LIMITER
             profile: self.profile.clone(),
             connection,
             files: self.files.clone(),
@@ -166,8 +152,7 @@ impl ProtocolHandler for SendFilesHandler {
 
 struct Carrier {
     is_finished: Arc<AtomicBool>,
-    chunk_size: usize,
-    max_concurrent_streams: usize,
+    limiter: u32,
     profile: Profile,
     connection: Connection,
     files: Vec<File>,
@@ -203,9 +188,7 @@ impl Carrier {
                 })
                 .collect(),
         };
-        // Optimization: Use bincode for faster serialization
-        let serialized_handshake = bincode::serialize(&handshake)
-            .unwrap_or_else(|_| serde_json::to_vec(&handshake).unwrap());
+        let serialized_handshake = serde_json::to_vec(&handshake).unwrap();
         let serialized_handshake_len = serialized_handshake.len() as u32;
         let serialized_handshake_header =
             serialized_handshake_len.to_be_bytes();
@@ -227,11 +210,8 @@ impl Carrier {
         let mut serialized_handshake =
             vec![0u8; serialized_handshake_len as usize];
         bi.1.read_exact(&mut serialized_handshake).await?;
-        // Try bincode first, fallback to JSON
         let handshake: ReceiverHandshake =
-            bincode::deserialize(&serialized_handshake).unwrap_or_else(|_| {
-                serde_json::from_slice(&serialized_handshake).unwrap()
-            });
+            serde_json::from_slice(&serialized_handshake)?;
         self.subscribers
             .read()
             .unwrap()
@@ -249,99 +229,10 @@ impl Carrier {
     }
 
     async fn send_files(&self) -> Result<()> {
-        use futures::stream::{FuturesUnordered, StreamExt};
-        use tokio::sync::Semaphore;
-        // Optimization: Use semaphore to control concurrent streams
-        let semaphore = Arc::new(Semaphore::new(self.max_concurrent_streams));
-        let mut tasks = FuturesUnordered::new();
         for file in &self.files {
-            let file_clone = file.clone();
-            let connection = self.connection.clone();
-            let subscribers = self.subscribers.clone();
-            let chunk_size = self.chunk_size;
-            let semaphore = semaphore.clone();
-
-            let task = async move {
-                let _permit = semaphore.acquire().await.unwrap();
-                Self::send_single_file(
-                    file_clone,
-                    connection,
-                    subscribers,
-                    chunk_size,
-                )
-                .await
-            };
-
-            tasks.push(task);
-        }
-        // Process all files concurrently
-        while let Some(result) = tasks.next().await {
-            result?;
-        }
-        self.connection
-            .close(VarInt::from_u32(200), String::from("Finished.").as_bytes());
-        return Ok(());
-    }
-
-    async fn send_single_file(
-        file: File,
-        connection: Connection,
-        subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
-        chunk_size: usize,
-    ) -> Result<()> {
-        let mut sent = 0u64;
-        let total_len = file.data.len();
-        let mut remaining = total_len;
-        // Initial progress notification
-        subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(_, s)| {
-                s.notify_sending(SendFilesSendingEvent {
-                    name: file.name.clone(),
-                    sent,
-                    remaining,
-                });
-            });
-        // Optimization: Pre-allocate buffer to avoid repeated allocations
-        let mut buffer = Vec::with_capacity(chunk_size);
-        loop {
-            buffer.clear();
-            // Read chunk from file data
-            for _ in 0..chunk_size {
-                if let Some(byte) = file.data.read() {
-                    buffer.push(byte);
-                } else {
-                    break;
-                }
-            }
-            if buffer.is_empty() {
-                break;
-            }
-            let projection = FileProjection {
-                id: file.id.clone(),
-                data: buffer.clone(),
-            };
-            // Optimization: Use bincode for faster serialization
-            let serialized_projection = bincode::serialize(&projection)
-                .unwrap_or_else(|_| serde_json::to_vec(&projection).unwrap());
-            let mut uni = connection.open_uni().await?;
-            let serialized_projection_len = serialized_projection.len() as u32;
-            let serialized_projection_header =
-                serialized_projection_len.to_be_bytes();
-            // Optimization: Write header and data in single operation when possible
-            let mut write_buffer =
-                Vec::with_capacity(4 + serialized_projection.len());
-            write_buffer.extend_from_slice(&serialized_projection_header);
-            write_buffer.extend_from_slice(&serialized_projection);
-            uni.write_all(&write_buffer).await?;
-            uni.finish()?;
-            let chunk_len = buffer.len() as u64;
-            sent += chunk_len;
-            remaining = remaining.saturating_sub(chunk_len);
-            // Progress notification
-            subscribers
+            let mut sent = 0;
+            let mut remaining = file.data.len();
+            self.subscribers
                 .read()
                 .unwrap()
                 .iter()
@@ -352,13 +243,70 @@ impl Carrier {
                         remaining,
                     });
                 });
-            uni.stopped().await?;
+            loop {
+                let projection = self.read_next_projection(file);
+                if projection.is_none() {
+                    break;
+                }
+                let projection = projection.unwrap();
+                let projection_data_len = projection.data.len() as u64;
+                let mut uni = self.connection.open_uni().await?;
+                let serialized_projection =
+                    serde_json::to_vec(&projection).unwrap();
+                let serialized_projection_len =
+                    serialized_projection.len() as u16;
+                let serialized_projection_header =
+                    serialized_projection_len.to_be_bytes();
+                uni.write_all(&serialized_projection_header)
+                    .await?;
+                uni.write_all(&serialized_projection).await?;
+                uni.finish()?;
+                sent += projection_data_len;
+                if remaining >= projection_data_len {
+                    remaining -= projection_data_len
+                } else {
+                    remaining = 0
+                }
+                self.subscribers
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .for_each(|(_, s)| {
+                        s.notify_sending(SendFilesSendingEvent {
+                            name: file.name.clone(),
+                            sent,
+                            remaining,
+                        });
+                    });
+                uni.stopped().await?;
+            }
         }
+        self.connection
+            .close(VarInt::from_u32(200), String::from("Finished.").as_bytes());
         return Ok(());
     }
 
-    fn finish(&self) {
-        self.is_finished
+    fn read_next_projection(&self, file: &File) -> Option<FileProjection> {
+        let mut data = Vec::new();
+        for _ in 0..self.limiter {
+            let b = file.data.read();
+            if b.is_none() {
+                break;
+            }
+            data.push(b.unwrap());
+        }
+        if data.len() == 0 {
+            return None;
+        }
+        return Some(FileProjection {
+            id: file.id.clone(),
+            data,
+        });
+    }
+
+    fn finish(&self) -> () {
+        return self
+            .is_finished
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
