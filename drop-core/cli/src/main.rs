@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Arg, Command, ArgMatches};
-use drop_cli::{run_receive_files, run_send_files, Config};
+use drop_cli::{run_receive_files, run_send_files, Profile};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -106,20 +106,20 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
         .cloned()
         .collect();
     
-    let config = build_config(matches)?;
+    let profile = build_profile(matches)?;
     
     println!("📤 Preparing to send {} file(s)...", files.len());
     for file in &files {
         println!("   📄 {}", file.display());
     }
     
-    if let Some(name) = config.name.strip_prefix("drop-cli-") {
+    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
         println!("👤 Sender name: {}", name);
     } else {
-        println!("👤 Sender name: {}", config.name);
+        println!("👤 Sender name: {}", profile.name);
     }
     
-    if config.avatar_b64.is_some() {
+    if profile.avatar_b64.is_some() {
         println!("🖼️  Avatar: Set");
     }
     
@@ -127,7 +127,7 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
         .map(|p| p.to_string_lossy().to_string())
         .collect();
     
-    run_send_files(file_strings, config).await
+    run_send_files(file_strings, profile).await
 }
 
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
@@ -135,20 +135,20 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
     
-    let config = build_config(matches)?;
+    let profile = build_profile(matches)?;
     
     println!("📥 Preparing to receive files...");
     println!("📁 Output directory: {}", output_dir.display());
     println!("🎫 Ticket: {}", ticket);
     println!("🔑 Confirmation: {}", confirmation);
     
-    if let Some(name) = config.name.strip_prefix("drop-cli-") {
+    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
         println!("👤 Receiver name: {}", name);
     } else {
-        println!("👤 Receiver name: {}", config.name);
+        println!("👤 Receiver name: {}", profile.name);
     }
     
-    if config.avatar_b64.is_some() {
+    if profile.avatar_b64.is_some() {
         println!("🖼️  Avatar: Set");
     }
     
@@ -156,13 +156,13 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
         output_dir.to_string_lossy().to_string(),
         ticket.clone(),
         confirmation.clone(),
-        config,
+        profile,
     ).await
 }
 
-fn build_config(matches: &ArgMatches) -> Result<Config> {
+fn build_profile(matches: &ArgMatches) -> Result<Profile> {
     let name = matches.get_one::<String>("name").unwrap().clone();
-    let mut config = Config::new(name, None);
+    let mut profile = Profile::new(name, None);
     
     // Handle avatar from file
     if let Some(avatar_path) = matches.get_one::<PathBuf>("avatar") {
@@ -170,16 +170,16 @@ fn build_config(matches: &ArgMatches) -> Result<Config> {
             return Err(anyhow!("Avatar file does not exist: {}", avatar_path.display()));
         }
         
-        config = config.with_avatar_file(&avatar_path.to_string_lossy())
+        profile = profile.with_avatar_file(&avatar_path.to_string_lossy())
             .with_context(|| "Failed to load avatar file")?;
     }
     
     // Handle avatar from base64 string
     if let Some(avatar_b64) = matches.get_one::<String>("avatar-b64") {
-        config = config.with_avatar_b64(avatar_b64.clone());
+        profile = profile.with_avatar_b64(avatar_b64.clone());
     }
     
-    Ok(config)
+    Ok(profile)
 }
 
 #[cfg(test)]
@@ -187,17 +187,17 @@ mod tests {
     use super::*;
     
     #[test]
-    fn test_config_creation() {
-        let config = Config::new("test-user".to_string(), None);
-        assert_eq!(config.name, "test-user");
-        assert!(config.avatar_b64.is_none());
+    fn test_profile_creation() {
+        let profile = Profile::new("test-user".to_string(), None);
+        assert_eq!(profile.name, "test-user");
+        assert!(profile.avatar_b64.is_none());
     }
     
     #[test]
-    fn test_config_with_avatar() {
-        let config = Config::new("test-user".to_string(), None)
+    fn test_profile_with_avatar() {
+        let profile = Profile::new("test-user".to_string(), None)
             .with_avatar_b64("dGVzdA==".to_string());
-        assert_eq!(config.name, "test-user");
-        assert_eq!(config.avatar_b64, Some("dGVzdA==".to_string()));
+        assert_eq!(profile.name, "test-user");
+        assert_eq!(profile.avatar_b64, Some("dGVzdA==".to_string()));
     }
 }
