@@ -34,6 +34,7 @@ pub struct SendFilesConnectingEvent {
 pub struct SendFilesProfile {
     pub id: String,
     pub name: String,
+    pub avatar_b64: Option<String>
 }
 
 pub struct SendFilesHandler {
@@ -220,6 +221,7 @@ impl Carrier {
                     receiver: SendFilesProfile {
                         id: handshake.profile.id.clone(),
                         name: handshake.profile.name.clone(),
+                        avatar_b64: handshake.profile.avatar_b64.clone(),
                     },
                 });
             });

@@ -71,6 +71,7 @@ pub struct SendFilesConnectingEvent {
 pub struct SendFilesProfile {
     pub id: String,
     pub name: String,
+    pub avatar_b64: Option<String>
 }
 
 struct SendFilesSubscriberAdapter {
@@ -94,6 +95,7 @@ impl sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
             receiver: SendFilesProfile {
                 id: event.receiver.id,
                 name: event.receiver.name,
+                avatar_b64: event.receiver.avatar_b64
             },
         });
     }
