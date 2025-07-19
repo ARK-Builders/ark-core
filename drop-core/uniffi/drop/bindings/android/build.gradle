@@ -81,7 +81,7 @@ publishing {
     repositories {
         maven {
             name = 'GitHubPackages'
-            url = uri('https://maven.pkg.github.com/oluiscabral/drop-core')
+            url = uri('https://maven.pkg.github.com/Ark-Builders/ark-core')
             credentials {
                 username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
                 password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
