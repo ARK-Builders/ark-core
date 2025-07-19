@@ -34,7 +34,7 @@ pub struct SendFilesConnectingEvent {
 pub struct SendFilesProfile {
     pub id: String,
     pub name: String,
-    pub avatar_b64: Option<String>
+    pub avatar_b64: Option<String>,
 }
 
 pub struct SendFilesHandler {

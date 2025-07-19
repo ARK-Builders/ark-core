@@ -42,9 +42,10 @@ impl Profile {
 
     /// Load avatar from file path and encode as base64
     pub fn with_avatar_file(mut self, avatar_path: &str) -> Result<Self> {
-        let avatar_data = fs::read(avatar_path)
-            .with_context(|| format!("Failed to read avatar file: {}", avatar_path))?;
-        
+        let avatar_data = fs::read(avatar_path).with_context(|| {
+            format!("Failed to read avatar file: {}", avatar_path)
+        })?;
+
         self.avatar_b64 = Some(base64::encode(&avatar_data));
         Ok(self)
     }
@@ -86,43 +87,51 @@ impl FileSender {
             profile: self.get_sender_profile(),
         };
 
-        let bubble = send_files(request).await
+        let bubble = send_files(request)
+            .await
             .context("Failed to initiate file sending")?;
-        
+
         let subscriber = FileSendSubscriber::new();
         bubble.subscribe(Arc::new(subscriber));
-        
+
         println!("📦 Ready to send files!");
         println!("🎫 Ticket: \"{}\"", bubble.get_ticket());
         println!("🔑 Confirmation: \"{}\"", bubble.get_confirmation());
         println!("⏳ Waiting for receiver... (Press Ctrl+C to cancel)");
-        
-        tokio::signal::ctrl_c().await
+
+        tokio::signal::ctrl_c()
+            .await
             .context("Failed to listen for Ctrl+C")?;
-        
+
         println!("🚫 Cancelling file transfer...");
         let _ = bubble.cancel().await;
         println!("✅ Transfer cancelled");
-        
+
         Ok(())
     }
 
-    fn create_sender_files(&self, paths: Vec<PathBuf>) -> Result<Vec<SenderFile>> {
+    fn create_sender_files(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> Result<Vec<SenderFile>> {
         let mut files = Vec::new();
-        
+
         for path in paths {
-            let name = path.file_name()
+            let name = path
+                .file_name()
                 .and_then(|n| n.to_str())
-                .ok_or_else(|| anyhow!("Invalid file name: {}", path.display()))?
+                .ok_or_else(|| {
+                    anyhow!("Invalid file name: {}", path.display())
+                })?
                 .to_string();
-            
+
             let data = FileData::new(path)?;
             files.push(SenderFile {
                 name,
                 data: Arc::new(data),
             });
         }
-        
+
         Ok(files)
     }
 
@@ -144,17 +153,30 @@ impl FileReceiver {
         Self { profile }
     }
 
-    pub async fn receive_files(&self, output_dir: PathBuf, ticket: String, confirmation: u8) -> Result<()> {
+    pub async fn receive_files(
+        &self,
+        output_dir: PathBuf,
+        ticket: String,
+        confirmation: u8,
+    ) -> Result<()> {
         // Create output directory if it doesn't exist
         if !output_dir.exists() {
-            fs::create_dir_all(&output_dir)
-                .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
+            fs::create_dir_all(&output_dir).with_context(|| {
+                format!(
+                    "Failed to create output directory: {}",
+                    output_dir.display()
+                )
+            })?;
         }
 
         // Create unique subdirectory for this transfer
         let receiving_path = output_dir.join(Uuid::new_v4().to_string());
-        fs::create_dir(&receiving_path)
-            .with_context(|| format!("Failed to create receiving directory: {}", receiving_path.display()))?;
+        fs::create_dir(&receiving_path).with_context(|| {
+            format!(
+                "Failed to create receiving directory: {}",
+                receiving_path.display()
+            )
+        })?;
 
         let request = ReceiveFilesRequest {
             ticket,
@@ -162,27 +184,30 @@ impl FileReceiver {
             profile: self.get_receiver_profile(),
         };
 
-        let bubble = receive_files(request).await
+        let bubble = receive_files(request)
+            .await
             .context("Failed to initiate file receiving")?;
 
         let subscriber = FileReceiveSubscriber::new(receiving_path.clone());
         bubble.subscribe(Arc::new(subscriber));
-        
+
         println!("📥 Starting file transfer...");
         println!("📁 Files will be saved to: {}", receiving_path.display());
-        
-        bubble.start()
+
+        bubble
+            .start()
             .context("Failed to start file receiving")?;
-        
+
         println!("⏳ Receiving files... (Press Ctrl+C to cancel)");
-        
-        tokio::signal::ctrl_c().await
+
+        tokio::signal::ctrl_c()
+            .await
             .context("Failed to listen for Ctrl+C")?;
-        
+
         println!("🚫 Cancelling file transfer...");
         bubble.cancel();
         println!("✅ Transfer cancelled");
-        
+
         Ok(())
     }
 
@@ -218,9 +243,11 @@ impl SendFilesSubscriber for FileSendSubscriber {
         } else {
             0.0
         };
-        
-        println!("📤 Sending: {} | Progress: {:.1}% | Sent: {} bytes | Remaining: {} bytes", 
-                 event.name, progress, event.sent, event.remaining);
+
+        println!(
+            "📤 Sending: {} | Progress: {:.1}% | Sent: {} bytes | Remaining: {} bytes",
+            event.name, progress, event.sent, event.remaining
+        );
     }
 
     fn notify_connecting(&self, event: SendFilesConnectingEvent) {
@@ -270,7 +297,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
         };
 
         let file_path = self.receiving_path.join(&file.name);
-        
+
         match fs::File::options()
             .create(true)
             .append(true)
@@ -285,7 +312,11 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                     eprintln!("❌ Error flushing file {}: {}", file.name, e);
                     return;
                 }
-                println!("📥 Received {} bytes for file: {}", event.data.len(), file.name);
+                println!(
+                    "📥 Received {} bytes for file: {}",
+                    event.data.len(),
+                    file.name
+                );
             }
             Err(e) => {
                 eprintln!("❌ Error opening file {}: {}", file.name, e);
@@ -298,7 +329,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
         println!("   📛 Name: {}", event.sender.name);
         println!("   🆔 ID: {}", event.sender.id);
         println!("   📁 Files to receive: {}", event.files.len());
-        
+
         for file in &event.files {
             println!("     📄 {}", file.name);
         }
@@ -324,9 +355,10 @@ struct FileData {
 
 impl FileData {
     fn new(path: PathBuf) -> Result<Self> {
-        let metadata = fs::metadata(&path)
-            .with_context(|| format!("Failed to get metadata for file: {}", path.display()))?;
-        
+        let metadata = fs::metadata(&path).with_context(|| {
+            format!("Failed to get metadata for file: {}", path.display())
+        })?;
+
         Ok(Self {
             is_finished: AtomicBool::new(false),
             path,
@@ -342,7 +374,10 @@ impl SenderFileData for FileData {
     }
 
     fn read(&self) -> Option<u8> {
-        if self.is_finished.load(std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .is_finished
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             return None;
         }
 
@@ -353,8 +388,13 @@ impl SenderFileData for FileData {
                     *self.reader.write().unwrap() = Some(file.bytes());
                 }
                 Err(e) => {
-                    eprintln!("❌ Error opening file {}: {}", self.path.display(), e);
-                    self.is_finished.store(true, std::sync::atomic::Ordering::Relaxed);
+                    eprintln!(
+                        "❌ Error opening file {}: {}",
+                        self.path.display(),
+                        e
+                    );
+                    self.is_finished
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                     return None;
                 }
             }
@@ -366,14 +406,20 @@ impl SenderFileData for FileData {
             match bytes_iter.next() {
                 Some(Ok(byte)) => Some(byte),
                 Some(Err(e)) => {
-                    eprintln!("❌ Error reading from file {}: {}", self.path.display(), e);
+                    eprintln!(
+                        "❌ Error reading from file {}: {}",
+                        self.path.display(),
+                        e
+                    );
                     *reader = None;
-                    self.is_finished.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.is_finished
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                     None
                 }
                 None => {
                     *reader = None;
-                    self.is_finished.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.is_finished
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                     None
                 }
             }
@@ -384,16 +430,30 @@ impl SenderFileData for FileData {
 }
 
 /// Public API functions for the CLI
-pub async fn run_send_files(file_paths: Vec<String>, profile: Profile) -> Result<()> {
-    let paths: Vec<PathBuf> = file_paths.into_iter().map(PathBuf::from).collect();
+pub async fn run_send_files(
+    file_paths: Vec<String>,
+    profile: Profile,
+) -> Result<()> {
+    let paths: Vec<PathBuf> = file_paths
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
     let sender = FileSender::new(profile);
     sender.send_files(paths).await
 }
 
-pub async fn run_receive_files(output_dir: String, ticket: String, confirmation: String, profile: Profile) -> Result<()> {
-    let confirmation_code = u8::from_str(&confirmation)
-        .with_context(|| format!("Invalid confirmation code: {}", confirmation))?;
-    
+pub async fn run_receive_files(
+    output_dir: String,
+    ticket: String,
+    confirmation: String,
+    profile: Profile,
+) -> Result<()> {
+    let confirmation_code = u8::from_str(&confirmation).with_context(|| {
+        format!("Invalid confirmation code: {}", confirmation)
+    })?;
+
     let receiver = FileReceiver::new(profile);
-    receiver.receive_files(PathBuf::from(output_dir), ticket, confirmation_code).await
+    receiver
+        .receive_files(PathBuf::from(output_dir), ticket, confirmation_code)
+        .await
 }

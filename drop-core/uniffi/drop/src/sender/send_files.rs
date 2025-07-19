@@ -42,13 +42,17 @@ impl SendFilesBubble {
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) -> () {
-        let adapted_subscriber = SendFilesSubscriberAdapter { inner: subscriber };
+        let adapted_subscriber =
+            SendFilesSubscriberAdapter { inner: subscriber };
         return self.inner.subscribe(Arc::new(adapted_subscriber));
     }
 
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) -> () {
-        let adapted_subscriber = SendFilesSubscriberAdapter { inner: subscriber };
-        return self.inner.unsubscribe(Arc::new(adapted_subscriber));
+        let adapted_subscriber =
+            SendFilesSubscriberAdapter { inner: subscriber };
+        return self
+            .inner
+            .unsubscribe(Arc::new(adapted_subscriber));
     }
 }
 
@@ -71,7 +75,7 @@ pub struct SendFilesConnectingEvent {
 pub struct SendFilesProfile {
     pub id: String,
     pub name: String,
-    pub avatar_b64: Option<String>
+    pub avatar_b64: Option<String>,
 }
 
 struct SendFilesSubscriberAdapter {
@@ -91,18 +95,23 @@ impl sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     }
 
     fn notify_connecting(&self, event: sender::SendFilesConnectingEvent) {
-        return self.inner.notify_connecting(SendFilesConnectingEvent {
-            receiver: SendFilesProfile {
-                id: event.receiver.id,
-                name: event.receiver.name,
-                avatar_b64: event.receiver.avatar_b64
-            },
-        });
+        return self
+            .inner
+            .notify_connecting(SendFilesConnectingEvent {
+                receiver: SendFilesProfile {
+                    id: event.receiver.id,
+                    name: event.receiver.name,
+                    avatar_b64: event.receiver.avatar_b64,
+                },
+            });
     }
 }
 
-pub async fn send_files(request: SendFilesRequest) -> Result<Arc<SendFilesBubble>, DropError> {
-    let runtime = tokio::runtime::Runtime::new().map_err(|e| DropError::TODO(e.to_string()))?;
+pub async fn send_files(
+    request: SendFilesRequest,
+) -> Result<Arc<SendFilesBubble>, DropError> {
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| DropError::TODO(e.to_string()))?;
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
@@ -115,7 +124,9 @@ pub async fn send_files(request: SendFilesRequest) -> Result<Arc<SendFilesBubble
     }));
 }
 
-fn create_adapted_request(request: SendFilesRequest) -> sender::SendFilesRequest {
+fn create_adapted_request(
+    request: SendFilesRequest,
+) -> sender::SendFilesRequest {
     let profile = sender::SenderProfile {
         name: request.profile.name,
         avatar_b64: request.profile.avatar_b64,

@@ -37,13 +37,17 @@ impl ReceiveFilesBubble {
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
-        let adapted_subscriber = ReceiveFilesSubscriberAdapter { inner: subscriber };
+        let adapted_subscriber =
+            ReceiveFilesSubscriberAdapter { inner: subscriber };
         return self.inner.subscribe(Arc::new(adapted_subscriber));
     }
 
     pub fn unsubscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
-        let adapted_subscriber = ReceiveFilesSubscriberAdapter { inner: subscriber };
-        return self.inner.unsubscribe(Arc::new(adapted_subscriber));
+        let adapted_subscriber =
+            ReceiveFilesSubscriberAdapter { inner: subscriber };
+        return self
+            .inner
+            .unsubscribe(Arc::new(adapted_subscriber));
     }
 }
 
@@ -84,36 +88,41 @@ impl receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
     }
 
     fn notify_receiving(&self, event: receiver::ReceiveFilesReceivingEvent) {
-        return self.inner.notify_receiving(ReceiveFilesReceivingEvent {
-            id: event.id,
-            data: event.data,
-        });
+        return self
+            .inner
+            .notify_receiving(ReceiveFilesReceivingEvent {
+                id: event.id,
+                data: event.data,
+            });
     }
 
     fn notify_connecting(&self, event: receiver::ReceiveFilesConnectingEvent) {
-        return self.inner.notify_connecting(ReceiveFilesConnectingEvent {
-            sender: ReceiveFilesProfile {
-                id: event.sender.id,
-                name: event.sender.name,
-                avatar_b64: event.sender.avatar_b64
-            },
-            files: event
-                .files
-                .iter()
-                .map(|f| ReceiveFilesFile {
-                    id: f.id.clone(),
-                    name: f.name.clone(),
-                    len: f.len,
-                })
-                .collect(),
-        });
+        return self
+            .inner
+            .notify_connecting(ReceiveFilesConnectingEvent {
+                sender: ReceiveFilesProfile {
+                    id: event.sender.id,
+                    name: event.sender.name,
+                    avatar_b64: event.sender.avatar_b64,
+                },
+                files: event
+                    .files
+                    .iter()
+                    .map(|f| ReceiveFilesFile {
+                        id: f.id.clone(),
+                        name: f.name.clone(),
+                        len: f.len,
+                    })
+                    .collect(),
+            });
     }
 }
 
 pub async fn receive_files(
     request: ReceiveFilesRequest,
 ) -> Result<Arc<ReceiveFilesBubble>, DropError> {
-    let runtime = tokio::runtime::Runtime::new().map_err(|e| DropError::TODO(e.to_string()))?;
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| DropError::TODO(e.to_string()))?;
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
@@ -126,7 +135,9 @@ pub async fn receive_files(
     }));
 }
 
-fn create_adapted_request(request: ReceiveFilesRequest) -> receiver::ReceiveFilesRequest {
+fn create_adapted_request(
+    request: ReceiveFilesRequest,
+) -> receiver::ReceiveFilesRequest {
     let profile = receiver::ReceiverProfile {
         name: request.profile.name,
         avatar_b64: request.profile.avatar_b64,
