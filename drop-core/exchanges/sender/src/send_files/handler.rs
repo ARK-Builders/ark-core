@@ -135,7 +135,7 @@ impl ProtocolHandler for SendFilesHandler {
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'static>> {
         let carrier = Carrier {
             is_finished: self.is_finished.clone(),
-            limiter: 10240, // TODO: FLEXIBILIZE CHUNK LIMITER
+            limiter: 2097152, // TODO: FLEXIBILIZE CHUNK LIMITER
             profile: self.profile.clone(),
             connection,
             files: self.files.clone(),
