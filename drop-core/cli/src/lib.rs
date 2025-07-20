@@ -7,12 +7,12 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use receiver::{
+use dropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
     ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
     receive_files,
 };
-use sender::{
+use dropx_sender::{
     SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
     SendFilesSubscriber, SenderFile, SenderFileData, SenderProfile, send_files,
 };
