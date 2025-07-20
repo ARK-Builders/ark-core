@@ -9,6 +9,7 @@ dropx-common = { path = "../common" }
 
 rand = "0.9.0"
 uuid = "1.16.0"
+tokio = "1.44.2"
 serde = "1.0.219"
 anyhow = "1.0.98"
 chrono = "0.4.41"

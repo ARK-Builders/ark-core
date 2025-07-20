@@ -194,7 +194,7 @@ impl Carrier {
             u32::from_be_bytes(serialized_handshake_header);
         let mut serialized_handshake =
             vec![0u8; serialized_handshake_len as usize];
-        bi.1.read_exact(&serialized_handshake).await?;
+        bi.1.read_exact(&mut serialized_handshake).await?;
         let handshake: SenderHandshake =
             serde_json::from_slice(&serialized_handshake)?;
         self.subscribers
@@ -331,8 +331,8 @@ impl Carrier {
         Ok(())
     }
 
-    fn is_cancelled(&self) -> Arc<AtomicBool> {
-        return self.is_cancelled.clone();
+    fn is_cancelled(&self) -> bool {
+        return self.is_cancelled.load(std::sync::atomic::Ordering::Relaxed);
     }
 
     async fn read_next_projection_optimized(

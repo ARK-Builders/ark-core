@@ -320,7 +320,7 @@ impl Carrier {
                     uni.finish()?;
                     uni.stopped().await?;
                     
-                    Ok::<u64, anyhow::Error>(projection.data.len() as u64)
+                    Ok::<u64>(projection.data.len() as u64)
                 });
                 chunk_handles.push(handle);
             }
