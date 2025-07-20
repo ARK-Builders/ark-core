@@ -1,6 +1,6 @@
 mod send_files;
 
-use entities::Data;
+use drop_entities::Data;
 use std::sync::Arc;
 
 pub use send_files::*;

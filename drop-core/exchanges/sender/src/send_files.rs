@@ -3,7 +3,7 @@ mod handler;
 use crate::{SenderFile, SenderFileDataAdapter, SenderProfile};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use entities::{File, Profile};
+use drop_entities::{File, Profile};
 use handler::SendFilesHandler;
 use iroh::{Endpoint, protocol::Router};
 use iroh_base::ticket::NodeTicket;
