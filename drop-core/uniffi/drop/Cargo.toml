@@ -6,6 +6,7 @@ edition = "2024"
 [lib]
 name = "drop"
 crate-type = ["cdylib"]
+bench = false
 
 [[bin]]
 name = "uniffi-bindgen"
