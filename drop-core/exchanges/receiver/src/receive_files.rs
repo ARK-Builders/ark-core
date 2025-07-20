@@ -14,7 +14,9 @@ use iroh_base::ticket::NodeTicket;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicBool},
+    time::Instant,
 };
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::ReceiverProfile;
@@ -192,7 +194,7 @@ impl Carrier {
             u32::from_be_bytes(serialized_handshake_header);
         let mut serialized_handshake =
             vec![0u8; serialized_handshake_len as usize];
-        bi.1.read_exact(&mut serialized_handshake).await?;
+        bi.1.read_exact(&serialized_handshake).await?;
         let handshake: SenderHandshake =
             serde_json::from_slice(&serialized_handshake)?;
         self.subscribers
@@ -221,6 +223,15 @@ impl Carrier {
     }
 
     async fn receive_files(&self) -> Result<()> {
+        // Use parallel stream processing with controlled concurrency
+        let semaphore = Arc::new(Semaphore::new(8)); // Max 8 concurrent stream handlers
+        let mut handles = Vec::new();
+        let mut last_notification = Instant::now();
+        const NOTIFICATION_INTERVAL_MS: u64 = 50; // More frequent notifications for receiving
+
+        // Pre-allocate buffer pool for better memory management
+        let buffer_pool = Arc::new(tokio::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+
         loop {
             if self.is_cancelled() {
                 self.connection.close(
@@ -232,6 +243,7 @@ impl Carrier {
                     "Receive files has been cancelled.",
                 ));
             }
+
             let uni_result = self.connection.accept_uni().await;
             if uni_result.is_err() {
                 let err = uni_result.unwrap_err();
@@ -247,47 +259,113 @@ impl Carrier {
                     "Connection unexpectedly closed.",
                 ));
             }
+
             let mut uni = uni_result.unwrap();
-            let projection = self.read_next_projection(&mut uni).await?;
-            if projection.is_none() {
-                break;
+            let subscribers = self.subscribers.clone();
+            let semaphore = semaphore.clone();
+            let buffer_pool = buffer_pool.clone();
+            let is_cancelled = self.is_cancelled.clone();
+
+            // Process each stream concurrently
+            let handle = tokio::spawn(async move {
+                let _permit = semaphore.acquire().await.unwrap();
+                
+                // Try to reuse buffer from pool
+                let mut buffer = {
+                    let mut pool = buffer_pool.lock().await;
+                    pool.pop().unwrap_or_else(|| Vec::with_capacity(65536))
+                };
+                buffer.clear();
+
+                let result = Self::process_stream(uni, &mut buffer, subscribers, is_cancelled).await;
+                
+                // Return buffer to pool if it's not too large
+                if buffer.capacity() <= 131072 { // 128KB max
+                    let mut pool = buffer_pool.lock().await;
+                    if pool.len() < 16 { // Max 16 buffers in pool
+                        pool.push(buffer);
+                    }
+                }
+                
+                result
+            });
+            handles.push(handle);
+
+            // Clean up completed handles periodically
+            if handles.len() > 100 {
+                handles.retain(|h| !h.is_finished());
             }
-            let projection = projection.unwrap();
-            self.subscribers
+        }
+
+        // Wait for all remaining streams to complete
+        for handle in handles {
+            let _ = handle.await;
+        }
+
+        return Ok(());
+    }
+
+    async fn process_stream(
+        mut uni: RecvStream,
+        buffer: &mut Vec<u8>,
+        subscribers: Arc<RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>>,
+        is_cancelled: Arc<AtomicBool>,
+    ) -> Result<()> {
+        if is_cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        let projection = Self::read_next_projection_optimized(&mut uni, buffer).await?;
+        if let Some(projection) = projection {
+            subscribers
                 .read()
                 .unwrap()
                 .iter()
                 .for_each(|(_, s)| {
                     s.notify_receiving(ReceiveFilesReceivingEvent {
-                        id: projection.to_owned().id,
-                        data: projection.to_owned().data,
+                        id: projection.id.clone(),
+                        data: projection.data.clone(),
                     });
                 });
         }
-        return Ok(());
+        Ok(())
     }
 
-    fn is_cancelled(&self) -> bool {
-        return self
-            .is_cancelled
-            .load(std::sync::atomic::Ordering::Relaxed);
+    fn is_cancelled(&self) -> Arc<AtomicBool> {
+        return self.is_cancelled.clone();
     }
 
-    async fn read_next_projection(
-        &self,
+    async fn read_next_projection_optimized(
         uni: &mut RecvStream,
+        buffer: &mut Vec<u8>,
     ) -> Result<Option<FileProjection>> {
         let serialized_projection_len =
-            self.read_serialized_projection_len(uni).await?;
+            Self::read_serialized_projection_len_optimized(uni).await?;
         if serialized_projection_len.is_none() {
             return Ok(None);
         }
-        let mut serialized_projection =
-            vec![0u8; serialized_projection_len.unwrap()];
-        uni.read_exact(&mut serialized_projection).await?;
-        let projection: FileProjection =
-            serde_json::from_slice(&serialized_projection)?;
+        
+        let len = serialized_projection_len.unwrap();
+        buffer.resize(len, 0);
+        uni.read_exact(buffer).await?;
+        
+        let projection: FileProjection = serde_json::from_slice(buffer)?;
         return Ok(Some(projection));
+    }
+
+    async fn read_serialized_projection_len_optimized(
+        uni: &mut RecvStream,
+    ) -> Result<Option<usize>> {
+        let mut header = [0u8; 2];
+        let read = uni.read(&mut header).await?;
+        if read.is_none() {
+            return Ok(None);
+        }
+        if read.unwrap() != 2 {
+            return Err(anyhow::Error::msg("Invalid data chunk length."));
+        }
+        let len = u16::from_be_bytes(header);
+        return Ok(Some(len as usize));
     }
 
     async fn read_serialized_projection_len(
