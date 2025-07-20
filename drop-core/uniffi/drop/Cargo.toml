@@ -11,6 +11,7 @@ bench = false
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+bench = false
 
 [dependencies]
 sender = { path = "../../exchanges/sender" }

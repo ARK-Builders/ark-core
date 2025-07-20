@@ -27,3 +27,4 @@ tokio-test = "0.4"
 [[bin]]
 name = "drop-cli"
 path = "src/main.rs"
+bench = false
