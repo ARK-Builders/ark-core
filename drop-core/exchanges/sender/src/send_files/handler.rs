@@ -1,9 +1,9 @@
 use anyhow::{Ok, Result};
+use drop_entities::{File, Profile};
 use dropx_common::{
     FileProjection, HandshakeFile, HandshakeProfile, ReceiverHandshake,
     SenderHandshake,
 };
-use drop_entities::{File, Profile};
 use iroh::{
     endpoint::{Connection, RecvStream, SendStream, VarInt},
     protocol::ProtocolHandler,

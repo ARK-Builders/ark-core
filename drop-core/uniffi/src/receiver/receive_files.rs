@@ -87,7 +87,10 @@ impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
         return self.inner.get_id();
     }
 
-    fn notify_receiving(&self, event: dropx_receiver::ReceiveFilesReceivingEvent) {
+    fn notify_receiving(
+        &self,
+        event: dropx_receiver::ReceiveFilesReceivingEvent,
+    ) {
         return self
             .inner
             .notify_receiving(ReceiveFilesReceivingEvent {
@@ -96,7 +99,10 @@ impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
             });
     }
 
-    fn notify_connecting(&self, event: dropx_receiver::ReceiveFilesConnectingEvent) {
+    fn notify_connecting(
+        &self,
+        event: dropx_receiver::ReceiveFilesConnectingEvent,
+    ) {
         return self
             .inner
             .notify_connecting(ReceiveFilesConnectingEvent {
