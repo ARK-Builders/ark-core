@@ -230,7 +230,8 @@ impl Carrier {
         const NOTIFICATION_INTERVAL_MS: u64 = 50; // More frequent notifications for receiving
 
         // Pre-allocate buffer pool for better memory management
-        let buffer_pool = Arc::new(tokio::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let buffer_pool =
+            Arc::new(tokio::sync::Mutex::new(Vec::<Vec<u8>>::new()));
 
         loop {
             if self.is_cancelled() {
@@ -269,24 +270,33 @@ impl Carrier {
             // Process each stream concurrently
             let handle = tokio::spawn(async move {
                 let _permit = semaphore.acquire().await.unwrap();
-                
+
                 // Try to reuse buffer from pool
                 let mut buffer = {
                     let mut pool = buffer_pool.lock().await;
-                    pool.pop().unwrap_or_else(|| Vec::with_capacity(65536))
+                    pool.pop()
+                        .unwrap_or_else(|| Vec::with_capacity(65536))
                 };
                 buffer.clear();
 
-                let result = Self::process_stream(uni, &mut buffer, subscribers, is_cancelled).await;
-                
+                let result = Self::process_stream(
+                    uni,
+                    &mut buffer,
+                    subscribers,
+                    is_cancelled,
+                )
+                .await;
+
                 // Return buffer to pool if it's not too large
-                if buffer.capacity() <= 131072 { // 128KB max
+                if buffer.capacity() <= 131072 {
+                    // 128KB max
                     let mut pool = buffer_pool.lock().await;
-                    if pool.len() < 16 { // Max 16 buffers in pool
+                    if pool.len() < 16 {
+                        // Max 16 buffers in pool
                         pool.push(buffer);
                     }
                 }
-                
+
                 result
             });
             handles.push(handle);
@@ -308,14 +318,17 @@ impl Carrier {
     async fn process_stream(
         mut uni: RecvStream,
         buffer: &mut Vec<u8>,
-        subscribers: Arc<RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>>,
+        subscribers: Arc<
+            RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>,
+        >,
         is_cancelled: Arc<AtomicBool>,
     ) -> Result<()> {
         if is_cancelled.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
         }
 
-        let projection = Self::read_next_projection_optimized(&mut uni, buffer).await?;
+        let projection =
+            Self::read_next_projection_optimized(&mut uni, buffer).await?;
         if let Some(projection) = projection {
             subscribers
                 .read()
@@ -332,7 +345,9 @@ impl Carrier {
     }
 
     fn is_cancelled(&self) -> bool {
-        return self.is_cancelled.load(std::sync::atomic::Ordering::Relaxed);
+        return self
+            .is_cancelled
+            .load(std::sync::atomic::Ordering::Relaxed);
     }
 
     async fn read_next_projection_optimized(
@@ -344,11 +359,11 @@ impl Carrier {
         if serialized_projection_len.is_none() {
             return Ok(None);
         }
-        
+
         let len = serialized_projection_len.unwrap();
         buffer.resize(len, 0);
         uni.read_exact(buffer).await?;
-        
+
         let projection: FileProjection = serde_json::from_slice(buffer)?;
         return Ok(Some(projection));
     }

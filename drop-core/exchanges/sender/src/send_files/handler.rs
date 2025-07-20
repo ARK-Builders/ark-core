@@ -245,7 +245,8 @@ impl Carrier {
 
             let handle = tokio::spawn(async move {
                 let _permit = semaphore.acquire().await.unwrap();
-                Self::send_single_file(file, connection, subscribers, limiter).await
+                Self::send_single_file(file, connection, subscribers, limiter)
+                    .await
             });
             handles.push(handle);
         }
@@ -311,15 +312,19 @@ impl Carrier {
                 let connection = connection.clone();
                 let handle = tokio::spawn(async move {
                     let mut uni = connection.open_uni().await?;
-                    let serialized_projection = serde_json::to_vec(&projection)?;
-                    let serialized_projection_len = serialized_projection.len() as u16;
-                    let serialized_projection_header = serialized_projection_len.to_be_bytes();
-                    
-                    uni.write_all(&serialized_projection_header).await?;
+                    let serialized_projection =
+                        serde_json::to_vec(&projection)?;
+                    let serialized_projection_len =
+                        serialized_projection.len() as u16;
+                    let serialized_projection_header =
+                        serialized_projection_len.to_be_bytes();
+
+                    uni.write_all(&serialized_projection_header)
+                        .await?;
                     uni.write_all(&serialized_projection).await?;
                     uni.finish()?;
                     uni.stopped().await?;
-                    
+
                     Ok::<u64>(projection.data.len() as u64)
                 });
                 chunk_handles.push(handle);
@@ -339,7 +344,9 @@ impl Carrier {
             chunks_in_buffer = 0;
 
             // Throttled progress notifications
-            if last_notification.elapsed().as_millis() >= NOTIFICATION_INTERVAL_MS as u128 {
+            if last_notification.elapsed().as_millis()
+                >= NOTIFICATION_INTERVAL_MS as u128
+            {
                 subscribers
                     .read()
                     .unwrap()
@@ -371,7 +378,10 @@ impl Carrier {
         Ok(())
     }
 
-    fn read_next_projection(file: &File, limiter: u32) -> Option<FileProjection> {
+    fn read_next_projection(
+        file: &File,
+        limiter: u32,
+    ) -> Option<FileProjection> {
         let mut data = Vec::with_capacity(limiter as usize);
         for _ in 0..limiter {
             let b = file.data.read();
