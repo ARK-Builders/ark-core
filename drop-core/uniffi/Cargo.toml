@@ -1,10 +1,10 @@
 [package]
-name = "drop"
+name = "drop-uniffi"
 version = "1.1.0"
 edition = "2024"
 
 [lib]
-name = "drop"
+name = "drop_uniffi"
 crate-type = ["cdylib"]
 bench = false
 
@@ -14,8 +14,8 @@ path = "uniffi-bindgen.rs"
 bench = false
 
 [dependencies]
-sender = { path = "../../exchanges/sender" }
-receiver = { path = "../../exchanges/receiver" }
+dropx-sender = { path = "../exchanges/sender" }
+dropx-receiver = { path = "../exchanges/receiver" }
 
 tokio = "1.44.2"
 thiserror = "2.0.12"

@@ -17,8 +17,8 @@ uuid = { version = "1.0", features = ["v4"] }
 clap = { version = "4.0", features = ["derive"] }
 base64 = "0.21"
 
-receiver = { path = "../exchanges/receiver" }  
-sender = { path = "../exchanges/sender" }
+dropx-receiver = { path = "../exchanges/receiver" }  
+dropx-sender = { path = "../exchanges/sender" }
 
 [dev-dependencies]
 tempfile = "3.0"
