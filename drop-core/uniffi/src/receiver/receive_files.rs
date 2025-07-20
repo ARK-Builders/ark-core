@@ -11,7 +11,7 @@ pub struct ReceiveFilesRequest {
 }
 
 pub struct ReceiveFilesBubble {
-    inner: receiver::ReceiveFilesBubble,
+    inner: dropx_receiver::ReceiveFilesBubble,
     runtime: tokio::runtime::Runtime,
 }
 impl ReceiveFilesBubble {
@@ -82,12 +82,12 @@ pub struct ReceiveFilesFile {
 struct ReceiveFilesSubscriberAdapter {
     inner: Arc<dyn ReceiveFilesSubscriber>,
 }
-impl receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
+impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
     fn get_id(&self) -> String {
         return self.inner.get_id();
     }
 
-    fn notify_receiving(&self, event: receiver::ReceiveFilesReceivingEvent) {
+    fn notify_receiving(&self, event: dropx_receiver::ReceiveFilesReceivingEvent) {
         return self
             .inner
             .notify_receiving(ReceiveFilesReceivingEvent {
@@ -96,7 +96,7 @@ impl receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
             });
     }
 
-    fn notify_connecting(&self, event: receiver::ReceiveFilesConnectingEvent) {
+    fn notify_connecting(&self, event: dropx_receiver::ReceiveFilesConnectingEvent) {
         return self
             .inner
             .notify_connecting(ReceiveFilesConnectingEvent {
@@ -126,7 +126,7 @@ pub async fn receive_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return receiver::receive_files(adapted_request).await;
+            return dropx_receiver::receive_files(adapted_request).await;
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
     return Ok(Arc::new(ReceiveFilesBubble {
@@ -137,12 +137,12 @@ pub async fn receive_files(
 
 fn create_adapted_request(
     request: ReceiveFilesRequest,
-) -> receiver::ReceiveFilesRequest {
-    let profile = receiver::ReceiverProfile {
+) -> dropx_receiver::ReceiveFilesRequest {
+    let profile = dropx_receiver::ReceiverProfile {
         name: request.profile.name,
         avatar_b64: request.profile.avatar_b64,
     };
-    return receiver::ReceiveFilesRequest {
+    return dropx_receiver::ReceiveFilesRequest {
         profile,
         ticket: request.ticket,
         confirmation: request.confirmation,

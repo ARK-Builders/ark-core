@@ -9,7 +9,7 @@ pub struct SendFilesRequest {
 }
 
 pub struct SendFilesBubble {
-    inner: sender::SendFilesBubble,
+    inner: dropx_sender::SendFilesBubble,
     _runtime: tokio::runtime::Runtime,
 }
 impl SendFilesBubble {
@@ -81,12 +81,12 @@ pub struct SendFilesProfile {
 struct SendFilesSubscriberAdapter {
     inner: Arc<dyn SendFilesSubscriber>,
 }
-impl sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
+impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     fn get_id(&self) -> String {
         return self.inner.get_id();
     }
 
-    fn notify_sending(&self, event: sender::SendFilesSendingEvent) {
+    fn notify_sending(&self, event: dropx_sender::SendFilesSendingEvent) {
         return self.inner.notify_sending(SendFilesSendingEvent {
             name: event.name,
             sent: event.sent,
@@ -94,7 +94,7 @@ impl sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
         });
     }
 
-    fn notify_connecting(&self, event: sender::SendFilesConnectingEvent) {
+    fn notify_connecting(&self, event: dropx_sender::SendFilesConnectingEvent) {
         return self
             .inner
             .notify_connecting(SendFilesConnectingEvent {
@@ -115,7 +115,7 @@ pub async fn send_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return sender::send_files(adapted_request).await;
+            return dropx_sender::send_files(adapted_request).await;
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
     return Ok(Arc::new(SendFilesBubble {
@@ -126,8 +126,8 @@ pub async fn send_files(
 
 fn create_adapted_request(
     request: SendFilesRequest,
-) -> sender::SendFilesRequest {
-    let profile = sender::SenderProfile {
+) -> dropx_sender::SendFilesRequest {
+    let profile = dropx_sender::SenderProfile {
         name: request.profile.name,
         avatar_b64: request.profile.avatar_b64,
     };
@@ -136,11 +136,11 @@ fn create_adapted_request(
         .into_iter()
         .map(|f| {
             let data = SenderFileDataAdapter { inner: f.data };
-            return sender::SenderFile {
+            return dropx_sender::SenderFile {
                 name: f.name,
                 data: Arc::new(data),
             };
         })
         .collect();
-    return sender::SendFilesRequest { profile, files };
+    return dropx_sender::SendFilesRequest { profile, files };
 }

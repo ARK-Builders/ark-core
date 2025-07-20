@@ -21,7 +21,7 @@ pub trait SenderFileData: Send + Sync {
 struct SenderFileDataAdapter {
     inner: Arc<dyn SenderFileData>,
 }
-impl sender::SenderFileData for SenderFileDataAdapter {
+impl dropx_sender::SenderFileData for SenderFileDataAdapter {
     fn len(&self) -> u64 {
         return self.inner.len();
     }
