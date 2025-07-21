@@ -13,9 +13,7 @@ use std::{
     fmt::Debug,
     pin::Pin,
     sync::{Arc, RwLock, atomic::AtomicBool},
-    time::Instant,
 };
-use tokio::sync::Semaphore;
 
 pub trait SendFilesSubscriber: Send + Sync {
     fn get_id(&self) -> String;
@@ -137,8 +135,7 @@ impl ProtocolHandler for SendFilesHandler {
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'static>> {
         let carrier = Carrier {
             is_finished: self.is_finished.clone(),
-            // Increased chunk size for better throughput
-            limiter: 65536, // 64KB chunks instead of 1KB
+            limiter: 1024, // TODO: FLEXIBILIZE CHUNK LIMITER
             profile: self.profile.clone(),
             connection,
             files: self.files.clone(),
@@ -232,122 +229,45 @@ impl Carrier {
     }
 
     async fn send_files(&self) -> Result<()> {
-        // Use parallel file sending with controlled concurrency
-        let semaphore = Arc::new(Semaphore::new(4)); // Max 4 concurrent file transfers
-        let mut handles = Vec::new();
-
         for file in &self.files {
-            let file = file.clone();
-            let connection = self.connection.clone();
-            let subscribers = self.subscribers.clone();
-            let limiter = self.limiter;
-            let semaphore = semaphore.clone();
-
-            let handle = tokio::spawn(async move {
-                let _permit = semaphore.acquire().await.unwrap();
-                Self::send_single_file(file, connection, subscribers, limiter)
-                    .await
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all files to complete
-        for handle in handles {
-            handle.await??;
-        }
-
-        self.connection
-            .close(VarInt::from_u32(200), String::from("Finished.").as_bytes());
-        return Ok(());
-    }
-
-    async fn send_single_file(
-        file: File,
-        connection: Connection,
-        subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
-        limiter: u32,
-    ) -> Result<()> {
-        let mut sent = 0;
-        let mut remaining = file.data.len();
-        let mut last_notification = Instant::now();
-        const NOTIFICATION_INTERVAL_MS: u64 = 100; // Throttle notifications to every 100ms
-
-        // Initial notification
-        subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(_, s)| {
-                s.notify_sending(SendFilesSendingEvent {
-                    name: file.name.clone(),
-                    sent,
-                    remaining,
+            let mut sent = 0;
+            let mut remaining = file.data.len();
+            self.subscribers
+                .read()
+                .unwrap()
+                .iter()
+                .for_each(|(_, s)| {
+                    s.notify_sending(SendFilesSendingEvent {
+                        name: file.name.clone(),
+                        sent,
+                        remaining,
+                    });
                 });
-            });
-
-        // Use buffered chunks for better performance
-        let mut chunk_buffer = Vec::with_capacity(limiter as usize * 8); // Buffer multiple chunks
-        let mut chunks_in_buffer = 0;
-        const MAX_CHUNKS_IN_BUFFER: usize = 8;
-
-        loop {
-            // Fill buffer with chunks
-            while chunks_in_buffer < MAX_CHUNKS_IN_BUFFER {
-                let projection = Self::read_next_projection(&file, limiter);
+            loop {
+                let projection = self.read_next_projection(file);
                 if projection.is_none() {
                     break;
                 }
                 let projection = projection.unwrap();
-                chunk_buffer.push(projection);
-                chunks_in_buffer += 1;
-            }
-
-            if chunk_buffer.is_empty() {
-                break;
-            }
-
-            // Send all buffered chunks in parallel
-            let mut chunk_handles = Vec::new();
-            for projection in chunk_buffer.drain(..) {
-                let connection = connection.clone();
-                let handle = tokio::spawn(async move {
-                    let mut uni = connection.open_uni().await?;
-                    let serialized_projection =
-                        serde_json::to_vec(&projection)?;
-                    let serialized_projection_len =
-                        serialized_projection.len() as u16;
-                    let serialized_projection_header =
-                        serialized_projection_len.to_be_bytes();
-
-                    uni.write_all(&serialized_projection_header)
-                        .await?;
-                    uni.write_all(&serialized_projection).await?;
-                    uni.finish()?;
-                    uni.stopped().await?;
-
-                    Ok::<u64>(projection.data.len() as u64)
-                });
-                chunk_handles.push(handle);
-            }
-
-            // Wait for all chunks to complete and update progress
-            for handle in chunk_handles {
-                let chunk_size = handle.await??;
-                sent += chunk_size;
-                if remaining >= chunk_size {
-                    remaining -= chunk_size;
+                let projection_data_len = projection.data.len() as u64;
+                let mut uni = self.connection.open_uni().await?;
+                let serialized_projection =
+                    serde_json::to_vec(&projection).unwrap();
+                let serialized_projection_len =
+                    serialized_projection.len() as u16;
+                let serialized_projection_header =
+                    serialized_projection_len.to_be_bytes();
+                uni.write_all(&serialized_projection_header)
+                    .await?;
+                uni.write_all(&serialized_projection).await?;
+                uni.finish()?;
+                sent += projection_data_len;
+                if remaining >= projection_data_len {
+                    remaining -= projection_data_len
                 } else {
-                    remaining = 0;
+                    remaining = 0
                 }
-            }
-
-            chunks_in_buffer = 0;
-
-            // Throttled progress notifications
-            if last_notification.elapsed().as_millis()
-                >= NOTIFICATION_INTERVAL_MS as u128
-            {
-                subscribers
+                self.subscribers
                     .read()
                     .unwrap()
                     .iter()
@@ -358,39 +278,24 @@ impl Carrier {
                             remaining,
                         });
                     });
-                last_notification = Instant::now();
+                uni.stopped().await?;
             }
         }
-
-        // Final notification
-        subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(_, s)| {
-                s.notify_sending(SendFilesSendingEvent {
-                    name: file.name.clone(),
-                    sent,
-                    remaining,
-                });
-            });
-
-        Ok(())
+        self.connection
+            .close(VarInt::from_u32(200), String::from("Finished.").as_bytes());
+        return Ok(());
     }
 
-    fn read_next_projection(
-        file: &File,
-        limiter: u32,
-    ) -> Option<FileProjection> {
-        let mut data = Vec::with_capacity(limiter as usize);
-        for _ in 0..limiter {
+    fn read_next_projection(&self, file: &File) -> Option<FileProjection> {
+        let mut data = Vec::new();
+        for _ in 0..self.limiter {
             let b = file.data.read();
             if b.is_none() {
                 break;
             }
             data.push(b.unwrap());
         }
-        if data.is_empty() {
+        if data.len() == 0 {
             return None;
         }
         return Some(FileProjection {
