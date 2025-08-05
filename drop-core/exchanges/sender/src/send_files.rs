@@ -1,6 +1,6 @@
 mod handler;
 
-use crate::{SenderFile, SenderFileDataAdapter, SenderProfile};
+use crate::{SenderConfig, SenderFile, SenderFileDataAdapter, SenderProfile};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use drop_entities::{File, Profile};
@@ -17,60 +17,9 @@ pub use handler::{
 };
 
 pub struct SendFilesRequest {
-    pub config: SenderConfig,
     pub profile: SenderProfile,
     pub files: Vec<SenderFile>,
-}
-
-#[derive(Clone)]
-pub struct SenderConfig {
-    pub chunk_size: usize,
-    pub max_concurrent_streams: usize,
-    pub compression_enabled: bool,
-    pub buffer_size: usize,
-    pub tcp_nodelay: bool,
-    pub keep_alive: bool,
-}
-
-impl Default for SenderConfig {
-    fn default() -> Self {
-        Self {
-            chunk_size: 1048576,       // 1MB chunks for better throughput
-            max_concurrent_streams: 8, // More parallel streams
-            compression_enabled: true, // Enable compression
-            buffer_size: 2097152,      // 2MB buffer
-            tcp_nodelay: true,         // Disable Nagle's algorithm
-            keep_alive: true,          // Keep connections alive
-        }
-    }
-}
-
-impl SenderConfig {
-    pub fn high_performance() -> Self {
-        Self {
-            chunk_size: 4194304,        // 4MB chunks
-            max_concurrent_streams: 16, // Maximum parallelism
-            compression_enabled: false, // Skip compression for speed
-            buffer_size: 8388608,       // 8MB buffer
-            tcp_nodelay: true,
-            keep_alive: true,
-        }
-    }
-
-    pub fn balanced() -> Self {
-        Self::default()
-    }
-
-    pub fn low_bandwidth() -> Self {
-        Self {
-            chunk_size: 65536,         // 64KB chunks
-            max_concurrent_streams: 2, // Limited streams
-            compression_enabled: true, // Enable compression
-            buffer_size: 131072,       // 128KB buffer
-            tcp_nodelay: false,
-            keep_alive: true,
-        }
-    }
+    pub config: SenderConfig,
 }
 
 pub struct SendFilesBubble {
@@ -168,15 +117,6 @@ pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
     );
 
     let endpoint_builder = Endpoint::builder().discovery_n0();
-
-    // Apply TCP optimizations
-    if request.config.tcp_nodelay {
-        debug!("Enabling TCP_NODELAY for reduced latency");
-    }
-
-    if request.config.keep_alive {
-        debug!("Enabling keep-alive for persistent connections");
-    }
 
     let endpoint = endpoint_builder.bind().await?;
     let node_addr = endpoint.node_addr().initialized().await;

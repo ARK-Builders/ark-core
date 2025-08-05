@@ -16,7 +16,7 @@ use std::{
     io::Write,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
     },
     time::Instant,
 };
@@ -37,7 +37,7 @@ pub struct SendFilesSendingEvent {
     pub remaining: u64,
     pub throughput_mbps: f64,
     pub compression_ratio: f64,
-    pub active_streams: usize,
+    pub active_streams: u32,
 }
 
 pub struct SendFilesConnectingEvent {
@@ -60,7 +60,7 @@ pub struct SendFilesHandler {
     bytes_sent: Arc<AtomicU64>,
     bytes_compressed: Arc<AtomicU64>,
     start_time: Arc<RwLock<Option<Instant>>>,
-    active_streams: Arc<AtomicUsize>,
+    active_streams: Arc<AtomicU32>,
 }
 
 impl Debug for SendFilesHandler {
@@ -98,7 +98,7 @@ impl SendFilesHandler {
             bytes_sent: Arc::new(AtomicU64::new(0)),
             bytes_compressed: Arc::new(AtomicU64::new(0)),
             start_time: Arc::new(RwLock::new(None)),
-            active_streams: Arc::new(AtomicUsize::new(0)),
+            active_streams: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -245,7 +245,7 @@ struct Carrier {
     bytes_sent: Arc<AtomicU64>,
     bytes_compressed: Arc<AtomicU64>,
     start_time: Arc<RwLock<Option<Instant>>>,
-    active_streams: Arc<AtomicUsize>,
+    active_streams: Arc<AtomicU32>,
 }
 
 impl Carrier {
@@ -343,8 +343,9 @@ impl Carrier {
         }
 
         // Create semaphore for concurrent stream control
-        let semaphore =
-            Arc::new(Semaphore::new(self.config.max_concurrent_streams));
+        let semaphore = Arc::new(Semaphore::new(
+            self.config.max_concurrent_streams as usize,
+        ));
 
         // Process files with parallelization
         let mut file_tasks = Vec::new();
@@ -421,7 +422,7 @@ impl Carrier {
         bytes_sent: Arc<AtomicU64>,
         bytes_compressed: Arc<AtomicU64>,
         start_time: Arc<RwLock<Option<Instant>>>,
-        active_streams: Arc<AtomicUsize>,
+        active_streams: Arc<AtomicU32>,
     ) -> Result<()> {
         debug!("Starting transfer for file: {}", file.name);
 
@@ -430,7 +431,7 @@ impl Carrier {
         let mut remaining = total_size;
 
         // Pre-allocate buffer for better performance
-        let mut buffer = Vec::with_capacity(config.buffer_size);
+        let mut buffer = Vec::with_capacity(config.buffer_size as usize);
 
         // Initial progress notification
         Self::notify_progress(
@@ -533,7 +534,7 @@ impl Carrier {
         _throughput_mbps: f64,
         compression_ratio: f64,
         start_time: &Arc<RwLock<Option<Instant>>>,
-        active_streams: &Arc<AtomicUsize>,
+        active_streams: &Arc<AtomicU32>,
     ) {
         let actual_throughput = {
             let start_time_guard = start_time.read().unwrap();
@@ -574,7 +575,7 @@ impl Carrier {
         buffer: &mut Vec<u8>,
     ) -> Option<FileProjection> {
         buffer.clear();
-        buffer.reserve(config.chunk_size);
+        buffer.reserve(config.chunk_size as usize);
 
         for _ in 0..config.chunk_size {
             let b = file.data.read();

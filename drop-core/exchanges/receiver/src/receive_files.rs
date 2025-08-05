@@ -17,7 +17,7 @@ use std::{
     io::Read,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
     },
     time::Instant,
 };
@@ -25,58 +25,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::ReceiverProfile;
-
-#[derive(Clone)]
-pub struct ReceiverConfig {
-    pub max_concurrent_streams: usize,
-    pub buffer_size: usize,
-    pub decompression_enabled: bool,
-    pub tcp_nodelay: bool,
-    pub keep_alive: bool,
-    pub prefetch_enabled: bool,
-}
-
-impl Default for ReceiverConfig {
-    fn default() -> Self {
-        Self {
-            max_concurrent_streams: 8,
-            buffer_size: 2097152, // 2MB buffer
-            decompression_enabled: true,
-            tcp_nodelay: true,
-            keep_alive: true,
-            prefetch_enabled: true,
-        }
-    }
-}
-
-impl ReceiverConfig {
-    pub fn high_performance() -> Self {
-        Self {
-            max_concurrent_streams: 16,
-            buffer_size: 8388608,         // 8MB buffer
-            decompression_enabled: false, // Skip decompression for speed
-            tcp_nodelay: true,
-            keep_alive: true,
-            prefetch_enabled: true,
-        }
-    }
-
-    pub fn balanced() -> Self {
-        Self::default()
-    }
-
-    pub fn low_bandwidth() -> Self {
-        Self {
-            max_concurrent_streams: 2,
-            buffer_size: 131072, // 128KB buffer
-            decompression_enabled: true,
-            tcp_nodelay: false,
-            keep_alive: true,
-            prefetch_enabled: false,
-        }
-    }
-}
+use super::{ReceiverConfig, ReceiverProfile};
 
 pub struct ReceiveFilesRequest {
     pub ticket: String,
@@ -98,7 +47,7 @@ pub struct ReceiveFilesBubble {
     bytes_received: Arc<AtomicU64>,
     bytes_decompressed: Arc<AtomicU64>,
     start_time: Arc<RwLock<Option<Instant>>>,
-    active_streams: Arc<AtomicUsize>,
+    active_streams: Arc<AtomicU32>,
 }
 
 impl ReceiveFilesBubble {
@@ -121,7 +70,7 @@ impl ReceiveFilesBubble {
             bytes_received: Arc::new(AtomicU64::new(0)),
             bytes_decompressed: Arc::new(AtomicU64::new(0)),
             start_time: Arc::new(RwLock::new(None)),
-            active_streams: Arc::new(AtomicUsize::new(0)),
+            active_streams: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -277,7 +226,7 @@ struct Carrier {
     bytes_received: Arc<AtomicU64>,
     bytes_decompressed: Arc<AtomicU64>,
     start_time: Arc<RwLock<Option<Instant>>>,
-    active_streams: Arc<AtomicUsize>,
+    active_streams: Arc<AtomicU32>,
 }
 
 impl Carrier {
@@ -365,8 +314,9 @@ impl Carrier {
         info!("Starting file reception");
 
         // Create semaphore for concurrent stream processing
-        let semaphore =
-            Arc::new(Semaphore::new(self.config.max_concurrent_streams));
+        let semaphore = Arc::new(Semaphore::new(
+            self.config.max_concurrent_streams as usize,
+        ));
         let mut stream_tasks = Vec::new();
 
         loop {
@@ -432,7 +382,9 @@ impl Carrier {
             stream_tasks.push(task);
 
             // Limit the number of concurrent tasks to prevent memory issues
-            if stream_tasks.len() >= self.config.max_concurrent_streams * 2 {
+            if stream_tasks.len()
+                >= (self.config.max_concurrent_streams * 2) as usize
+            {
                 // Wait for some tasks to complete
                 let selected = futures::future::select_all(stream_tasks).await;
                 match selected.0 {
@@ -468,7 +420,7 @@ impl Carrier {
         bytes_received: Arc<AtomicU64>,
         bytes_decompressed: Arc<AtomicU64>,
         start_time: Arc<RwLock<Option<Instant>>>,
-        active_streams: Arc<AtomicUsize>,
+        active_streams: Arc<AtomicU32>,
     ) -> Result<()> {
         let projection = Self::read_next_projection(&mut uni, &config).await?;
         if projection.is_none() {
@@ -539,7 +491,7 @@ impl Carrier {
         serialized_projection.resize(len, 0);
 
         // Use larger buffer for reading
-        let mut buffer = vec![0u8; config.buffer_size.min(len)];
+        let mut buffer = vec![0u8; config.buffer_size.min(len as u64) as usize];
         let mut total_read = 0;
 
         while total_read < len {
@@ -638,7 +590,7 @@ pub struct ReceiveFilesReceivingEvent {
     pub decompressed_bytes: u64,
     pub decompression_ratio: f64,
     pub throughput_mbps: f64,
-    pub active_streams: usize,
+    pub active_streams: u32,
 }
 
 pub struct ReceiveFilesConnectingEvent {
@@ -671,15 +623,6 @@ pub async fn receive_files(
     let ticket: NodeTicket = request.ticket.parse()?;
 
     let endpoint_builder = Endpoint::builder().discovery_n0();
-
-    // Apply TCP optimizations
-    if request.config.tcp_nodelay {
-        debug!("Enabling TCP_NODELAY for reduced latency");
-    }
-
-    if request.config.keep_alive {
-        debug!("Enabling keep-alive for persistent connections");
-    }
 
     let endpoint = endpoint_builder.bind().await?;
     let connection = endpoint

@@ -30,3 +30,10 @@ impl dropx_sender::SenderFileData for SenderFileDataAdapter {
         return self.inner.read();
     }
 }
+
+pub struct SenderConfig {
+    pub compression_enabled: bool,
+    pub chunk_size: u64,
+    pub buffer_size: u64,
+    pub max_concurrent_streams: u32,
+}

@@ -69,3 +69,42 @@ impl ReceiverFileData {
         return None;
     }
 }
+
+#[derive(Clone)]
+pub struct ReceiverConfig {
+    pub decompression_enabled: bool,
+    pub buffer_size: u64,
+    pub max_concurrent_streams: u32,
+}
+
+impl Default for ReceiverConfig {
+    fn default() -> Self {
+        Self {
+            decompression_enabled: true,
+            buffer_size: 2097152, // 2MB buffer
+            max_concurrent_streams: 8,
+        }
+    }
+}
+
+impl ReceiverConfig {
+    pub fn high_performance() -> Self {
+        Self {
+            decompression_enabled: false, // Skip decompression for speed
+            buffer_size: 8388608,         // 8MB buffer
+            max_concurrent_streams: 16,
+        }
+    }
+
+    pub fn balanced() -> Self {
+        Self::default()
+    }
+
+    pub fn low_bandwidth() -> Self {
+        Self {
+            decompression_enabled: true,
+            buffer_size: 131072, // 128KB buffer
+            max_concurrent_streams: 2,
+        }
+    }
+}

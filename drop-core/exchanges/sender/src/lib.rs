@@ -31,3 +31,44 @@ impl Data for SenderFileDataAdapter {
         return self.inner.read();
     }
 }
+
+#[derive(Clone)]
+pub struct SenderConfig {
+    pub chunk_size: u64,
+    pub buffer_size: u64,
+    pub compression_enabled: bool,
+    pub max_concurrent_streams: u32,
+}
+impl Default for SenderConfig {
+    fn default() -> Self {
+        Self {
+            compression_enabled: true, // Enable compression
+            chunk_size: 1048576,       // 1MB chunks for better throughput
+            buffer_size: 2097152,      // 2MB buffer
+            max_concurrent_streams: 8, // More parallel streams
+        }
+    }
+}
+impl SenderConfig {
+    pub fn high_performance() -> Self {
+        Self {
+            compression_enabled: false, // Skip compression for speed
+            chunk_size: 4194304,        // 4MB chunks
+            buffer_size: 8388608,       // 8MB buffer
+            max_concurrent_streams: 16, // Maximum parallelism
+        }
+    }
+
+    pub fn balanced() -> Self {
+        Self::default()
+    }
+
+    pub fn low_bandwidth() -> Self {
+        Self {
+            compression_enabled: true, // Enable compression
+            chunk_size: 65536,         // 64KB chunks
+            buffer_size: 131072,       // 128KB buffer
+            max_concurrent_streams: 2, // Limited streams
+        }
+    }
+}
