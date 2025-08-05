@@ -4,8 +4,8 @@ version = "1.1.0"
 edition = "2024"
 
 [dependencies]
-drop-entities = { path = "entities" }
-dropx-common = { path = "exchanges/common" }
+drop-entities = { path = "../../entities" }
+dropx-common = { path = "../common" }
 
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4"] }
