@@ -179,7 +179,7 @@ pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
     }
 
     let endpoint = endpoint_builder.bind().await?;
-    let node_addr = endpoint.node_addr().get().unwrap();
+    let node_addr = endpoint.node_addr().initialized().await;
     let confirmation: u8 = rand::thread_rng().gen_range(0..=99);
 
     let handler = Arc::new(SendFilesHandler::new(
