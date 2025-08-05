@@ -207,7 +207,7 @@ pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
         .accept([confirmation], handler.clone())
         .spawn();
 
-    info!(" file transfer initialized with ticket");
+    info!("File transfer initialized with ticket");
 
     Ok(SendFilesBubble::new(
         NodeTicket::new(node_addr).to_string(),

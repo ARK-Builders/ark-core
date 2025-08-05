@@ -229,7 +229,7 @@ impl ProtocolHandler for SendFilesHandler {
                 .await
                 .map_err(|e| iroh::protocol::AcceptError::NotAllowed {})?;
             carrier.finish();
-            info!(" file transfer completed");
+            info!("File transfer completed");
             Ok(())
         }
     }
@@ -256,7 +256,7 @@ impl Carrier {
         self.receive_handshake(&mut bi).await?;
         bi.0.finish()?;
         bi.0.stopped().await?;
-        info!(" handshake completed successfully");
+        info!("Handshake completed successfully");
         Ok(())
     }
 
@@ -393,7 +393,7 @@ impl Carrier {
             match result {
                 Ok(Ok(())) => continue,
                 Ok(Err(e)) => {
-                    error!(" file transfer error: {}", e);
+                    error!("File transfer error: {}", e);
                     return Err(e);
                 }
                 Err(e) => {
@@ -406,7 +406,7 @@ impl Carrier {
         // Close connection with success code
         self.connection.close(
             VarInt::from_u32(200),
-            String::from(" transfer finished.").as_bytes(),
+            String::from("Transfer finished.").as_bytes(),
         );
 
         info!("All files transferred successfully");
