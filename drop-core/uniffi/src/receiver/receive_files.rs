@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use dropx_receiver::ReceiverConfig;
+
 use crate::DropError;
 
 use super::ReceiverProfile;
@@ -152,5 +154,6 @@ fn create_adapted_request(
         profile,
         ticket: request.ticket,
         confirmation: request.confirmation,
+        config: ReceiverConfig::high_performance(),
     };
 }

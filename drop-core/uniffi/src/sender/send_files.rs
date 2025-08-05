@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use dropx_sender::SenderConfig;
+
 use super::{SenderFile, SenderFileDataAdapter, SenderProfile};
 use crate::DropError;
 
@@ -142,5 +144,9 @@ fn create_adapted_request(
             };
         })
         .collect();
-    return dropx_sender::SendFilesRequest { profile, files };
+    return dropx_sender::SendFilesRequest {
+        profile,
+        files,
+        config: SenderConfig::high_performance(),
+    };
 }
