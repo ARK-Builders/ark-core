@@ -471,7 +471,6 @@ impl Carrier {
             .await;
         }
 
-        uni.finish()?;
         uni.stopped().await?;
 
         debug!(
