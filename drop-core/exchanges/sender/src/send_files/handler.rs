@@ -430,9 +430,6 @@ impl Carrier {
         let total_size = file.data.len();
         let mut remaining = total_size;
 
-        // Pre-allocate buffer for better performance
-        let mut buffer = Vec::with_capacity(config.buffer_size as usize);
-
         // Initial progress notification
         Self::notify_progress(
             &subscribers,
@@ -448,7 +445,7 @@ impl Carrier {
 
         loop {
             let projection =
-                Self::read_next_projection(&file, &config, &mut buffer);
+                Self::read_next_projection(&file, &config);
             if projection.is_none() {
                 break;
             }
@@ -572,18 +569,8 @@ impl Carrier {
     fn read_next_projection(
         file: &File,
         config: &SenderConfig,
-        buffer: &mut Vec<u8>,
     ) -> Option<FileProjection> {
-        buffer.clear();
-        buffer.reserve(config.chunk_size as usize);
-
-        for _ in 0..config.chunk_size {
-            let b = file.data.read();
-            if b.is_none() {
-                break;
-            }
-            buffer.push(b.unwrap());
-        }
+        let buffer = file.data.read_chunk(config.chunk_size);
 
         if buffer.is_empty() {
             return None;
