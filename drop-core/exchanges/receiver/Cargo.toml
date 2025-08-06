@@ -8,9 +8,11 @@ drop-entities = { path = "../../entities" }
 dropx-common = { path = "../common" }
 
 uuid = "1.16.0"
+iroh = "0.91.1"
 tokio = "1.44.2"
 serde = "1.0.219"
+serde_json = "1.0.142"
 anyhow = "1.0.98"
-iroh-base = "0.34.1"
-serde_json = "1.0.140"
-iroh = { version = "0.34.1", default-features = false }
+iroh-base = "0.91.1"
+flate2 = "1.0"
+tracing = "0.1"

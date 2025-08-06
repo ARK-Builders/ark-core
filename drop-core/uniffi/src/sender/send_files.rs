@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use super::{SenderFile, SenderFileDataAdapter, SenderProfile};
+use super::{SenderConfig, SenderFile, SenderFileDataAdapter, SenderProfile};
 use crate::DropError;
 
 pub struct SendFilesRequest {
     pub profile: SenderProfile,
     pub files: Vec<SenderFile>,
+    pub config: Option<SenderConfig>,
 }
 
 pub struct SendFilesBubble {
@@ -142,5 +143,16 @@ fn create_adapted_request(
             };
         })
         .collect();
-    return dropx_sender::SendFilesRequest { profile, files };
+    let config = match request.config {
+        Some(config) => dropx_sender::SenderConfig {
+            compression_enabled: config.compression_enabled,
+            buffer_size: config.buffer_size,
+        },
+        None => dropx_sender::SenderConfig::default(),
+    };
+    return dropx_sender::SendFilesRequest {
+        profile,
+        files,
+        config,
+    };
 }

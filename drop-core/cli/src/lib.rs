@@ -9,12 +9,13 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use dropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
-    ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
-    receive_files,
+    ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverConfig,
+    ReceiverProfile, receive_files,
 };
 use dropx_sender::{
     SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
-    SendFilesSubscriber, SenderFile, SenderFileData, SenderProfile, send_files,
+    SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
+    SenderProfile, send_files,
 };
 use uuid::Uuid;
 
@@ -85,6 +86,7 @@ impl FileSender {
         let request = SendFilesRequest {
             files: self.create_sender_files(file_paths)?,
             profile: self.get_sender_profile(),
+            config: SenderConfig::default(),
         };
 
         let bubble = send_files(request)
@@ -182,6 +184,7 @@ impl FileReceiver {
             ticket,
             confirmation,
             profile: self.get_receiver_profile(),
+            config: ReceiverConfig::default(),
         };
 
         let bubble = receive_files(request)
@@ -426,6 +429,11 @@ impl SenderFileData for FileData {
         } else {
             None
         }
+    }
+
+    fn read_chunk(&self, size: u64) -> Vec<u8> {
+        // TODO: implement
+        todo!();
     }
 }
 

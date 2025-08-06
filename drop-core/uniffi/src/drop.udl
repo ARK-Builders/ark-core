@@ -16,10 +16,16 @@ dictionary SenderFile {
 interface SenderFileData {
     u64 len();
     u8? read();
+    sequence<u8> read_chunk(u64 size);
+};
+dictionary SenderConfig {
+    boolean compression_enabled;
+    u64 buffer_size;
 };
 dictionary SendFilesRequest {
     SenderProfile profile;
     sequence<SenderFile> files;
+    SenderConfig? config;
 };
 interface SendFilesBubble {
     string get_ticket();
@@ -57,10 +63,15 @@ dictionary ReceiverProfile {
     string name;
     string? avatar_b64;
 };
+dictionary ReceiverConfig {
+    boolean decompression_enabled;
+    u64 buffer_size;
+};
 dictionary ReceiveFilesRequest {
     string ticket;
     u8 confirmation;
     ReceiverProfile profile;
+    ReceiverConfig? config;
 };
 interface ReceiveFilesBubble {
     [Throws=DropError]
