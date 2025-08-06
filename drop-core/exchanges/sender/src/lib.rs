@@ -39,22 +39,19 @@ impl Data for SenderFileDataAdapter {
 
 #[derive(Clone)]
 pub struct SenderConfig {
-    pub compression_enabled: bool,
     pub buffer_size: u64,
 }
 impl Default for SenderConfig {
     fn default() -> Self {
         Self {
-            compression_enabled: true, // Enable compression
-            buffer_size: 2097152,      // 2MB buffer
+            buffer_size: 2097152, // 2MB buffer
         }
     }
 }
 impl SenderConfig {
     pub fn high_performance() -> Self {
         Self {
-            compression_enabled: false, // Skip compression for speed
-            buffer_size: 8388608,       // 8MB buffer
+            buffer_size: 8388608, // 8MB buffer
         }
     }
 
@@ -64,8 +61,7 @@ impl SenderConfig {
 
     pub fn low_bandwidth() -> Self {
         Self {
-            compression_enabled: true, // Enable compression
-            buffer_size: 131072,       // 128KB buffer
+            buffer_size: 131072, // 128KB buffer
         }
     }
 }

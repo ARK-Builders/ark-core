@@ -37,6 +37,5 @@ impl dropx_sender::SenderFileData for SenderFileDataAdapter {
 }
 
 pub struct SenderConfig {
-    pub compression_enabled: bool,
     pub buffer_size: u64,
 }

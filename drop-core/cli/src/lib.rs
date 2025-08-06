@@ -7,10 +7,11 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
+use base64::{Engine, engine::general_purpose};
 use dropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
-    ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverConfig,
-    ReceiverProfile, receive_files,
+    ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
+    receive_files,
 };
 use dropx_sender::{
     SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
@@ -47,7 +48,7 @@ impl Profile {
             format!("Failed to read avatar file: {}", avatar_path)
         })?;
 
-        self.avatar_b64 = Some(base64::encode(&avatar_data));
+        self.avatar_b64 = Some(general_purpose::STANDARD.encode(&avatar_data));
         Ok(self)
     }
 
@@ -184,7 +185,6 @@ impl FileReceiver {
             ticket,
             confirmation,
             profile: self.get_receiver_profile(),
-            config: ReceiverConfig::default(),
         };
 
         let bubble = receive_files(request)
@@ -431,7 +431,7 @@ impl SenderFileData for FileData {
         }
     }
 
-    fn read_chunk(&self, size: u64) -> Vec<u8> {
+    fn read_chunk(&self, _size: u64) -> Vec<u8> {
         // TODO: implement
         todo!();
     }

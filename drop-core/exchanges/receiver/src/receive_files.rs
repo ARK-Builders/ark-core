@@ -3,7 +3,6 @@ use drop_entities::Profile;
 use dropx_common::{
     FileProjection, HandshakeProfile, ReceiverHandshake, SenderHandshake,
 };
-use flate2::read::GzDecoder;
 use iroh::{
     Endpoint,
     endpoint::{
@@ -14,26 +13,23 @@ use iroh::{
 use iroh_base::ticket::NodeTicket;
 use std::{
     collections::HashMap,
-    io::Read,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use super::{ReceiverConfig, ReceiverProfile};
+use super::ReceiverProfile;
 
 pub struct ReceiveFilesRequest {
     pub ticket: String,
     pub confirmation: u8,
     pub profile: ReceiverProfile,
-    pub config: ReceiverConfig,
 }
 
 pub struct ReceiveFilesBubble {
     profile: Profile,
     endpoint: Endpoint,
     connection: Connection,
-    config: ReceiverConfig,
     is_running: Arc<AtomicBool>,
     is_consumed: Arc<AtomicBool>,
     is_finished: Arc<AtomicBool>,
@@ -45,13 +41,11 @@ impl ReceiveFilesBubble {
         profile: Profile,
         endpoint: Endpoint,
         connection: Connection,
-        config: ReceiverConfig,
     ) -> Self {
         Self {
             profile,
             endpoint,
             connection,
-            config,
             is_running: Arc::new(AtomicBool::new(false)),
             is_consumed: Arc::new(AtomicBool::new(false)),
             is_finished: Arc::new(AtomicBool::new(false)),
@@ -75,7 +69,6 @@ impl ReceiveFilesBubble {
             profile: self.profile.clone(),
             endpoint: self.endpoint.clone(),
             connection: self.connection.clone(),
-            config: self.config.clone(),
             is_running: self.is_running.clone(),
             is_finished: self.is_finished.clone(),
             is_cancelled: self.is_cancelled.clone(),
@@ -162,7 +155,6 @@ struct Carrier {
     profile: Profile,
     endpoint: Endpoint,
     connection: Connection,
-    config: ReceiverConfig,
     is_running: Arc<AtomicBool>,
     is_finished: Arc<AtomicBool>,
     is_cancelled: Arc<AtomicBool>,
@@ -283,10 +275,9 @@ impl Carrier {
             }
 
             let uni = uni_result.unwrap();
-            let config = self.config.clone();
             let subscribers = self.subscribers.clone();
 
-            Self::process_stream(uni, config, subscribers).await?;
+            Self::process_stream(uni, subscribers).await?;
         }
 
         info!("All streams processed successfully");
@@ -295,28 +286,16 @@ impl Carrier {
 
     async fn process_stream(
         mut uni: RecvStream,
-        config: ReceiverConfig,
         subscribers: Arc<
             RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>,
         >,
     ) -> Result<()> {
-        let projection = Self::read_next_projection(&mut uni, &config).await?;
+        let projection = Self::read_next_projection(&mut uni).await?;
         if projection.is_none() {
             return Ok(());
         }
 
         let projection = projection.unwrap();
-        let received_size = projection.data.len() as u64;
-
-        // Apply decompression if enabled
-        let (final_data, decompression_ratio) = if config.decompression_enabled
-        {
-            Self::decompress_data(&projection.data)?
-        } else {
-            (projection.data.clone(), 1.0)
-        };
-
-        let decompressed_size = final_data.len() as u64;
 
         // Notify subscribers with event
         subscribers
@@ -326,12 +305,10 @@ impl Carrier {
             .for_each(|(_, s)| {
                 s.notify_receiving(ReceiveFilesReceivingEvent {
                     id: projection.id.clone(),
-                    data: final_data.clone(),
-                    received_bytes: received_size,
-                    decompressed_bytes: decompressed_size,
-                    decompression_ratio,
+                    data: projection.data.clone(),
                 });
             });
+
         Ok(())
     }
 
@@ -342,7 +319,6 @@ impl Carrier {
 
     async fn read_next_projection(
         uni: &mut RecvStream,
-        config: &ReceiverConfig,
     ) -> Result<Option<FileProjection>> {
         let serialized_projection_len =
             Self::read_serialized_projection_len(uni).await?;
@@ -351,37 +327,12 @@ impl Carrier {
         }
 
         let len = serialized_projection_len.unwrap();
-        let mut serialized_projection = Vec::with_capacity(len);
-        serialized_projection.resize(len, 0);
-
-        // Use larger buffer for reading
-        let mut buffer = vec![0u8; config.buffer_size.min(len as u64) as usize];
-        let mut total_read = 0;
-
-        while total_read < len {
-            let to_read = (len - total_read).min(buffer.len());
-            let read = uni.read(&mut buffer[..to_read]).await?;
-
-            if let Some(bytes_read) = read {
-                if bytes_read == 0 {
-                    break;
-                }
-                serialized_projection[total_read..total_read + bytes_read]
-                    .copy_from_slice(&buffer[..bytes_read]);
-                total_read += bytes_read;
-            } else {
-                break;
-            }
-        }
-
-        if total_read != len {
-            return Err(anyhow::Error::msg(
-                "Incomplete projection data received",
-            ));
-        }
+        let mut serialized_projection = vec![0u8; len];
+        uni.read_exact(&mut serialized_projection).await?;
 
         let projection: FileProjection =
             serde_json::from_slice(&serialized_projection)?;
+
         Ok(Some(projection))
     }
 
@@ -407,20 +358,6 @@ impl Carrier {
             u32::from_be_bytes(serialized_projection_header);
         Ok(Some(serialized_projection_len as usize))
     }
-
-    fn decompress_data(data: &[u8]) -> Result<(Vec<u8>, f64)> {
-        let mut decoder = GzDecoder::new(data);
-        let mut decompressed = Vec::new();
-        decoder.read_to_end(&mut decompressed)?;
-
-        let decompression_ratio = if data.len() > 0 {
-            decompressed.len() as f64 / data.len() as f64
-        } else {
-            1.0
-        };
-
-        Ok((decompressed, decompression_ratio))
-    }
 }
 
 pub trait ReceiveFilesSubscriber: Send + Sync {
@@ -432,9 +369,6 @@ pub trait ReceiveFilesSubscriber: Send + Sync {
 pub struct ReceiveFilesReceivingEvent {
     pub id: String,
     pub data: Vec<u8>,
-    pub received_bytes: u64,
-    pub decompressed_bytes: u64,
-    pub decompression_ratio: f64,
 }
 
 pub struct ReceiveFilesConnectingEvent {
@@ -457,11 +391,6 @@ pub struct ReceiveFilesFile {
 pub async fn receive_files(
     request: ReceiveFilesRequest,
 ) -> Result<ReceiveFilesBubble> {
-    info!(
-        "Starting file reception with config: buffer_size={}, decompression={}",
-        request.config.buffer_size, request.config.decompression_enabled
-    );
-
     let ticket: NodeTicket = request.ticket.parse()?;
 
     let endpoint_builder = Endpoint::builder().discovery_n0();
@@ -479,6 +408,5 @@ pub async fn receive_files(
         },
         endpoint,
         connection,
-        request.config,
     ))
 }

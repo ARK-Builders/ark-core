@@ -145,7 +145,6 @@ fn create_adapted_request(
         .collect();
     let config = match request.config {
         Some(config) => dropx_sender::SenderConfig {
-            compression_enabled: config.compression_enabled,
             buffer_size: config.buffer_size,
         },
         None => dropx_sender::SenderConfig::default(),

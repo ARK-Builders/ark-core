@@ -27,7 +27,6 @@ pub struct SendFilesBubble {
     confirmation: u8,
     router: Router,
     handler: Arc<SendFilesHandler>,
-    config: SenderConfig,
     created_at: DateTime<Utc>,
 }
 impl SendFilesBubble {
@@ -36,14 +35,12 @@ impl SendFilesBubble {
         confirmation: u8,
         router: Router,
         handler: Arc<SendFilesHandler>,
-        config: SenderConfig,
     ) -> Self {
         Self {
             ticket,
             confirmation,
             router,
             handler,
-            config,
             created_at: Utc::now(),
         }
     }
@@ -95,10 +92,7 @@ impl SendFilesBubble {
 
 pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
     info!("Starting file transfer with {} files", request.files.len());
-    debug!(
-        "Sender config: compression={}, buffer_size={}",
-        request.config.compression_enabled, request.config.buffer_size
-    );
+    debug!("Sender config: buffer_size={}", request.config.buffer_size);
 
     let endpoint_builder = Endpoint::builder().discovery_n0();
 
@@ -138,6 +132,5 @@ pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
         confirmation,
         router,
         handler,
-        request.config,
     ))
 }

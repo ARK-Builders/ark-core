@@ -4,7 +4,6 @@ use dropx_common::{
     FileProjection, HandshakeFile, HandshakeProfile, ReceiverHandshake,
     SenderHandshake,
 };
-use flate2::{Compression, write::GzEncoder};
 use futures::Future;
 use iroh::{
     endpoint::{Connection, RecvStream, SendStream},
@@ -13,7 +12,6 @@ use iroh::{
 use std::{
     collections::HashMap,
     fmt::Debug,
-    io::Write,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
 use tracing::{debug, info};
@@ -30,7 +28,6 @@ pub struct SendFilesSendingEvent {
     pub name: String,
     pub sent: u64,
     pub remaining: u64,
-    pub compression_ratio: f64,
 }
 
 pub struct SendFilesConnectingEvent {
@@ -290,8 +287,8 @@ impl Carrier {
         debug!("Starting transfer for file: {}", file.name);
 
         let mut sent = 0u64;
-        let total_size = file.data.len();
-        let mut remaining = total_size;
+        let total_len = file.data.len();
+        let mut remaining = total_len;
 
         // Initial progress notification
         subscribers
@@ -303,7 +300,6 @@ impl Carrier {
                     name: file.name.clone(),
                     sent,
                     remaining,
-                    compression_ratio: 1.0,
                 });
             });
 
@@ -314,23 +310,14 @@ impl Carrier {
             }
 
             let projection = projection.unwrap();
-            let original_size = projection.data.len() as u64;
-
-            // Apply compression if enabled
-            let (final_data, compression_ratio) = if config.compression_enabled
-            {
-                Self::compress_data(&projection.data)?
-            } else {
-                (projection.data.clone(), 1.0)
-            };
+            let data_len = projection.data.len() as u64;
 
             // Open unidirectional stream for this chunk
             let mut uni = connection.open_uni().await?;
 
-            // Create projection with compressed data
             let projection = FileProjection {
                 id: projection.id,
-                data: final_data,
+                data: projection.data,
             };
 
             // Serialize and send projection with larger buffer
@@ -345,14 +332,13 @@ impl Carrier {
             uni.finish()?;
 
             // Update counters
-            sent += original_size;
-            remaining = if remaining >= original_size {
-                remaining - original_size
+            sent += data_len;
+            remaining = if remaining >= data_len {
+                remaining - data_len
             } else {
                 0
             };
 
-            // Notify progress with compression info
             subscribers
                 .read()
                 .unwrap()
@@ -362,7 +348,6 @@ impl Carrier {
                         name: file.name.clone(),
                         sent,
                         remaining,
-                        compression_ratio,
                     });
                 });
 
@@ -390,20 +375,6 @@ impl Carrier {
             id: file.id.clone(),
             data: buffer,
         })
-    }
-
-    fn compress_data(data: &[u8]) -> Result<(Vec<u8>, f64)> {
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(data)?;
-        let compressed = encoder.finish()?;
-
-        let compression_ratio = if data.len() > 0 {
-            compressed.len() as f64 / data.len() as f64
-        } else {
-            1.0
-        };
-
-        Ok((compressed, compression_ratio))
     }
 
     fn finish(&self) {
