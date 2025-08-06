@@ -430,6 +430,10 @@ impl SenderFileData for FileData {
             None
         }
     }
+
+    fn read_chunk(&self, size: u64) -> Vec<u8> {
+        todo!();
+    }
 }
 
 /// Public API functions for the CLI
