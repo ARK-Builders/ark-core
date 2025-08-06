@@ -378,53 +378,56 @@ impl Carrier {
         start_time: Arc<RwLock<Option<Instant>>>,
         active_streams: Arc<AtomicU32>,
     ) -> Result<()> {
-        let projection = Self::read_next_projection(&mut uni, &config).await?;
-        if projection.is_none() {
-            return Ok(());
-        }
+        loop {
+            let projection =
+                Self::read_next_projection(&mut uni, &config).await?;
+            if projection.is_none() {
+                return Ok(());
+            }
 
-        let projection = projection.unwrap();
-        let received_size = projection.data.len() as u64;
+            let projection = projection.unwrap();
+            let received_size = projection.data.len() as u64;
 
-        // Apply decompression if enabled
-        let (final_data, decompression_ratio) = if config.decompression_enabled
-        {
-            Self::decompress_data(&projection.data)?
-        } else {
-            (projection.data.clone(), 1.0)
-        };
+            // Apply decompression if enabled
+            let (final_data, decompression_ratio) =
+                if config.decompression_enabled {
+                    Self::decompress_data(&projection.data)?
+                } else {
+                    (projection.data.clone(), 1.0)
+                };
 
-        let decompressed_size = final_data.len() as u64;
+            let decompressed_size = final_data.len() as u64;
 
-        // Update counters
-        bytes_received
-            .fetch_add(received_size, std::sync::atomic::Ordering::Relaxed);
-        bytes_decompressed
-            .fetch_add(decompressed_size, std::sync::atomic::Ordering::Relaxed);
+            // Update counters
+            bytes_received
+                .fetch_add(received_size, std::sync::atomic::Ordering::Relaxed);
+            bytes_decompressed.fetch_add(
+                decompressed_size,
+                std::sync::atomic::Ordering::Relaxed,
+            );
 
-        // Notify subscribers with event
-        subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(_, s)| {
-                s.notify_receiving(ReceiveFilesReceivingEvent {
-                    id: projection.id.clone(),
-                    data: final_data.clone(),
-                    received_bytes: received_size,
-                    decompressed_bytes: decompressed_size,
-                    decompression_ratio,
-                    throughput_mbps: Self::calculate_throughput(
-                        &start_time,
-                        bytes_received
+            // Notify subscribers with event
+            subscribers
+                .read()
+                .unwrap()
+                .iter()
+                .for_each(|(_, s)| {
+                    s.notify_receiving(ReceiveFilesReceivingEvent {
+                        id: projection.id.clone(),
+                        data: final_data.clone(),
+                        received_bytes: received_size,
+                        decompressed_bytes: decompressed_size,
+                        decompression_ratio,
+                        throughput_mbps: Self::calculate_throughput(
+                            &start_time,
+                            bytes_received
+                                .load(std::sync::atomic::Ordering::Relaxed),
+                        ),
+                        active_streams: active_streams
                             .load(std::sync::atomic::Ordering::Relaxed),
-                    ),
-                    active_streams: active_streams
-                        .load(std::sync::atomic::Ordering::Relaxed),
+                    });
                 });
-            });
-
-        Ok(())
+        }
     }
 
     fn is_cancelled(&self) -> bool {
