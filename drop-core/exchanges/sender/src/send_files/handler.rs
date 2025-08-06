@@ -366,10 +366,10 @@ impl Carrier {
         }
 
         // Close connection with success code
-        self.connection.close(
-            VarInt::from_u32(200),
-            String::from("Transfer finished.").as_bytes(),
-        );
+        // self.connection.close(
+        //     VarInt::from_u32(200),
+        //     String::from("Transfer finished.").as_bytes(),
+        // );
 
         info!("All files transferred successfully");
         Ok(())

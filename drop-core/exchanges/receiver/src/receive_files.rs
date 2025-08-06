@@ -123,6 +123,12 @@ impl ReceiveFilesBubble {
                 error!("File reception failed: {:?}", result);
             }
 
+            // Close connection with success code
+            carrier.connection.close(
+                VarInt::from_u32(200),
+                String::from("Transfer finished.").as_bytes(),
+            );
+
             carrier.endpoint.close().await;
             carrier
                 .is_running
