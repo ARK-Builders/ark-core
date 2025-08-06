@@ -443,9 +443,11 @@ impl Carrier {
         )
         .await;
 
+        // Open unidirectional stream for this file
+        let mut uni = connection.open_uni().await?;
+
         loop {
-            let projection =
-                Self::read_next_projection(&file, &config);
+            let projection = Self::read_next_projection(&file, &config);
             if projection.is_none() {
                 break;
             }
@@ -463,9 +465,6 @@ impl Carrier {
 
             let compressed_size = final_data.len() as u64;
 
-            // Open unidirectional stream for this chunk
-            let mut uni = connection.open_uni().await?;
-
             // Create projection with compressed data
             let projection = FileProjection {
                 id: projection.id,
@@ -481,7 +480,6 @@ impl Carrier {
             uni.write_all(&serialized_projection_header)
                 .await?;
             uni.write_all(&serialized_projection).await?;
-            uni.finish()?;
 
             // Update counters
             sent += original_size;
@@ -510,9 +508,10 @@ impl Carrier {
                 &active_streams,
             )
             .await;
-
-            uni.stopped().await?;
         }
+
+        uni.finish()?;
+        uni.stopped().await?;
 
         debug!(
             "Completed transfer for file: {} ({} bytes)",
