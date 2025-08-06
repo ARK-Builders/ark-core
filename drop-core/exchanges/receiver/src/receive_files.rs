@@ -313,12 +313,6 @@ impl Carrier {
     async fn receive_files(&self) -> Result<()> {
         info!("Starting file reception");
 
-        // Create semaphore for concurrent stream processing
-        let semaphore = Arc::new(Semaphore::new(
-            self.config.max_concurrent_streams as usize,
-        ));
-        let mut stream_tasks = Vec::new();
-
         loop {
             if self.is_cancelled() {
                 self.connection.close(
@@ -350,7 +344,6 @@ impl Carrier {
             }
 
             let uni = uni_result.unwrap();
-            let sem = semaphore.clone();
             let config = self.config.clone();
             let subscribers = self.subscribers.clone();
             let bytes_received = self.bytes_received.clone();
@@ -358,53 +351,16 @@ impl Carrier {
             let start_time = self.start_time.clone();
             let active_streams = self.active_streams.clone();
 
-            let task = tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                active_streams
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                let result = Self::process_stream(
-                    uni,
-                    config,
-                    subscribers,
-                    bytes_received,
-                    bytes_decompressed,
-                    start_time,
-                    active_streams.clone(),
-                )
-                .await;
-
-                active_streams
-                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                result
-            });
-
-            stream_tasks.push(task);
-
-            // Limit the number of concurrent tasks to prevent memory issues
-            if stream_tasks.len()
-                >= (self.config.max_concurrent_streams * 2) as usize
-            {
-                // Wait for some tasks to complete
-                let selected = futures::future::select_all(stream_tasks).await;
-                match selected.0 {
-                    Ok(Ok(())) => {
-                        debug!("Stream processing completed successfully")
-                    }
-                    Ok(Err(e)) => warn!("Stream processing error: {}", e),
-                    Err(e) => warn!("Task join error: {}", e),
-                }
-                stream_tasks = selected.2;
-            }
-        }
-
-        // Wait for all remaining tasks to complete
-        for task in stream_tasks {
-            match task.await {
-                Ok(Ok(())) => continue,
-                Ok(Err(e)) => warn!("Stream processing error: {}", e),
-                Err(e) => warn!("Task join error: {}", e),
-            }
+            Self::process_stream(
+                uni,
+                config,
+                subscribers,
+                bytes_received,
+                bytes_decompressed,
+                start_time,
+                active_streams.clone(),
+            )
+            .await?;
         }
 
         info!("All streams processed successfully");

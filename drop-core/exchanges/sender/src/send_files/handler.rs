@@ -342,16 +342,7 @@ impl Carrier {
             *start_time = Some(Instant::now());
         }
 
-        // Create semaphore for concurrent stream control
-        let semaphore = Arc::new(Semaphore::new(
-            self.config.max_concurrent_streams as usize,
-        ));
-
-        // Process files with parallelization
-        let mut file_tasks = Vec::new();
-
         for file in &self.files {
-            let sem = semaphore.clone();
             let connection = self.connection.clone();
             let config = self.config.clone();
             let file_clone = file.clone();
@@ -361,12 +352,7 @@ impl Carrier {
             let start_time = self.start_time.clone();
             let active_streams = self.active_streams.clone();
 
-            let task = tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                active_streams
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                let result = Self::send_single_file(
+            Self::send_single_file(
                     connection,
                     config,
                     file_clone,
@@ -376,32 +362,7 @@ impl Carrier {
                     start_time,
                     active_streams.clone(),
                 )
-                .await;
-
-                active_streams
-                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                result
-            });
-
-            file_tasks.push(task);
-        }
-
-        // Wait for all files to complete
-        let results = join_all(file_tasks).await;
-
-        // Check for errors
-        for result in results {
-            match result {
-                Ok(Ok(())) => continue,
-                Ok(Err(e)) => {
-                    error!("File transfer error: {}", e);
-                    return Err(e);
-                }
-                Err(e) => {
-                    error!("Task join error: {}", e);
-                    return Err(anyhow::anyhow!("Task failed: {}", e));
-                }
-            }
+                .await?;
         }
 
         // Close connection with success code
