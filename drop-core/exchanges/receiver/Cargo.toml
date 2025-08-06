@@ -1,21 +1,16 @@
 [package]
 name = "dropx-receiver"
-version = "1.1.0"
+version = "1.0.0"
 edition = "2024"
 
 [dependencies]
 drop-entities = { path = "../../entities" }
 dropx-common = { path = "../common" }
 
-anyhow = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
-futures = "0.3"
-iroh = "0.91.1"
-iroh-base = "0.91.1"
-rand = "0.8"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-tracing = "0.1"
-uuid = { version = "1.0", features = ["v4"] }
-flate2 = "1.0"
+uuid = "1.16.0"
+tokio = "1.44.2"
+serde = "1.0.219"
+anyhow = "1.0.98"
+iroh-base = "0.34.1"
+serde_json = "1.0.140"
+iroh = { version = "0.34.1", default-features = false }
