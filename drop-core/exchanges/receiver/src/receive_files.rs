@@ -118,7 +118,7 @@ impl ReceiveFilesBubble {
                 carrier
                     .is_finished
                     .store(true, std::sync::atomic::Ordering::Release);
-                info!(" file reception completed successfully");
+                info!("File reception completed successfully");
             } else {
                 error!("File reception failed: {:?}", result);
             }
@@ -237,7 +237,7 @@ impl Carrier {
         self.receive_handshake(&mut bi).await?;
         bi.0.finish()?;
         bi.0.stopped().await?;
-        info!(" handshake completed successfully");
+        info!("Handshake completed successfully");
         Ok(())
     }
 
@@ -337,7 +337,7 @@ impl Carrier {
                 if err.eq(&ConnectionError::ApplicationClosed(
                     ApplicationClose {
                         error_code: VarInt::from_u32(200),
-                        reason: String::from(" transfer finished.").into(),
+                        reason: String::from("Transfer finished.").into(),
                     },
                 )) {
                     info!("Sender completed transfer");
