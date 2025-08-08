@@ -16,7 +16,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
-use tracing::{debug, error, info};
+
 use uuid::Uuid;
 
 use super::ReceiverProfile;
@@ -56,16 +56,23 @@ impl ReceiveFilesBubble {
     }
 
     pub fn start(&self) -> Result<()> {
+        self.log("start: Checking if transfer can be started".to_string());
+
         if self.is_running() || self.is_consumed() || self.is_finished() {
+            self.log(format!("start: Cannot start transfer - running: {}, consumed: {}, finished: {}", 
+                self.is_running(), self.is_consumed(), self.is_finished()));
             return Err(anyhow::Error::msg(
                 "Already running or has run or finished.",
             ));
         }
+
+        self.log("start: Setting running and consumed flags".to_string());
         self.is_running
             .store(true, std::sync::atomic::Ordering::Release);
         self.is_consumed
             .store(true, std::sync::atomic::Ordering::Release);
 
+        self.log("start: Creating carrier for file reception".to_string());
         let carrier = Carrier {
             profile: self.profile.clone(),
             endpoint: self.endpoint.clone(),
@@ -76,79 +83,167 @@ impl ReceiveFilesBubble {
             subscribers: self.subscribers.clone(),
         };
 
+        self.log("start: Spawning async task for file reception".to_string());
         tokio::spawn(async move {
-            info!("Starting file reception");
+            carrier.log_to_subscribers(
+                "start: File reception task started".to_string(),
+            );
+
+            carrier.log_to_subscribers(
+                "start: Beginning handshake process".to_string(),
+            );
             if let Err(e) = carrier.greet().await {
-                error!("Handshake failed: {}", e);
+                carrier.log_to_subscribers(format!(
+                    "start: Handshake failed: {}",
+                    e
+                ));
                 return;
             }
+            carrier.log_to_subscribers("start: Handshake completed successfully, starting file reception".to_string());
 
             let result = carrier.receive_files().await;
-            if result.is_ok() {
-                carrier
-                    .is_finished
-                    .store(true, std::sync::atomic::Ordering::Release);
-                info!("File reception completed successfully");
-            } else {
-                error!("File reception failed: {:?}", result);
+            match &result {
+                Ok(_) => {
+                    carrier.log_to_subscribers(
+                        "start: File reception completed successfully"
+                            .to_string(),
+                    );
+                    carrier
+                        .is_finished
+                        .store(true, std::sync::atomic::Ordering::Release);
+                }
+                Err(e) => {
+                    carrier.log_to_subscribers(format!(
+                        "start: File reception failed: {}",
+                        e
+                    ));
+                }
             }
 
+            carrier.log_to_subscribers(
+                "start: Closing connection with success code".to_string(),
+            );
             // Close connection with success code
             carrier.connection.close(
                 VarInt::from_u32(200),
                 String::from("Transfer finished.").as_bytes(),
             );
 
+            carrier.log_to_subscribers("start: Closing endpoint".to_string());
             carrier.endpoint.close().await;
+
+            carrier.log_to_subscribers(
+                "start: Setting running flag to false".to_string(),
+            );
             carrier
                 .is_running
                 .store(false, std::sync::atomic::Ordering::Release);
+
+            carrier.log_to_subscribers(
+                "start: File reception task completed".to_string(),
+            );
         });
 
+        self.log("start: File reception started successfully".to_string());
         Ok(())
     }
 
     pub fn cancel(&self) {
+        self.log("cancel: Checking if transfer can be cancelled".to_string());
+
         if !self.is_running() || self.is_finished() {
+            self.log(format!(
+                "cancel: Cannot cancel - not running: {} or finished: {}",
+                !self.is_running(),
+                self.is_finished()
+            ));
             return;
         }
-        info!("Cancelling file reception");
+
+        self.log("cancel: Setting cancelled flag to true".to_string());
         self.is_cancelled
             .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        self.log("cancel: File reception cancellation requested".to_string());
     }
 
     fn is_running(&self) -> bool {
-        self.is_running
-            .load(std::sync::atomic::Ordering::Acquire)
+        let running = self
+            .is_running
+            .load(std::sync::atomic::Ordering::Acquire);
+        self.log(format!("is_running check: {}", running));
+        running
     }
 
     fn is_consumed(&self) -> bool {
-        self.is_consumed
-            .load(std::sync::atomic::Ordering::Acquire)
+        let consumed = self
+            .is_consumed
+            .load(std::sync::atomic::Ordering::Acquire);
+        self.log(format!("is_consumed check: {}", consumed));
+        consumed
     }
 
     pub fn is_finished(&self) -> bool {
-        self.is_finished
-            .load(std::sync::atomic::Ordering::Acquire)
+        let finished = self
+            .is_finished
+            .load(std::sync::atomic::Ordering::Acquire);
+        self.log(format!("is_finished check: {}", finished));
+        finished
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.is_cancelled
-            .load(std::sync::atomic::Ordering::Relaxed)
+        let cancelled = self
+            .is_cancelled
+            .load(std::sync::atomic::Ordering::Relaxed);
+        self.log(format!("is_cancelled check: {}", cancelled));
+        cancelled
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
+        let subscriber_id = subscriber.get_id();
+        self.log(format!(
+            "subscribe: Subscribing new subscriber with ID: {}",
+            subscriber_id
+        ));
+
         self.subscribers
             .write()
             .unwrap()
-            .insert(subscriber.get_id(), subscriber);
+            .insert(subscriber_id.clone(), subscriber);
+
+        self.log(format!("subscribe: Subscriber {} successfully subscribed. Total subscribers: {}", 
+            subscriber_id, self.subscribers.read().unwrap().len()));
     }
 
     pub fn unsubscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
-        self.subscribers
+        let subscriber_id = subscriber.get_id();
+        self.log(format!(
+            "unsubscribe: Unsubscribing subscriber with ID: {}",
+            subscriber_id
+        ));
+
+        let removed = self
+            .subscribers
             .write()
             .unwrap()
-            .remove(&subscriber.get_id());
+            .remove(&subscriber_id);
+
+        if removed.is_some() {
+            self.log(format!("unsubscribe: Subscriber {} successfully unsubscribed. Remaining subscribers: {}", 
+                subscriber_id, self.subscribers.read().unwrap().len()));
+        } else {
+            self.log(format!("unsubscribe: Subscriber {} was not found during unsubscribe operation", subscriber_id));
+        }
+    }
+
+    fn log(&self, message: String) {
+        self.subscribers
+            .read()
+            .unwrap()
+            .iter()
+            .for_each(|(id, subscriber)| {
+                subscriber.log(format!("[{}] {}", id, message));
+            });
     }
 }
 
@@ -163,13 +258,71 @@ struct Carrier {
 }
 impl Carrier {
     async fn greet(&self) -> Result<()> {
-        debug!("Starting handshake process");
-        let mut bi = self.connection.open_bi().await?;
-        self.send_handshake(&mut bi).await?;
-        self.receive_handshake(&mut bi).await?;
+        self.log_to_subscribers(
+            "greet: Starting handshake process".to_string(),
+        );
+
+        self.log_to_subscribers(
+            "greet: Opening bidirectional stream".to_string(),
+        );
+        let mut bi = match self.connection.open_bi().await {
+            Ok(bi) => {
+                self.log_to_subscribers(
+                    "greet: Bidirectional stream opened successfully"
+                        .to_string(),
+                );
+                bi
+            }
+            Err(e) => {
+                self.log_to_subscribers(format!(
+                    "greet: Failed to open bidirectional stream: {}",
+                    e
+                ));
+                return Err(e.into());
+            }
+        };
+
+        self.log_to_subscribers(
+            "greet: Sending receiver handshake".to_string(),
+        );
+        if let Err(e) = self.send_handshake(&mut bi).await {
+            self.log_to_subscribers(format!(
+                "greet: Receiver handshake failed: {}",
+                e
+            ));
+            return Err(e);
+        }
+        self.log_to_subscribers(
+            "greet: Receiver handshake sent successfully".to_string(),
+        );
+
+        self.log_to_subscribers(
+            "greet: Receiving sender handshake".to_string(),
+        );
+        if let Err(e) = self.receive_handshake(&mut bi).await {
+            self.log_to_subscribers(format!(
+                "greet: Sender handshake reception failed: {}",
+                e
+            ));
+            return Err(e);
+        }
+        self.log_to_subscribers(
+            "greet: Sender handshake received successfully".to_string(),
+        );
+
+        self.log_to_subscribers(
+            "greet: Finishing bidirectional stream".to_string(),
+        );
         bi.0.finish()?;
+
+        self.log_to_subscribers(
+            "greet: Waiting for stream to stop".to_string(),
+        );
         bi.0.stopped().await?;
-        info!("Handshake completed successfully");
+
+        self.log_to_subscribers(
+            "greet: Handshake completed successfully".to_string(),
+        );
         Ok(())
     }
 
@@ -177,6 +330,10 @@ impl Carrier {
         &self,
         bi: &mut (SendStream, RecvStream),
     ) -> Result<()> {
+        self.log_to_subscribers(
+            "send_handshake: Creating receiver handshake".to_string(),
+        );
+
         let handshake = ReceiverHandshake {
             profile: HandshakeProfile {
                 id: self.profile.id.clone(),
@@ -184,16 +341,39 @@ impl Carrier {
                 avatar_b64: self.profile.avatar_b64.clone(),
             },
         };
+
+        self.log_to_subscribers(format!(
+            "send_handshake: Handshake created - Profile: {} ({})",
+            handshake.profile.name, handshake.profile.id
+        ));
+
+        self.log_to_subscribers(
+            "send_handshake: Serializing handshake to JSON".to_string(),
+        );
         let serialized_handshake = serde_json::to_vec(&handshake)?;
         let serialized_handshake_len = serialized_handshake.len() as u32;
         let serialized_handshake_header =
             serialized_handshake_len.to_be_bytes();
 
+        self.log_to_subscribers(format!(
+            "send_handshake: Serialized handshake size: {} bytes",
+            serialized_handshake_len
+        ));
+
+        self.log_to_subscribers(
+            "send_handshake: Writing handshake header".to_string(),
+        );
         bi.0.write_all(&serialized_handshake_header)
             .await?;
+
+        self.log_to_subscribers(
+            "send_handshake: Writing handshake payload".to_string(),
+        );
         bi.0.write_all(&serialized_handshake).await?;
 
-        debug!("Sent receiver handshake");
+        self.log_to_subscribers(
+            "send_handshake: Receiver handshake sent successfully".to_string(),
+        );
         Ok(())
     }
 
@@ -201,26 +381,65 @@ impl Carrier {
         &self,
         bi: &mut (SendStream, RecvStream),
     ) -> Result<()> {
+        self.log_to_subscribers(
+            "receive_handshake: Reading handshake header from sender"
+                .to_string(),
+        );
+
         let mut serialized_handshake_header = [0u8; 4];
         bi.1.read_exact(&mut serialized_handshake_header)
             .await?;
         let serialized_handshake_len =
             u32::from_be_bytes(serialized_handshake_header);
 
+        self.log_to_subscribers(format!(
+            "receive_handshake: Expected handshake size: {} bytes",
+            serialized_handshake_len
+        ));
+
+        self.log_to_subscribers(
+            "receive_handshake: Reading handshake payload from sender"
+                .to_string(),
+        );
         let mut serialized_handshake =
             vec![0u8; serialized_handshake_len as usize];
         bi.1.read_exact(&mut serialized_handshake).await?;
 
+        self.log_to_subscribers(format!(
+            "receive_handshake: Successfully read {} bytes of handshake data",
+            serialized_handshake.len()
+        ));
+
+        self.log_to_subscribers(
+            "receive_handshake: Deserializing handshake from JSON".to_string(),
+        );
         let handshake: SenderHandshake =
             serde_json::from_slice(&serialized_handshake)?;
 
-        debug!("Received handshake from sender: {}", handshake.profile.name);
+        self.log_to_subscribers(format!(
+            "receive_handshake: Received handshake from sender - Name: {}, ID: {}, Files: {}",
+            handshake.profile.name, handshake.profile.id, handshake.files.len()
+        ));
 
+        for (index, file) in handshake.files.iter().enumerate() {
+            self.log_to_subscribers(format!(
+                "receive_handshake: File {}: {} ({} bytes)",
+                index + 1,
+                file.name,
+                file.len
+            ));
+        }
+
+        self.log_to_subscribers(
+            "receive_handshake: Notifying subscribers about connecting event"
+                .to_string(),
+        );
         self.subscribers
             .read()
             .unwrap()
             .iter()
-            .for_each(|(_, s)| {
+            .for_each(|(id, s)| {
+                self.log_to_subscribers(format!("receive_handshake: Notifying subscriber {} about connection", id));
                 s.notify_connecting(ReceiveFilesConnectingEvent {
                     sender: ReceiveFilesProfile {
                         id: handshake.profile.id.clone(),
@@ -239,14 +458,25 @@ impl Carrier {
                 });
             });
 
+        self.log_to_subscribers(
+            "receive_handshake: Handshake exchange completed successfully"
+                .to_string(),
+        );
         Ok(())
     }
 
     async fn receive_files(&self) -> Result<()> {
-        info!("Starting file reception");
+        self.log_to_subscribers(
+            "receive_files: Starting file reception loop".to_string(),
+        );
+        let mut stream_count = 0u64;
 
         loop {
             if self.is_cancelled() {
+                self.log_to_subscribers(
+                    "receive_files: Cancellation detected, closing connection"
+                        .to_string(),
+                );
                 self.connection.close(
                     VarInt::from_u32(0),
                     String::from("Receive files has been cancelled.")
@@ -257,31 +487,56 @@ impl Carrier {
                 ));
             }
 
+            self.log_to_subscribers(format!("receive_files: Waiting for unidirectional stream {} from sender", stream_count + 1));
             let uni_result = self.connection.accept_uni().await;
-            if uni_result.is_err() {
-                let err = uni_result.unwrap_err();
-                if err.eq(&ConnectionError::ApplicationClosed(
-                    ApplicationClose {
-                        error_code: VarInt::from_u32(200),
-                        reason: String::from("Transfer finished.").into(),
-                    },
-                )) {
-                    info!("Sender completed transfer");
-                    break;
+
+            match uni_result {
+                Ok(uni) => {
+                    stream_count += 1;
+                    self.log_to_subscribers(format!(
+                        "receive_files: Accepted unidirectional stream {}",
+                        stream_count
+                    ));
+
+                    let subscribers = self.subscribers.clone();
+
+                    let process_result =
+                        Self::process_stream(uni, subscribers).await;
+                    match &process_result {
+                        Ok(_) => {
+                            self.log_to_subscribers(format!("receive_files: Stream {} processed successfully", stream_count));
+                        }
+                        Err(e) => {
+                            self.log_to_subscribers(format!("receive_files: Stream {} processing failed: {}", stream_count, e));
+                            return process_result;
+                        }
+                    }
                 }
-                error!("Connection unexpectedly closed: {:?}", err);
-                return Err(anyhow::Error::msg(
-                    "Connection unexpectedly closed.",
-                ));
+                Err(err) => {
+                    if err.eq(&ConnectionError::ApplicationClosed(
+                        ApplicationClose {
+                            error_code: VarInt::from_u32(200),
+                            reason: String::from("Transfer finished.").into(),
+                        },
+                    )) {
+                        self.log_to_subscribers("receive_files: Sender completed transfer with success code".to_string());
+                        break;
+                    }
+                    self.log_to_subscribers(format!(
+                        "receive_files: Connection unexpectedly closed: {:?}",
+                        err
+                    ));
+                    return Err(anyhow::Error::msg(
+                        "Connection unexpectedly closed.",
+                    ));
+                }
             }
-
-            let uni = uni_result.unwrap();
-            let subscribers = self.subscribers.clone();
-
-            Self::process_stream(uni, subscribers).await?;
         }
 
-        info!("All streams processed successfully");
+        self.log_to_subscribers(format!(
+            "receive_files: All {} streams processed successfully",
+            stream_count
+        ));
         Ok(())
     }
 
@@ -291,31 +546,89 @@ impl Carrier {
             RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>,
         >,
     ) -> Result<()> {
-        let projection = Self::read_next_projection(&mut uni).await?;
-        if projection.is_none() {
-            return Ok(());
-        }
+        // Helper function to log to subscribers
+        let log_to_subscribers =
+            |message: String| {
+                subscribers.read().unwrap().iter().for_each(
+                    |(id, subscriber)| {
+                        subscriber.log(format!("[{}] {}", id, message));
+                    },
+                );
+            };
 
-        let projection = projection.unwrap();
+        log_to_subscribers(
+            "process_stream: Starting stream processing".to_string(),
+        );
+
+        log_to_subscribers(
+            "process_stream: Reading projection data from stream".to_string(),
+        );
+        let projection_result = Self::read_next_projection(&mut uni).await;
+
+        let projection = match projection_result {
+            Ok(Some(proj)) => {
+                log_to_subscribers(format!(
+                    "process_stream: Successfully read projection - File ID: {}, Data size: {} bytes",
+                    proj.id,
+                    proj.data.len()
+                ));
+                proj
+            }
+            Ok(None) => {
+                log_to_subscribers("process_stream: No projection data found in stream (empty stream)".to_string());
+                return Ok(());
+            }
+            Err(e) => {
+                log_to_subscribers(format!(
+                    "process_stream: Failed to read projection: {}",
+                    e
+                ));
+                return Err(e);
+            }
+        };
+
+        log_to_subscribers(format!(
+            "process_stream: Notifying {} subscribers about received data",
+            subscribers.read().unwrap().len()
+        ));
 
         // Notify subscribers with event
         subscribers
             .read()
             .unwrap()
             .iter()
-            .for_each(|(_, s)| {
+            .for_each(|(id, s)| {
+                log_to_subscribers(format!("process_stream: Notifying subscriber {} about {} bytes received for file {}", 
+                    id, projection.data.len(), projection.id));
                 s.notify_receiving(ReceiveFilesReceivingEvent {
                     id: projection.id.clone(),
                     data: projection.data.clone(),
                 });
             });
 
+        log_to_subscribers(
+            "process_stream: Stream processing completed successfully"
+                .to_string(),
+        );
         Ok(())
     }
 
     fn is_cancelled(&self) -> bool {
-        self.is_cancelled
-            .load(std::sync::atomic::Ordering::Relaxed)
+        let cancelled = self
+            .is_cancelled
+            .load(std::sync::atomic::Ordering::Relaxed);
+        self.log_to_subscribers(format!("is_cancelled check: {}", cancelled));
+        cancelled
+    }
+
+    fn log_to_subscribers(&self, message: String) {
+        self.subscribers
+            .read()
+            .unwrap()
+            .iter()
+            .for_each(|(id, subscriber)| {
+                subscriber.log(format!("[{}] {}", id, message));
+            });
     }
 
     async fn read_next_projection(
@@ -323,12 +636,14 @@ impl Carrier {
     ) -> Result<Option<FileProjection>> {
         let serialized_projection_len =
             Self::read_serialized_projection_len(uni).await?;
+
         if serialized_projection_len.is_none() {
             return Ok(None);
         }
 
         let len = serialized_projection_len.unwrap();
         let mut serialized_projection = vec![0u8; len];
+
         uni.read_exact(&mut serialized_projection).await?;
 
         let projection: FileProjection =
