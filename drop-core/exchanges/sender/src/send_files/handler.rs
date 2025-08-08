@@ -1,8 +1,10 @@
 use anyhow::Result;
 use drop_entities::{File, Profile};
 use dropx_common::{
-    FileProjection, HandshakeFile, HandshakeProfile, ReceiverHandshake,
-    SenderHandshake,
+    handshake::{
+        HandshakeFile, HandshakeProfile, ReceiverHandshake, SenderHandshake,
+    },
+    projection::FileProjection,
 };
 use futures::Future;
 use iroh::{

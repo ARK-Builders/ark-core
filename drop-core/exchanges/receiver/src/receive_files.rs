@@ -1,7 +1,8 @@
 use anyhow::Result;
 use drop_entities::Profile;
 use dropx_common::{
-    FileProjection, HandshakeProfile, ReceiverHandshake, SenderHandshake,
+    handshake::{HandshakeProfile, ReceiverHandshake, SenderHandshake},
+    projection::FileProjection,
 };
 use iroh::{
     Endpoint,
