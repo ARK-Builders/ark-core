@@ -311,12 +311,17 @@ impl Carrier {
         );
 
         self.log(
-            "greet: Finishing bidirectional stream".to_string(),
+            "greet: Finishing send stream".to_string(),
         );
         bi.0.finish()?;
 
         self.log(
-            "greet: Waiting for stream to stop".to_string(),
+            "greet: Stopping receive stream".to_string(),
+        );
+        bi.1.stop(VarInt::from_u32(0))?;
+
+        self.log(
+            "greet: Waiting for send stream to stop".to_string(),
         );
         bi.0.stopped().await?;
 
@@ -605,6 +610,9 @@ impl Carrier {
                     data: projection.data.clone(),
                 });
             });
+
+        log("process_stream: Stopping unidirectional stream to signal completion".to_string());
+        uni.stop(VarInt::from_u32(0))?;
 
         log(
             "process_stream: Stream processing completed successfully"

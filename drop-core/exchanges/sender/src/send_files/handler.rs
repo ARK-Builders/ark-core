@@ -8,7 +8,7 @@ use dropx_common::{
 };
 use futures::Future;
 use iroh::{
-    endpoint::{Connection, RecvStream, SendStream},
+    endpoint::{Connection, RecvStream, SendStream, VarInt},
     protocol::ProtocolHandler,
 };
 use std::{
@@ -398,11 +398,14 @@ impl Carrier {
             "greet: Receiver handshake completed successfully".to_string(),
         );
 
-        self.log("greet: Finishing bidirectional stream".to_string());
+        self.log("greet: Finishing send stream".to_string());
         bi.0.finish()?;
 
-        self.log("greet: Waiting for stream to stop".to_string());
+        self.log("greet: Waiting for send stream to stop".to_string());
         bi.0.stopped().await?;
+
+        self.log("greet: Stopping receive stream".to_string());
+        bi.1.stop(VarInt::from_u32(0))?;
 
         self.log("greet: Handshake completed successfully".to_string());
         Ok(())
@@ -748,11 +751,11 @@ impl Carrier {
                     });
                 });
 
-            // log(format!(
-            //     "send_single_file: Finishing stream for chunk {} of file {}",
-            //     chunk_count, file.name
-            // ));
-            // uni.finish()?;
+            log(format!(
+                "send_single_file: Finishing stream for chunk {} of file {}",
+                chunk_count, file.name
+            ));
+            uni.finish()?;
 
             log(format!(
                 "send_single_file: Waiting for stream to stop for chunk {} of file {}",
