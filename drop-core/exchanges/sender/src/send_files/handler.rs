@@ -748,6 +748,12 @@ impl Carrier {
                     });
                 });
 
+            // log(format!(
+            //     "send_single_file: Finishing stream for chunk {} of file {}",
+            //     chunk_count, file.name
+            // ));
+            // uni.finish()?;
+
             log(format!(
                 "send_single_file: Waiting for stream to stop for chunk {} of file {}",
                 chunk_count, file.name
@@ -757,12 +763,6 @@ impl Carrier {
                 "send_single_file: Stream stopped for chunk {} of file {}",
                 chunk_count, file.name
             ));
-
-            log(format!(
-                "send_single_file: Finishing stream for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.finish()?;
         }
 
         log(format!(
