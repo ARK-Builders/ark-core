@@ -716,12 +716,6 @@ impl Carrier {
             ));
             uni.write_all(&serialized_projection).await?;
 
-            log(format!(
-                "send_single_file: Finishing stream for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.finish()?;
-
             // Update counters
             sent += data_len;
             remaining = if remaining >= data_len {
@@ -763,6 +757,12 @@ impl Carrier {
                 "send_single_file: Stream stopped for chunk {} of file {}",
                 chunk_count, file.name
             ));
+
+            log(format!(
+                "send_single_file: Finishing stream for chunk {} of file {}",
+                chunk_count, file.name
+            ));
+            uni.finish()?;
         }
 
         log(format!(
