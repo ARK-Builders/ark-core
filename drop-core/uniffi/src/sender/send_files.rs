@@ -42,13 +42,13 @@ impl SendFilesBubble {
         return self.inner.get_created_at();
     }
 
-    pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) -> () {
+    pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
         return self.inner.subscribe(Arc::new(adapted_subscriber));
     }
 
-    pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) -> () {
+    pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
         return self
@@ -59,6 +59,7 @@ impl SendFilesBubble {
 
 pub trait SendFilesSubscriber: Send + Sync {
     fn get_id(&self) -> String;
+    fn log(&self, message: String);
     fn notify_sending(&self, event: SendFilesSendingEvent);
     fn notify_connecting(&self, event: SendFilesConnectingEvent);
 }
@@ -85,6 +86,10 @@ struct SendFilesSubscriberAdapter {
 impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     fn get_id(&self) -> String {
         return self.inner.get_id();
+    }
+
+    fn log(&self, message: String) {
+        return self.inner.log(message);
     }
 
     fn notify_sending(&self, event: dropx_sender::SendFilesSendingEvent) {

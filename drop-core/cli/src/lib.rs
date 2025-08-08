@@ -240,6 +240,10 @@ impl SendFilesSubscriber for FileSendSubscriber {
         self.id.clone()
     }
 
+    fn log(&self, message: String) {
+        println!("🔍 DEBUG: {}", message);
+    }
+
     fn notify_sending(&self, event: SendFilesSendingEvent) {
         let progress = if event.sent + event.remaining > 0 {
             (event.sent as f64 / (event.sent + event.remaining) as f64) * 100.0
@@ -280,6 +284,10 @@ impl FileReceiveSubscriber {
 impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     fn get_id(&self) -> String {
         self.id.clone()
+    }
+
+    fn log(&self, message: String) {
+        println!("🔍 DEBUG: {}", message);
     }
 
     fn notify_receiving(&self, event: ReceiveFilesReceivingEvent) {

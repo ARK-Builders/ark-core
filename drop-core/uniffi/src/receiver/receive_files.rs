@@ -53,6 +53,7 @@ impl ReceiveFilesBubble {
 
 pub trait ReceiveFilesSubscriber: Send + Sync {
     fn get_id(&self) -> String;
+    fn log(&self, message: String);
     fn notify_receiving(&self, event: ReceiveFilesReceivingEvent);
     fn notify_connecting(&self, event: ReceiveFilesConnectingEvent);
 }
@@ -85,6 +86,10 @@ struct ReceiveFilesSubscriberAdapter {
 impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
     fn get_id(&self) -> String {
         return self.inner.get_id();
+    }
+
+    fn log(&self, message: String) {
+        return self.inner.log(message);
     }
 
     fn notify_receiving(

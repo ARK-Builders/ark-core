@@ -40,6 +40,7 @@ interface SendFilesBubble {
 [Trait, WithForeign]
 interface SendFilesSubscriber {
     string get_id();
+    void log(string message);
     void notify_sending(SendFilesSendingEvent event);
     void notify_connecting(SendFilesConnectingEvent event);
 };
@@ -79,6 +80,7 @@ interface ReceiveFilesBubble {
 [Trait, WithForeign]
 interface ReceiveFilesSubscriber {
     string get_id();
+    void log(string message);
     void notify_receiving(ReceiveFilesReceivingEvent event);
     void notify_connecting(ReceiveFilesConnectingEvent event);
 };

@@ -363,6 +363,7 @@ impl Carrier {
 
 pub trait ReceiveFilesSubscriber: Send + Sync {
     fn get_id(&self) -> String;
+    fn log(&self, message: String);
     fn notify_receiving(&self, event: ReceiveFilesReceivingEvent);
     fn notify_connecting(&self, event: ReceiveFilesConnectingEvent);
 }
