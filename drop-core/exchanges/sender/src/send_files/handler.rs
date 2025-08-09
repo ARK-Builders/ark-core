@@ -401,11 +401,11 @@ impl Carrier {
         self.log("greet: Finishing send stream".to_string());
         bi.0.finish()?;
 
-        self.log("greet: Waiting for send stream to stop".to_string());
-        bi.0.stopped().await?;
+        // self.log("greet: Waiting for send stream to stop".to_string());
+        // bi.0.stopped().await?;
 
-        self.log("greet: Stopping receive stream".to_string());
-        bi.1.stop(VarInt::from_u32(0))?;
+        // self.log("greet: Stopping receive stream".to_string());
+        // bi.1.stop(VarInt::from_u32(0))?;
 
         self.log("greet: Handshake completed successfully".to_string());
         Ok(())
@@ -757,15 +757,15 @@ impl Carrier {
             ));
             uni.finish()?;
 
-            log(format!(
-                "send_single_file: Waiting for stream to stop for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.stopped().await?;
-            log(format!(
-                "send_single_file: Stream stopped for chunk {} of file {}",
-                chunk_count, file.name
-            ));
+            // log(format!(
+            //     "send_single_file: Waiting for stream to stop for chunk {} of
+            // file {}",     chunk_count, file.name
+            // ));
+            // uni.stopped().await?;
+            // log(format!(
+            //     "send_single_file: Stream stopped for chunk {} of file {}",
+            //     chunk_count, file.name
+            // ));
         }
 
         log(format!(

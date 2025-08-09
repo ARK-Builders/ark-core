@@ -85,18 +85,11 @@ impl ReceiveFilesBubble {
 
         self.log("start: Spawning async task for file reception".to_string());
         tokio::spawn(async move {
-            carrier.log(
-                "start: File reception task started".to_string(),
-            );
+            carrier.log("start: File reception task started".to_string());
 
-            carrier.log(
-                "start: Beginning handshake process".to_string(),
-            );
+            carrier.log("start: Beginning handshake process".to_string());
             if let Err(e) = carrier.greet().await {
-                carrier.log(format!(
-                    "start: Handshake failed: {}",
-                    e
-                ));
+                carrier.log(format!("start: Handshake failed: {}", e));
                 return;
             }
             carrier.log("start: Handshake completed successfully, starting file reception".to_string());
@@ -113,16 +106,12 @@ impl ReceiveFilesBubble {
                         .store(true, std::sync::atomic::Ordering::Release);
                 }
                 Err(e) => {
-                    carrier.log(format!(
-                        "start: File reception failed: {}",
-                        e
-                    ));
+                    carrier.log(format!("start: File reception failed: {}", e));
                 }
             }
 
-            carrier.log(
-                "start: Closing connection with success code".to_string(),
-            );
+            carrier
+                .log("start: Closing connection with success code".to_string());
             // Close connection with success code
             carrier.connection.close(
                 VarInt::from_u32(200),
@@ -132,16 +121,12 @@ impl ReceiveFilesBubble {
             carrier.log("start: Closing endpoint".to_string());
             carrier.endpoint.close().await;
 
-            carrier.log(
-                "start: Setting running flag to false".to_string(),
-            );
+            carrier.log("start: Setting running flag to false".to_string());
             carrier
                 .is_running
                 .store(false, std::sync::atomic::Ordering::Release);
 
-            carrier.log(
-                "start: File reception task completed".to_string(),
-            );
+            carrier.log("start: File reception task completed".to_string());
         });
 
         self.log("start: File reception started successfully".to_string());
@@ -258,13 +243,9 @@ struct Carrier {
 }
 impl Carrier {
     async fn greet(&self) -> Result<()> {
-        self.log(
-            "greet: Starting handshake process".to_string(),
-        );
+        self.log("greet: Starting handshake process".to_string());
 
-        self.log(
-            "greet: Opening bidirectional stream".to_string(),
-        );
+        self.log("greet: Opening bidirectional stream".to_string());
         let mut bi = match self.connection.open_bi().await {
             Ok(bi) => {
                 self.log(
@@ -282,23 +263,14 @@ impl Carrier {
             }
         };
 
-        self.log(
-            "greet: Sending receiver handshake".to_string(),
-        );
+        self.log("greet: Sending receiver handshake".to_string());
         if let Err(e) = self.send_handshake(&mut bi).await {
-            self.log(format!(
-                "greet: Receiver handshake failed: {}",
-                e
-            ));
+            self.log(format!("greet: Receiver handshake failed: {}", e));
             return Err(e);
         }
-        self.log(
-            "greet: Receiver handshake sent successfully".to_string(),
-        );
+        self.log("greet: Receiver handshake sent successfully".to_string());
 
-        self.log(
-            "greet: Receiving sender handshake".to_string(),
-        );
+        self.log("greet: Receiving sender handshake".to_string());
         if let Err(e) = self.receive_handshake(&mut bi).await {
             self.log(format!(
                 "greet: Sender handshake reception failed: {}",
@@ -306,28 +278,18 @@ impl Carrier {
             ));
             return Err(e);
         }
-        self.log(
-            "greet: Sender handshake received successfully".to_string(),
-        );
+        self.log("greet: Sender handshake received successfully".to_string());
 
-        self.log(
-            "greet: Finishing send stream".to_string(),
-        );
+        self.log("greet: Finishing send stream".to_string());
         bi.0.finish()?;
 
-        self.log(
-            "greet: Stopping receive stream".to_string(),
-        );
-        bi.1.stop(VarInt::from_u32(0))?;
+        // self.log("greet: Stopping receive stream".to_string());
+        // bi.1.stop(VarInt::from_u32(0))?;
 
-        self.log(
-            "greet: Waiting for send stream to stop".to_string(),
-        );
-        bi.0.stopped().await?;
+        // self.log("greet: Waiting for send stream to stop".to_string());
+        // bi.0.stopped().await?;
 
-        self.log(
-            "greet: Handshake completed successfully".to_string(),
-        );
+        self.log("greet: Handshake completed successfully".to_string());
         Ok(())
     }
 
@@ -335,9 +297,7 @@ impl Carrier {
         &self,
         bi: &mut (SendStream, RecvStream),
     ) -> Result<()> {
-        self.log(
-            "send_handshake: Creating receiver handshake".to_string(),
-        );
+        self.log("send_handshake: Creating receiver handshake".to_string());
 
         let handshake = ReceiverHandshake {
             profile: HandshakeProfile {
@@ -352,9 +312,7 @@ impl Carrier {
             handshake.profile.name, handshake.profile.id
         ));
 
-        self.log(
-            "send_handshake: Serializing handshake to JSON".to_string(),
-        );
+        self.log("send_handshake: Serializing handshake to JSON".to_string());
         let serialized_handshake = serde_json::to_vec(&handshake)?;
         let serialized_handshake_len = serialized_handshake.len() as u32;
         let serialized_handshake_header =
@@ -365,15 +323,11 @@ impl Carrier {
             serialized_handshake_len
         ));
 
-        self.log(
-            "send_handshake: Writing handshake header".to_string(),
-        );
+        self.log("send_handshake: Writing handshake header".to_string());
         bi.0.write_all(&serialized_handshake_header)
             .await?;
 
-        self.log(
-            "send_handshake: Writing handshake payload".to_string(),
-        );
+        self.log("send_handshake: Writing handshake payload".to_string());
         bi.0.write_all(&serialized_handshake).await?;
 
         self.log(
@@ -471,9 +425,7 @@ impl Carrier {
     }
 
     async fn receive_files(&self) -> Result<()> {
-        self.log(
-            "receive_files: Starting file reception loop".to_string(),
-        );
+        self.log("receive_files: Starting file reception loop".to_string());
         let mut stream_count = 0u64;
 
         loop {
@@ -561,13 +513,9 @@ impl Carrier {
                 );
             };
 
-        log(
-            "process_stream: Starting stream processing".to_string(),
-        );
+        log("process_stream: Starting stream processing".to_string());
 
-        log(
-            "process_stream: Reading projection data from stream".to_string(),
-        );
+        log("process_stream: Reading projection data from stream".to_string());
         let projection_result = Self::read_next_projection(&mut uni).await;
 
         let projection = match projection_result {
@@ -611,13 +559,11 @@ impl Carrier {
                 });
             });
 
-        log("process_stream: Stopping unidirectional stream to signal completion".to_string());
-        uni.stop(VarInt::from_u32(0))?;
+        // log("process_stream: Stopping unidirectional stream to signal completion".to_string());
+        // uni.stop(VarInt::from_u32(0))?;
 
-        log(
-            "process_stream: Stream processing completed successfully"
-                .to_string(),
-        );
+        log("process_stream: Stream processing completed successfully"
+            .to_string());
         Ok(())
     }
 
