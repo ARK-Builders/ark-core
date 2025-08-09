@@ -757,15 +757,15 @@ impl Carrier {
             ));
             uni.finish()?;
 
-            // log(format!(
-            //     "send_single_file: Waiting for stream to stop for chunk {} of
-            // file {}",     chunk_count, file.name
-            // ));
-            // uni.stopped().await?;
-            // log(format!(
-            //     "send_single_file: Stream stopped for chunk {} of file {}",
-            //     chunk_count, file.name
-            // ));
+            log(format!(
+                "send_single_file: Waiting for stream to stop for chunk {} of
+            file {}",     chunk_count, file.name
+            ));
+            uni.stopped().await?;
+            log(format!(
+                "send_single_file: Stream stopped for chunk {} of file {}",
+                chunk_count, file.name
+            ));
         }
 
         log(format!(

@@ -559,8 +559,8 @@ impl Carrier {
                 });
             });
 
-        // log("process_stream: Stopping unidirectional stream to signal completion".to_string());
-        // uni.stop(VarInt::from_u32(0))?;
+        log("process_stream: Stopping unidirectional stream to signal completion".to_string());
+        uni.stop(VarInt::from_u32(0))?;
 
         log("process_stream: Stream processing completed successfully"
             .to_string());
