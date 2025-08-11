@@ -85,6 +85,8 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -96,7 +98,7 @@ jobs:
           ndk-version: r28-beta2
 
       - name: Run Java Tests
-        run: gradle test
+        run: ./gradlew test
         working-directory: ./java
 
   benchmarks:

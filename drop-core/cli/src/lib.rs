@@ -360,7 +360,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 struct FileData {
     is_finished: AtomicBool,
     path: PathBuf,
-    reader: RwLock<Option<std::io::Bytes<std::fs::File>>>,
+    reader: RwLock<Option<std::fs::File>>,
     size: u64,
 }
 
@@ -385,6 +385,8 @@ impl SenderFileData for FileData {
     }
 
     fn read(&self) -> Option<u8> {
+        use std::io::Read;
+
         if self
             .is_finished
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -396,7 +398,7 @@ impl SenderFileData for FileData {
         if self.reader.read().unwrap().is_none() {
             match std::fs::File::open(&self.path) {
                 Ok(file) => {
-                    *self.reader.write().unwrap() = Some(file.bytes());
+                    *self.reader.write().unwrap() = Some(file);
                 }
                 Err(e) => {
                     eprintln!(
@@ -413,21 +415,25 @@ impl SenderFileData for FileData {
 
         // Read next byte
         let mut reader = self.reader.write().unwrap();
-        if let Some(bytes_iter) = reader.as_mut() {
-            match bytes_iter.next() {
-                Some(Ok(byte)) => Some(byte),
-                Some(Err(e)) => {
+        if let Some(file) = reader.as_mut() {
+            let mut buffer = [0u8; 1];
+            match file.read(&mut buffer) {
+                Ok(bytes_read) => {
+                    if bytes_read == 0 {
+                        *reader = None;
+                        self.is_finished
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        None
+                    } else {
+                        Some(buffer[0])
+                    }
+                }
+                Err(e) => {
                     eprintln!(
                         "❌ Error reading from file {}: {}",
                         self.path.display(),
                         e
                     );
-                    *reader = None;
-                    self.is_finished
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    None
-                }
-                None => {
                     *reader = None;
                     self.is_finished
                         .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -439,9 +445,63 @@ impl SenderFileData for FileData {
         }
     }
 
-    fn read_chunk(&self, _size: u64) -> Vec<u8> {
-        // TODO: implement
-        todo!();
+    fn read_chunk(&self, size: u64) -> Vec<u8> {
+        use std::io::Read;
+
+        if self
+            .is_finished
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Vec::new();
+        }
+
+        // Initialize reader if not already done
+        if self.reader.read().unwrap().is_none() {
+            match std::fs::File::open(&self.path) {
+                Ok(file) => {
+                    *self.reader.write().unwrap() = Some(file);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "❌ Error opening file {}: {}",
+                        self.path.display(),
+                        e
+                    );
+                    self.is_finished
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    return Vec::new();
+                }
+            }
+        }
+
+        // Read chunk from the file
+        let mut reader = self.reader.write().unwrap();
+        if let Some(file) = reader.as_mut() {
+            let mut buffer = vec![0u8; size as usize];
+            match file.read(&mut buffer) {
+                Ok(bytes_read) => {
+                    if bytes_read == 0 {
+                        self.is_finished
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        return Vec::new();
+                    }
+                    buffer.truncate(bytes_read);
+                    return buffer;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "❌ Error reading chunk from file {}: {}",
+                        self.path.display(),
+                        e
+                    );
+                    self.is_finished
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    return Vec::new();
+                }
+            }
+        } else {
+            Vec::new()
+        }
     }
 }
 
