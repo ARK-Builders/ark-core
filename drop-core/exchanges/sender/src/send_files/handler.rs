@@ -398,14 +398,14 @@ impl Carrier {
             "greet: Receiver handshake completed successfully".to_string(),
         );
 
-        // self.log("greet: Finishing send stream".to_string());
-        // bi.0.finish()?;
+        self.log("greet: Finishing send stream".to_string());
+        bi.0.finish()?;
 
         self.log("greet: Waiting for send stream to stop".to_string());
         bi.0.stopped().await?;
 
-        self.log("greet: Stopping receive stream".to_string());
-        bi.1.stop(VarInt::from_u32(0))?;
+        // self.log("greet: Stopping receive stream".to_string());
+        // bi.1.stop(VarInt::from_u32(0))?;
 
         self.log("greet: Handshake completed successfully".to_string());
         Ok(())
