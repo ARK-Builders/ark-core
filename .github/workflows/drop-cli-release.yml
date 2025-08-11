@@ -62,6 +62,10 @@ jobs:
           toolchain: 1.75.0
           targets: ${{ matrix.target }}
 
+      - name: Install additional targets
+        run: |
+          rustup target add ${{ matrix.target }}
+
       - name: Set up Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -95,8 +99,7 @@ jobs:
 
       - name: Build binary
         run: |
-          cd drop-core/cli
-          cargo build --release --target ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }} --package drop-cli
 
       - name: Create archive name
         id: archive
@@ -115,7 +118,7 @@ jobs:
       - name: Create archive (Unix)
         if: matrix.archive == 'tar.gz'
         run: |
-          cd drop-core/cli/target/${{ matrix.target }}/release
+          cd target/${{ matrix.target }}/release
           if [ "${{ matrix.target }}" == *"windows"* ]; then
             BINARY_NAME="drop-cli.exe"
           else
@@ -128,7 +131,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          cd drop-core/cli/target/${{ matrix.target }}/release
+          cd target/${{ matrix.target }}/release
           Compress-Archive -Path "drop-cli.exe" -DestinationPath "${{ github.workspace }}/${{ steps.archive.outputs.name }}.zip"
 
       - name: Upload artifact
