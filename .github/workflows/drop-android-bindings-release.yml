@@ -1,4 +1,4 @@
-name: Publish Drop Bindings for Android
+name: Drop Android Bindings Release
 
 on:
   push:
