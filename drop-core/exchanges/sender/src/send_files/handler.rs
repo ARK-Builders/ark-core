@@ -759,7 +759,8 @@ impl Carrier {
 
             log(format!(
                 "send_single_file: Waiting for stream to stop for chunk {} of
-            file {}",     chunk_count, file.name
+            file {}",
+                chunk_count, file.name
             ));
             uni.stopped().await?;
             log(format!(
