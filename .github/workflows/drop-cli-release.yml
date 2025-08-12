@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "drop-core/**"
+  workflow_dispatch:
 
 jobs:
   build:
