@@ -507,7 +507,7 @@ impl Carrier {
             "process_projection_stream: Reading projection data from stream"
                 .to_string(),
         );
-        let projection_result = Self::read_next_projection(&mut uni).await;
+        let projection_result = self.read_next_projection(&mut uni).await;
 
         let projection = match projection_result {
             Ok(Some(proj)) => {
@@ -585,46 +585,89 @@ impl Carrier {
     }
 
     async fn read_next_projection(
+        &self,
         uni: &mut RecvStream,
     ) -> Result<Option<FileProjection>> {
+        self.log(
+            "read_next_projection: Reading projection length header"
+                .to_string(),
+        );
+
         let serialized_projection_len =
-            Self::read_serialized_projection_len(uni).await?;
+            self.read_serialized_projection_len(uni).await?;
 
         if serialized_projection_len.is_none() {
+            self.log("read_next_projection: No projection length found, returning None".to_string());
             return Ok(None);
         }
 
         let len = serialized_projection_len.unwrap();
+        self.log(format!(
+            "read_next_projection: Projection length: {} bytes",
+            len
+        ));
+
         let mut serialized_projection = vec![0u8; len];
 
+        self.log(format!(
+            "read_next_projection: Reading {} bytes of projection data",
+            len
+        ));
         uni.read_exact(&mut serialized_projection).await?;
 
+        self.log(
+            "read_next_projection: Deserializing projection from JSON"
+                .to_string(),
+        );
         let projection: FileProjection =
             serde_json::from_slice(&serialized_projection)?;
 
+        self.log(format!("read_next_projection: Successfully read projection for file ID: {}, data size: {} bytes", 
+            projection.id, projection.data.len()));
         Ok(Some(projection))
     }
 
     async fn read_serialized_projection_len(
+        &self,
         uni: &mut RecvStream,
     ) -> Result<Option<usize>> {
+        self.log(
+            "read_serialized_projection_len: Reading 4-byte length header"
+                .to_string(),
+        );
+
         let mut serialized_projection_header = [0u8; 4];
         let read = uni
             .read(&mut serialized_projection_header)
             .await?;
 
         if read.is_none() {
+            self.log("read_serialized_projection_len: No data available to read, returning None".to_string());
             return Ok(None);
         }
 
-        if read.unwrap() != 4 {
-            return Err(anyhow::Error::msg(
-                "Invalid data chunk length header.",
+        let bytes_read = read.unwrap();
+        self.log(format!(
+            "read_serialized_projection_len: Read {} bytes from header",
+            bytes_read
+        ));
+
+        if bytes_read != 4 {
+            let error_msg = format!(
+                "Invalid data chunk length header - expected 4 bytes, got {}",
+                bytes_read
+            );
+            self.log(format!(
+                "read_serialized_projection_len: Error - {}",
+                error_msg
             ));
+            return Err(anyhow::Error::msg(error_msg));
         }
 
         let serialized_projection_len =
             u32::from_be_bytes(serialized_projection_header);
+
+        self.log(format!("read_serialized_projection_len: Decoded projection length: {} bytes", serialized_projection_len));
         Ok(Some(serialized_projection_len as usize))
     }
 }
