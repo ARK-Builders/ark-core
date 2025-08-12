@@ -20,7 +20,7 @@ use dropx_sender::{
 };
 use uuid::Uuid;
 
-/// profile for the CLI application
+/// Profile for the CLI application
 #[derive(Debug, Clone)]
 pub struct Profile {
     pub name: String,
@@ -222,7 +222,6 @@ impl FileReceiver {
     }
 }
 
-/// Improved file sender subscriber with better formatting
 struct FileSendSubscriber {
     id: String,
 }
@@ -264,7 +263,6 @@ impl SendFilesSubscriber for FileSendSubscriber {
     }
 }
 
-/// Improved file receiver subscriber with better error handling
 struct FileReceiveSubscriber {
     id: String,
     receiving_path: PathBuf,
@@ -356,7 +354,6 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     }
 }
 
-/// Improved file data handler with better error handling
 struct FileData {
     is_finished: AtomicBool,
     path: PathBuf,
@@ -394,7 +391,6 @@ impl SenderFileData for FileData {
             return None;
         }
 
-        // Initialize reader if not already done
         if self.reader.read().unwrap().is_none() {
             match std::fs::File::open(&self.path) {
                 Ok(file) => {
