@@ -455,10 +455,8 @@ impl Carrier {
                         stream_count
                     ));
 
-                    let subscribers = self.subscribers.clone();
-
                     let process_result =
-                        Self::process_stream(uni, subscribers).await;
+                        self.process_projection_stream(uni).await;
                     match &process_result {
                         Ok(_) => {
                             self.log(format!("receive_files: Stream {} processed successfully", stream_count));
@@ -497,74 +495,75 @@ impl Carrier {
         Ok(())
     }
 
-    async fn process_stream(
+    async fn process_projection_stream(
+        &self,
         mut uni: RecvStream,
-        subscribers: Arc<
-            RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>,
-        >,
     ) -> Result<()> {
-        // Helper function to log to subscribers
-        let log =
-            |message: String| {
-                subscribers.read().unwrap().iter().for_each(
-                    |(id, subscriber)| {
-                        subscriber.log(format!("[{}] {}", id, message));
-                    },
-                );
-            };
+        self.log(
+            "process_projection_stream: Starting stream processing".to_string(),
+        );
 
-        log("process_stream: Starting stream processing".to_string());
-
-        log("process_stream: Reading projection data from stream".to_string());
+        self.log(
+            "process_projection_stream: Reading projection data from stream"
+                .to_string(),
+        );
         let projection_result = Self::read_next_projection(&mut uni).await;
 
         let projection = match projection_result {
             Ok(Some(proj)) => {
-                log(format!(
-                    "process_stream: Successfully read projection - File ID: {}, Data size: {} bytes",
+                self.log(format!(
+                    "process_projection_stream: Successfully read projection - File ID: {}, Data size: {} bytes",
                     proj.id,
                     proj.data.len()
                 ));
                 proj
             }
             Ok(None) => {
-                log("process_stream: No projection data found in stream (empty stream)".to_string());
+                self.log("process_projection_stream: No projection data found in stream (empty stream)".to_string());
                 return Ok(());
             }
             Err(e) => {
-                log(format!(
-                    "process_stream: Failed to read projection: {}",
+                self.log(format!(
+                    "process_projection_stream: Failed to read projection: {}",
                     e
                 ));
                 return Err(e);
             }
         };
 
-        log(format!(
-            "process_stream: Notifying {} subscribers about received data",
-            subscribers.read().unwrap().len()
-        ));
+        self.notify_receiving(projection);
 
-        // Notify subscribers with event
-        subscribers
+        self.log("process_projection_stream: Stopping unidirectional stream to signal completion".to_string());
+        uni.stop(VarInt::from_u32(0))?;
+
+        self.log(
+            "process_projection_stream: Stream processing completed successfully"
+                .to_string(),
+        );
+
+        Ok(())
+    }
+
+    fn notify_receiving(&self, projection: FileProjection) {
+        self.log(
+            "notify_receiving: Notifying subscribers about received file projection data"
+                .to_string(),
+        );
+        self.subscribers
             .read()
             .unwrap()
             .iter()
             .for_each(|(id, s)| {
-                log(format!("process_stream: Notifying subscriber {} about {} bytes received for file {}", 
+                self.log(format!("notify_receiving: Notifying subscriber {} about {} bytes received for file {}", 
                     id, projection.data.len(), projection.id));
                 s.notify_receiving(ReceiveFilesReceivingEvent {
                     id: projection.id.clone(),
                     data: projection.data.clone(),
                 });
             });
-
-        log("process_stream: Stopping unidirectional stream to signal completion".to_string());
-        uni.stop(VarInt::from_u32(0))?;
-
-        log("process_stream: Stream processing completed successfully"
-            .to_string());
-        Ok(())
+        self.log(
+            "notify_receiving: Subscribers notified successfully".to_string(),
+        );
     }
 
     fn is_cancelled(&self) -> bool {
