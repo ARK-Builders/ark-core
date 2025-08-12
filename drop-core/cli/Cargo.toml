@@ -10,6 +10,15 @@ readme = "README.md"
 keywords = ["cli", "file-transfer", "p2p"]
 categories = ["command-line-utilities"]
 
+[lib]
+name = "drop_cli"
+bench = false
+
+[[bin]]
+name = "drop-cli"
+path = "src/main.rs"
+bench = false
+
 [dependencies]
 anyhow = "1.0"
 tokio = { version = "1.0", features = ["full"] }
@@ -23,8 +32,3 @@ dropx-sender = { path = "../exchanges/sender" }
 [dev-dependencies]
 tempfile = "3.0"
 tokio-test = "0.4"
-
-[[bin]]
-name = "drop-cli"
-path = "src/main.rs"
-bench = false

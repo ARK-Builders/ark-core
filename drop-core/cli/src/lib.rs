@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{Read, Write},
+    io::Write,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, RwLock, atomic::AtomicBool},

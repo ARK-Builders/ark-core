@@ -3,4 +3,8 @@ name = "drop-entities"
 version = "1.0.0"
 edition = "2024"
 
+[lib]
+name = "drop_entities"
+bench = false
+
 [dependencies]

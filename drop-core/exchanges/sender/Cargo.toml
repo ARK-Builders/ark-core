@@ -3,6 +3,10 @@ name = "dropx-sender"
 version = "1.1.0"
 edition = "2024"
 
+[lib]
+name = "dropx_sender"
+bench = false
+
 [dependencies]
 drop-entities = { path = "../../entities" }
 dropx-common = { path = "../common" }
