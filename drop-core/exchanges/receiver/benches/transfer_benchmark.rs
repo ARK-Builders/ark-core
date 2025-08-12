@@ -1,13 +1,16 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{
+    BenchmarkId, Criterion, Throughput, black_box, criterion_group,
+    criterion_main,
+};
 use dropx_receiver::{
-    receive_files, ReceiveFilesRequest, ReceiveFilesSubscriber,
-    ReceiveFilesConnectingEvent, ReceiveFilesReceivingEvent, ReceiverProfile,
-    ReceiverFileData,
+    ReceiveFilesConnectingEvent, ReceiveFilesReceivingEvent,
+    ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverFileData,
+    ReceiverProfile, receive_files,
 };
 use std::{
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
-    path::PathBuf,
 };
 use tempfile::TempDir;
 
@@ -18,7 +21,8 @@ struct BenchmarkSubscriber {
     id: String,
     logs: Arc<Mutex<Vec<String>>>,
     connecting_events: Arc<Mutex<usize>>,
-    receiving_events: Arc<Mutex<Vec<usize>>>, // Store data sizes instead of actual data
+    receiving_events: Arc<Mutex<Vec<usize>>>, /* Store data sizes instead of
+                                               * actual data */
 }
 
 impl BenchmarkSubscriber {
@@ -64,7 +68,10 @@ impl ReceiveFilesSubscriber for BenchmarkSubscriber {
     }
 
     fn notify_receiving(&self, event: ReceiveFilesReceivingEvent) {
-        self.receiving_events.lock().unwrap().push(event.data.len());
+        self.receiving_events
+            .lock()
+            .unwrap()
+            .push(event.data.len());
     }
 
     fn notify_connecting(&self, _event: ReceiveFilesConnectingEvent) {
@@ -99,7 +106,11 @@ fn bench_receiver_profile_creation(c: &mut Criterion) {
         ("simple", "Test User", None),
         ("with_avatar", "Avatar User", Some("dGVzdEF2YXRhcg==")),
         ("long_name", long_name_a.as_str(), None),
-        ("long_name_avatar", long_name_b.as_str(), Some("bG9uZ05hbWVBdmF0YXI=")),
+        (
+            "long_name_avatar",
+            long_name_b.as_str(),
+            Some("bG9uZ05hbWVBdmF0YXI="),
+        ),
     ];
 
     for (scenario_name, name, avatar) in profile_scenarios {
@@ -111,7 +122,7 @@ fn bench_receiver_profile_creation(c: &mut Criterion) {
                         name: black_box(name.to_string()),
                         avatar_b64: black_box(avatar.map(|s| s.to_string())),
                     };
-                    
+
                     // Access fields to ensure they're not optimized away
                     black_box(&profile.name);
                     black_box(&profile.avatar_b64);
@@ -129,40 +140,37 @@ fn bench_subscriber_operations(c: &mut Criterion) {
     group.measurement_time(BENCHMARK_TIME_LIMIT);
 
     let message_counts = vec![10, 100, 1000];
-    
+
     for &message_count in &message_counts {
-        group.bench_function(
-            BenchmarkId::new("logging", message_count),
-            |b| {
-                let subscriber = BenchmarkSubscriber::new("bench_subscriber");
-                
-                b.iter(|| {
-                    subscriber.reset();
-                    
-                    for i in 0..message_count {
-                        let message = format!("Benchmark message {}", i);
-                        subscriber.log(black_box(message));
-                    }
-                    
-                    assert_eq!(subscriber.get_log_count(), message_count);
-                });
-            },
-        );
+        group.bench_function(BenchmarkId::new("logging", message_count), |b| {
+            let subscriber = BenchmarkSubscriber::new("bench_subscriber");
+
+            b.iter(|| {
+                subscriber.reset();
+
+                for i in 0..message_count {
+                    let message = format!("Benchmark message {}", i);
+                    subscriber.log(black_box(message));
+                }
+
+                assert_eq!(subscriber.get_log_count(), message_count);
+            });
+        });
     }
 
     // Benchmark receiving event processing
     let event_data_sizes = vec![64, 1024, 64 * 1024];
-    
+
     for &data_size in &event_data_sizes {
         group.bench_function(
             BenchmarkId::new("receiving_events", data_size),
             |b| {
                 let subscriber = BenchmarkSubscriber::new("bench_subscriber");
                 let test_data = generate_test_data(data_size);
-                
+
                 b.iter(|| {
                     subscriber.reset();
-                    
+
                     for i in 0..10 {
                         let event = ReceiveFilesReceivingEvent {
                             id: format!("file_{}", i),
@@ -170,9 +178,12 @@ fn bench_subscriber_operations(c: &mut Criterion) {
                         };
                         subscriber.notify_receiving(event);
                     }
-                    
+
                     assert_eq!(subscriber.get_receiving_events_count(), 10);
-                    assert_eq!(subscriber.get_total_bytes_received(), data_size * 10);
+                    assert_eq!(
+                        subscriber.get_total_bytes_received(),
+                        data_size * 10
+                    );
                 });
             },
         );
@@ -195,18 +206,18 @@ fn bench_file_data_operations(c: &mut Criterion) {
 
     for (size_name, size) in file_sizes {
         group.throughput(Throughput::Bytes(size as u64));
-        
+
         group.bench_function(
             BenchmarkId::new("file_creation_and_length", size_name),
             |b| {
                 b.iter(|| {
                     let (_temp_dir, file_path) = create_test_file(size);
                     let file_data = ReceiverFileData::new(black_box(file_path));
-                    
+
                     // Test length calculation
                     let length = file_data.len();
                     assert_eq!(length, size as u64);
-                    
+
                     black_box(length);
                 });
             },
@@ -217,25 +228,26 @@ fn bench_file_data_operations(c: &mut Criterion) {
             |b| {
                 let (_temp_dir, file_path) = create_test_file(size);
                 let file_data = ReceiverFileData::new(file_path);
-                
+
                 b.iter(|| {
-                    // Note: This is a simplified benchmark since ReceiverFileData
-                    // consumes data on read. In a real scenario, we'd need to
+                    // Note: This is a simplified benchmark since
+                    // ReceiverFileData consumes data on
+                    // read. In a real scenario, we'd need to
                     // recreate the file data for each iteration.
                     let mut bytes_read = 0;
                     let mut read_attempts = 0;
-                    
+
                     // Limit read attempts to prevent infinite loops
                     while let Some(byte) = file_data.read() {
                         black_box(byte);
                         bytes_read += 1;
                         read_attempts += 1;
-                        
+
                         if read_attempts >= size {
                             break;
                         }
                     }
-                    
+
                     black_box(bytes_read);
                 });
             },
@@ -260,7 +272,9 @@ fn bench_concurrent_subscriber_access(c: &mut Criterion) {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 b.iter(|| {
                     rt.block_on(async {
-                        let subscriber = Arc::new(BenchmarkSubscriber::new("concurrent_bench"));
+                        let subscriber = Arc::new(BenchmarkSubscriber::new(
+                            "concurrent_bench",
+                        ));
                         subscriber.reset();
 
                         let handles: Vec<_> = (0..concurrency_level)
@@ -268,13 +282,17 @@ fn bench_concurrent_subscriber_access(c: &mut Criterion) {
                                 let subscriber_clone = subscriber.clone();
                                 tokio::spawn(async move {
                                     for i in 0..operations_per_thread {
-                                        let message = format!("Thread {} - Operation {}", thread_id, i);
-                                        subscriber_clone.log(black_box(message));
+                                        let message = format!(
+                                            "Thread {} - Operation {}",
+                                            thread_id, i
+                                        );
+                                        subscriber_clone
+                                            .log(black_box(message));
                                     }
                                     thread_id
                                 })
                             })
-                        .collect();
+                            .collect();
 
                         // Wait for all threads to complete
                         for handle in handles {
@@ -282,7 +300,7 @@ fn bench_concurrent_subscriber_access(c: &mut Criterion) {
                         }
 
                         assert_eq!(
-                            subscriber.get_log_count(), 
+                            subscriber.get_log_count(),
                             concurrency_level * operations_per_thread
                         );
                     })
@@ -350,11 +368,12 @@ fn bench_memory_efficiency(c: &mut Criterion) {
             group.bench_function(
                 BenchmarkId::new(
                     "event_memory_usage",
-                    format!("{}B_{}events", data_size, event_count)
+                    format!("{}B_{}events", data_size, event_count),
                 ),
                 |b| {
                     b.iter(|| {
-                        let subscriber = BenchmarkSubscriber::new("memory_bench");
+                        let subscriber =
+                            BenchmarkSubscriber::new("memory_bench");
                         let test_data = generate_test_data(data_size);
 
                         // Simulate receiving multiple events
@@ -366,9 +385,15 @@ fn bench_memory_efficiency(c: &mut Criterion) {
                             subscriber.notify_receiving(event);
                         }
 
-                        assert_eq!(subscriber.get_receiving_events_count(), event_count);
-                        assert_eq!(subscriber.get_total_bytes_received(), data_size * event_count);
-                        
+                        assert_eq!(
+                            subscriber.get_receiving_events_count(),
+                            event_count
+                        );
+                        assert_eq!(
+                            subscriber.get_total_bytes_received(),
+                            data_size * event_count
+                        );
+
                         black_box(&subscriber);
                     });
                 },
@@ -397,35 +422,40 @@ fn bench_configuration_impact(c: &mut Criterion) {
 
     for (scenario_name, buffer_size) in buffer_scenarios {
         group.throughput(Throughput::Bytes(total_data_size as u64));
-        
+
         group.bench_function(
             BenchmarkId::new("buffer_simulation", scenario_name),
             |b| {
                 b.iter(|| {
                     let subscriber = BenchmarkSubscriber::new("config_bench");
-                    
+
                     // Simulate receiving data in chunks based on buffer size
-                    let chunks_count = (total_data_size + buffer_size - 1) / buffer_size;
+                    let chunks_count =
+                        (total_data_size + buffer_size - 1) / buffer_size;
                     let mut remaining_data = total_data_size;
-                    
+
                     for chunk_id in 0..chunks_count {
-                        let chunk_size = std::cmp::min(buffer_size, remaining_data);
+                        let chunk_size =
+                            std::cmp::min(buffer_size, remaining_data);
                         let chunk_data = generate_test_data(chunk_size);
-                        
+
                         let event = ReceiveFilesReceivingEvent {
                             id: format!("chunk_{}", chunk_id),
                             data: black_box(chunk_data),
                         };
-                        
+
                         subscriber.notify_receiving(event);
                         remaining_data -= chunk_size;
-                        
+
                         if remaining_data == 0 {
                             break;
                         }
                     }
-                    
-                    assert_eq!(subscriber.get_total_bytes_received(), total_data_size);
+
+                    assert_eq!(
+                        subscriber.get_total_bytes_received(),
+                        total_data_size
+                    );
                     black_box(&subscriber);
                 });
             },

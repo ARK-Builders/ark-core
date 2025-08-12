@@ -1,12 +1,14 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{
+    BenchmarkId, Criterion, Throughput, black_box, criterion_group,
+    criterion_main,
+};
 use dropx_sender::{
-    send_files, SenderConfig, SenderFile, SenderFileData, SenderProfile,
+    SenderConfig, SenderFile, SenderFileData, SenderProfile, send_files,
 };
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-
 
 const BENCHMARK_TIME_LIMIT: Duration = Duration::from_secs(10);
 
@@ -76,7 +78,12 @@ fn bench_sender_initialization(c: &mut Criterion) {
     let buffer_configs = vec![
         ("128B", SenderConfig { buffer_size: 128 }),
         ("1KB", SenderConfig { buffer_size: 1024 }),
-        ("64KB", SenderConfig { buffer_size: 64 * 1024 }),
+        (
+            "64KB",
+            SenderConfig {
+                buffer_size: 64 * 1024,
+            },
+        ),
         ("128KB", SenderConfig::low_bandwidth()),
         ("2MB", SenderConfig::balanced()),
         ("8MB", SenderConfig::high_performance()),
@@ -99,7 +106,8 @@ fn bench_sender_initialization(c: &mut Criterion) {
                     b.iter(|| {
                         rt.block_on(async {
                             let data = generate_test_data(*size);
-                            let mock_file_data = Arc::new(BenchmarkSenderFileData::new(data));
+                            let mock_file_data =
+                                Arc::new(BenchmarkSenderFileData::new(data));
 
                             let profile = SenderProfile {
                                 name: "Benchmark User".to_string(),
@@ -118,10 +126,11 @@ fn bench_sender_initialization(c: &mut Criterion) {
                             };
 
                             let bubble = send_files(black_box(request)).await;
-                            // Just measure the initialization time, not the actual transfer
+                            // Just measure the initialization time, not the
+                            // actual transfer
                             assert!(bubble.is_ok());
                             let bubble = bubble.unwrap();
-                            
+
                             // Touch these to ensure they're computed
                             black_box(bubble.get_ticket());
                             black_box(bubble.get_confirmation());
@@ -172,12 +181,14 @@ fn bench_data_reading(c: &mut Criterion) {
                 &(test_data.clone(), *chunk_size),
                 |b, (data, chunk_size)| {
                     b.iter(|| {
-                        let mock_file = BenchmarkSenderFileData::new(data.clone());
+                        let mock_file =
+                            BenchmarkSenderFileData::new(data.clone());
                         mock_file.reset(); // Reset position for each iteration
 
                         let mut total_bytes = 0;
                         loop {
-                            let chunk = mock_file.read_chunk(black_box(*chunk_size as u64));
+                            let chunk = mock_file
+                                .read_chunk(black_box(*chunk_size as u64));
                             if chunk.is_empty() {
                                 break;
                             }
@@ -200,22 +211,20 @@ fn bench_sequential_reading(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequential_reading");
     group.measurement_time(BENCHMARK_TIME_LIMIT);
 
-    let data_sizes = vec![
-        ("1KB", 1024),
-        ("10KB", 10 * 1024),
-        ("100KB", 100 * 1024),
-    ];
+    let data_sizes =
+        vec![("1KB", 1024), ("10KB", 10 * 1024), ("100KB", 100 * 1024)];
 
     for (data_size_name, data_size) in data_sizes {
         let test_data = generate_test_data(data_size);
-        
+
         group.throughput(Throughput::Bytes(data_size as u64));
-        
+
         group.bench_function(
             BenchmarkId::new("sequential_read", data_size_name),
             |b| {
                 b.iter(|| {
-                    let mock_file = BenchmarkSenderFileData::new(test_data.clone());
+                    let mock_file =
+                        BenchmarkSenderFileData::new(test_data.clone());
                     mock_file.reset();
 
                     let mut bytes_read = 0;
@@ -239,10 +248,23 @@ fn bench_multiple_files(c: &mut Criterion) {
     group.measurement_time(BENCHMARK_TIME_LIMIT);
 
     let file_scenarios = vec![
-        ("5_small_files", vec![1024; 5]),            // 5 x 1KB files
-        ("3_medium_files", vec![10 * 1024; 3]),      // 3 x 10KB files
-        ("10_mixed_files", vec![1024, 5 * 1024, 10 * 1024, 2 * 1024, 8 * 1024, 
-                               1024, 15 * 1024, 3 * 1024, 6 * 1024, 4 * 1024]), // Mixed sizes
+        ("5_small_files", vec![1024; 5]), // 5 x 1KB files
+        ("3_medium_files", vec![10 * 1024; 3]), // 3 x 10KB files
+        (
+            "10_mixed_files",
+            vec![
+                1024,
+                5 * 1024,
+                10 * 1024,
+                2 * 1024,
+                8 * 1024,
+                1024,
+                15 * 1024,
+                3 * 1024,
+                6 * 1024,
+                4 * 1024,
+            ],
+        ), // Mixed sizes
     ];
 
     let buffer_configs = vec![
@@ -253,7 +275,7 @@ fn bench_multiple_files(c: &mut Criterion) {
 
     for (scenario_name, file_sizes) in file_scenarios {
         let total_size: usize = file_sizes.iter().sum();
-        
+
         for (config_name, config) in &buffer_configs {
             let benchmark_id = BenchmarkId::new(
                 format!("{}_{}", scenario_name, config_name),
@@ -276,7 +298,9 @@ fn bench_multiple_files(c: &mut Criterion) {
                                     let data = generate_test_data(size);
                                     SenderFile {
                                         name: format!("file_{}.dat", i),
-                                        data: Arc::new(BenchmarkSenderFileData::new(data)),
+                                        data: Arc::new(
+                                            BenchmarkSenderFileData::new(data),
+                                        ),
                                     }
                                 })
                                 .collect();
@@ -295,7 +319,7 @@ fn bench_multiple_files(c: &mut Criterion) {
                             let bubble = send_files(black_box(request)).await;
                             assert!(bubble.is_ok());
                             let bubble = bubble.unwrap();
-                            
+
                             // Measure initialization of multiple files
                             black_box(bubble.get_ticket());
                             black_box(bubble.get_confirmation());
@@ -321,7 +345,12 @@ fn bench_sender_configs(c: &mut Criterion) {
         ("balanced", SenderConfig::balanced()),
         ("default", SenderConfig::default()),
         ("high_performance", SenderConfig::high_performance()),
-        ("custom_huge", SenderConfig { buffer_size: 32 * 1024 * 1024 }), // 32MB
+        (
+            "custom_huge",
+            SenderConfig {
+                buffer_size: 32 * 1024 * 1024,
+            },
+        ), // 32MB
     ];
 
     let test_data = generate_test_data(1024 * 1024); // 1MB test file
@@ -335,11 +364,13 @@ fn bench_sender_configs(c: &mut Criterion) {
                     let config_copy = SenderConfig {
                         buffer_size: black_box(config.buffer_size),
                     };
-                    
+
                     // Simulate some buffer operations
-                    let chunks_needed = (test_data.len() + config_copy.buffer_size as usize - 1) 
+                    let chunks_needed = (test_data.len()
+                        + config_copy.buffer_size as usize
+                        - 1)
                         / config_copy.buffer_size as usize;
-                    
+
                     black_box(chunks_needed);
                     black_box(config_copy.buffer_size);
                 });

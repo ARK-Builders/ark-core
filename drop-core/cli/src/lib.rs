@@ -454,8 +454,10 @@ impl SenderFileData for FileData {
         }
 
         // Get the current read position
-        let current_position = self.bytes_read.load(std::sync::atomic::Ordering::Relaxed);
-        
+        let current_position = self
+            .bytes_read
+            .load(std::sync::atomic::Ordering::Relaxed);
+
         // Check if we've reached the end of the file
         if current_position >= self.size {
             self.is_finished
@@ -494,20 +496,27 @@ impl SenderFileData for FileData {
         // Calculate how much to read (don't exceed file size)
         let remaining = self.size - current_position;
         let to_read = std::cmp::min(size, remaining) as usize;
-        
+
         // Read chunk from the file
         let mut buffer = vec![0u8; to_read];
         match file.read_exact(&mut buffer) {
             Ok(()) => {
                 // Update the position atomically
-                self.bytes_read.fetch_add(to_read as u64, std::sync::atomic::Ordering::Relaxed);
-                
+                self.bytes_read.fetch_add(
+                    to_read as u64,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+
                 // Check if we've finished reading the entire file
-                if self.bytes_read.load(std::sync::atomic::Ordering::Relaxed) >= self.size {
+                if self
+                    .bytes_read
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    >= self.size
+                {
                     self.is_finished
                         .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
-                
+
                 buffer
             }
             Err(e) => {

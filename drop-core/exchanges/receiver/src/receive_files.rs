@@ -637,9 +637,12 @@ impl Carrier {
         );
 
         let mut serialized_projection_header = [0u8; 4];
-        
+
         // Use read_exact instead of read to ensure we get exactly 4 bytes
-        match uni.read_exact(&mut serialized_projection_header).await {
+        match uni
+            .read_exact(&mut serialized_projection_header)
+            .await
+        {
             Ok(()) => {
                 self.log("read_serialized_projection_len: Successfully read 4-byte header".to_string());
             }

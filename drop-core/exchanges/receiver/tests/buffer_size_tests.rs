@@ -1,6 +1,7 @@
 use dropx_receiver::{
-    receive_files, ReceiveFilesRequest, ReceiveFilesSubscriber, 
-    ReceiveFilesConnectingEvent, ReceiveFilesReceivingEvent, ReceiverProfile
+    ReceiveFilesConnectingEvent, ReceiveFilesReceivingEvent,
+    ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
+    receive_files,
 };
 use std::{
     sync::{Arc, Mutex},
@@ -14,7 +15,8 @@ struct TestSubscriber {
     id: String,
     logs: Arc<Mutex<Vec<String>>>,
     connecting_events: Arc<Mutex<usize>>,
-    receiving_events: Arc<Mutex<Vec<usize>>>, // Store data sizes instead of events
+    receiving_events: Arc<Mutex<Vec<usize>>>, /* Store data sizes instead of
+                                               * events */
 }
 
 impl TestSubscriber {
@@ -54,7 +56,10 @@ impl ReceiveFilesSubscriber for TestSubscriber {
     }
 
     fn notify_receiving(&self, event: ReceiveFilesReceivingEvent) {
-        self.receiving_events.lock().unwrap().push(event.data.len());
+        self.receiving_events
+            .lock()
+            .unwrap()
+            .push(event.data.len());
     }
 
     fn notify_connecting(&self, _event: ReceiveFilesConnectingEvent) {
@@ -105,7 +110,7 @@ async fn test_receiver_creation_basic() {
 async fn test_receiver_bubble_states() {
     // Since we can't actually establish a connection without a real sender,
     // we'll test what we can with invalid tickets to verify error handling
-    
+
     let profile = ReceiverProfile {
         name: "State Test User".to_string(),
         avatar_b64: None,
@@ -113,7 +118,7 @@ async fn test_receiver_bubble_states() {
 
     // Test different confirmation codes
     let confirmation_codes = vec![0, 42, 99];
-    
+
     for confirmation in confirmation_codes {
         let request = ReceiveFilesRequest {
             ticket: format!("test_ticket_{}", confirmation),
@@ -143,7 +148,7 @@ async fn test_subscriber_functionality() {
     // Test logging
     subscriber1.log("Test message 1".to_string());
     subscriber1.log("Test message 2".to_string());
-    
+
     let logs = subscriber1.get_logs();
     assert_eq!(logs.len(), 2);
     assert_eq!(logs[0], "Test message 1");
@@ -165,7 +170,7 @@ async fn test_error_handling_scenarios() {
 
     for (test_name, ticket) in test_cases {
         println!("Testing error handling for: {}", test_name);
-        
+
         let profile = ReceiverProfile {
             name: format!("Error Test - {}", test_name),
             avatar_b64: None,
@@ -228,19 +233,24 @@ fn test_confirmation_code_boundaries() {
 
     // Test boundary values for confirmation codes
     let boundary_values = vec![0, 1, 50, 98, 99];
-    
+
     for confirmation in boundary_values {
         let request = ReceiveFilesRequest {
             ticket: format!("test_ticket_confirm_{}", confirmation),
             confirmation,
             profile: ReceiverProfile {
-            name: profile.name.clone(),
-            avatar_b64: profile.avatar_b64.clone(),
-        },
+                name: profile.name.clone(),
+                avatar_b64: profile.avatar_b64.clone(),
+            },
         };
 
-        // All should have valid confirmation codes (even if tickets are invalid)
-        assert!(confirmation <= 99, "Confirmation code {} should be within bounds", confirmation);
+        // All should have valid confirmation codes (even if tickets are
+        // invalid)
+        assert!(
+            confirmation <= 99,
+            "Confirmation code {} should be within bounds",
+            confirmation
+        );
         assert_eq!(request.confirmation, confirmation);
     }
 }
@@ -286,7 +296,11 @@ async fn test_concurrent_subscriber_access() {
 
     // Each task should have logged exactly 5 messages
     for (i, count) in task_counts.iter().enumerate() {
-        assert_eq!(*count, 5, "Task {} should have logged 5 messages, got {}", i, count);
+        assert_eq!(
+            *count, 5,
+            "Task {} should have logged 5 messages, got {}",
+            i, count
+        );
     }
 }
 
@@ -294,17 +308,16 @@ async fn test_concurrent_subscriber_access() {
 #[test]
 fn test_receiver_file_data_structure() {
     use dropx_receiver::ReceiverFileData;
-    
 
     // Test ReceiverFileData creation
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("test_file.txt");
-    
+
     // Create a test file
     std::fs::write(&file_path, b"test content").unwrap();
 
     let file_data = ReceiverFileData::new(file_path.clone());
-    
+
     // Test that file_data was created successfully
     assert_eq!(file_data.len(), 12); // "test content" is 12 bytes
 
@@ -342,8 +355,9 @@ async fn test_rapid_operations_stress() {
 /// Integration test for buffer size impact simulation
 #[tokio::test]
 async fn test_buffer_size_impact_simulation() {
-    // Since we can't test actual file transfer without both sender and receiver,
-    // we'll simulate the impact of different buffer sizes on data handling
+    // Since we can't test actual file transfer without both sender and
+    // receiver, we'll simulate the impact of different buffer sizes on data
+    // handling
 
     struct BufferSimulation {
         name: String,
@@ -351,28 +365,47 @@ async fn test_buffer_size_impact_simulation() {
     }
 
     let simulations = vec![
-        BufferSimulation { name: "Small Buffer".to_string(), buffer_size: 128 },
-        BufferSimulation { name: "Medium Buffer".to_string(), buffer_size: 1024 },
-        BufferSimulation { name: "Large Buffer".to_string(), buffer_size: 8192 },
+        BufferSimulation {
+            name: "Small Buffer".to_string(),
+            buffer_size: 128,
+        },
+        BufferSimulation {
+            name: "Medium Buffer".to_string(),
+            buffer_size: 1024,
+        },
+        BufferSimulation {
+            name: "Large Buffer".to_string(),
+            buffer_size: 8192,
+        },
     ];
 
     for sim in simulations {
         println!("Testing {}: {} bytes", sim.name, sim.buffer_size);
-        
-        let subscriber = Arc::new(TestSubscriber::new(&format!("buffer_test_{}", sim.buffer_size)));
-        
+
+        let subscriber = Arc::new(TestSubscriber::new(&format!(
+            "buffer_test_{}",
+            sim.buffer_size
+        )));
+
         // Simulate receiving data in chunks of different sizes
         let total_data_size = 10240; // 10KB of test data
-        let chunks_count = (total_data_size + sim.buffer_size - 1) / sim.buffer_size;
-        
+        let chunks_count =
+            (total_data_size + sim.buffer_size - 1) / sim.buffer_size;
+
         for chunk_id in 0..chunks_count {
-            let chunk_size = std::cmp::min(sim.buffer_size, total_data_size - chunk_id * sim.buffer_size);
-            subscriber.log(format!("Chunk {} of size {} bytes", chunk_id, chunk_size));
+            let chunk_size = std::cmp::min(
+                sim.buffer_size,
+                total_data_size - chunk_id * sim.buffer_size,
+            );
+            subscriber.log(format!(
+                "Chunk {} of size {} bytes",
+                chunk_id, chunk_size
+            ));
         }
 
         let logs = subscriber.get_logs();
         assert_eq!(logs.len(), chunks_count);
-        
+
         println!("  - Processed {} chunks for {}", chunks_count, sim.name);
     }
 }

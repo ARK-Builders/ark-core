@@ -1,5 +1,5 @@
 use dropx_sender::{
-    send_files, SenderConfig, SenderFile, SenderFileData, SenderProfile,
+    SenderConfig, SenderFile, SenderFileData, SenderProfile, send_files,
 };
 use std::{
     sync::{Arc, Mutex},
@@ -93,8 +93,16 @@ async fn test_buffer_size_small_file() {
         assert!(bubble.is_ok(), "Failed to create bubble for {}", test_name);
 
         let bubble = bubble.unwrap();
-        assert!(!bubble.get_ticket().is_empty(), "Ticket should not be empty for {}", test_name);
-        assert!(bubble.get_confirmation() <= 99, "Confirmation should be valid for {}", test_name);
+        assert!(
+            !bubble.get_ticket().is_empty(),
+            "Ticket should not be empty for {}",
+            test_name
+        );
+        assert!(
+            bubble.get_confirmation() <= 99,
+            "Confirmation should be valid for {}",
+            test_name
+        );
     }
 }
 
@@ -103,14 +111,23 @@ async fn test_buffer_size_small_file() {
 async fn test_buffer_size_medium_file() {
     let file_size = 10 * 1024 * 1024; // 10MB
     let test_cases = vec![
-        ("64KB buffer", SenderConfig { buffer_size: 64 * 1024 }),
+        (
+            "64KB buffer",
+            SenderConfig {
+                buffer_size: 64 * 1024,
+            },
+        ),
         ("128KB buffer", SenderConfig::low_bandwidth()),
         ("2MB buffer", SenderConfig::balanced()),
         ("8MB buffer", SenderConfig::high_performance()),
     ];
 
     for (test_name, config) in test_cases {
-        println!("Testing {} with {}MB file", test_name, file_size / (1024 * 1024));
+        println!(
+            "Testing {} with {}MB file",
+            test_name,
+            file_size / (1024 * 1024)
+        );
 
         let profile = SenderProfile {
             name: "Test User".to_string(),
@@ -130,7 +147,7 @@ async fn test_buffer_size_medium_file() {
 
         let bubble = bubble.unwrap();
         assert!(!bubble.get_ticket().is_empty());
-        
+
         // Verify bubble operations work correctly
         assert!(!bubble.is_finished());
         assert!(!bubble.is_connected()); // Should not be connected yet (no receiver)
@@ -227,7 +244,8 @@ fn test_mock_file_data_reading() {
     let mut read_data = Vec::new();
     while let Some(byte) = mock_file.read() {
         read_data.push(byte);
-        if read_data.len() > 1010 { // Safety break
+        if read_data.len() > 1010 {
+            // Safety break
             break;
         }
     }
