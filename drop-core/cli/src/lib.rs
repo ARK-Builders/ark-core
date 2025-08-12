@@ -359,6 +359,7 @@ struct FileData {
     path: PathBuf,
     reader: RwLock<Option<std::fs::File>>,
     size: u64,
+    bytes_read: std::sync::atomic::AtomicU64,
 }
 
 impl FileData {
@@ -372,6 +373,7 @@ impl FileData {
             path,
             reader: RwLock::new(None),
             size: metadata.len(),
+            bytes_read: std::sync::atomic::AtomicU64::new(0),
         })
     }
 }
@@ -442,7 +444,7 @@ impl SenderFileData for FileData {
     }
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
-        use std::io::Read;
+        use std::io::{Read, Seek, SeekFrom};
 
         if self
             .is_finished
@@ -451,52 +453,73 @@ impl SenderFileData for FileData {
             return Vec::new();
         }
 
-        // Initialize reader if not already done
-        if self.reader.read().unwrap().is_none() {
-            match std::fs::File::open(&self.path) {
-                Ok(file) => {
-                    *self.reader.write().unwrap() = Some(file);
-                }
-                Err(e) => {
-                    eprintln!(
-                        "❌ Error opening file {}: {}",
-                        self.path.display(),
-                        e
-                    );
-                    self.is_finished
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                    return Vec::new();
-                }
-            }
+        // Get the current read position
+        let current_position = self.bytes_read.load(std::sync::atomic::Ordering::Relaxed);
+        
+        // Check if we've reached the end of the file
+        if current_position >= self.size {
+            self.is_finished
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            return Vec::new();
         }
 
+        // Open a new file handle for each chunk read to avoid seeking conflicts
+        let mut file = match std::fs::File::open(&self.path) {
+            Ok(file) => file,
+            Err(e) => {
+                eprintln!(
+                    "❌ Error opening file {}: {}",
+                    self.path.display(),
+                    e
+                );
+                self.is_finished
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                return Vec::new();
+            }
+        };
+
+        // Seek to the current position
+        if let Err(e) = file.seek(SeekFrom::Start(current_position)) {
+            eprintln!(
+                "❌ Error seeking to position {} in file {}: {}",
+                current_position,
+                self.path.display(),
+                e
+            );
+            self.is_finished
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            return Vec::new();
+        }
+
+        // Calculate how much to read (don't exceed file size)
+        let remaining = self.size - current_position;
+        let to_read = std::cmp::min(size, remaining) as usize;
+        
         // Read chunk from the file
-        let mut reader = self.reader.write().unwrap();
-        if let Some(file) = reader.as_mut() {
-            let mut buffer = vec![0u8; size as usize];
-            match file.read(&mut buffer) {
-                Ok(bytes_read) => {
-                    if bytes_read == 0 {
-                        self.is_finished
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
-                        return Vec::new();
-                    }
-                    buffer.truncate(bytes_read);
-                    return buffer;
-                }
-                Err(e) => {
-                    eprintln!(
-                        "❌ Error reading chunk from file {}: {}",
-                        self.path.display(),
-                        e
-                    );
+        let mut buffer = vec![0u8; to_read];
+        match file.read_exact(&mut buffer) {
+            Ok(()) => {
+                // Update the position atomically
+                self.bytes_read.fetch_add(to_read as u64, std::sync::atomic::Ordering::Relaxed);
+                
+                // Check if we've finished reading the entire file
+                if self.bytes_read.load(std::sync::atomic::Ordering::Relaxed) >= self.size {
                     self.is_finished
                         .store(true, std::sync::atomic::Ordering::Relaxed);
-                    return Vec::new();
                 }
+                
+                buffer
             }
-        } else {
-            Vec::new()
+            Err(e) => {
+                eprintln!(
+                    "❌ Error reading chunk from file {}: {}",
+                    self.path.display(),
+                    e
+                );
+                self.is_finished
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                Vec::new()
+            }
         }
     }
 }

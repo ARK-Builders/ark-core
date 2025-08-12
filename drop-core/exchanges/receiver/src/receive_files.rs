@@ -637,31 +637,26 @@ impl Carrier {
         );
 
         let mut serialized_projection_header = [0u8; 4];
-        let read = uni
-            .read(&mut serialized_projection_header)
-            .await?;
-
-        if read.is_none() {
-            self.log("read_serialized_projection_len: No data available to read, returning None".to_string());
-            return Ok(None);
-        }
-
-        let bytes_read = read.unwrap();
-        self.log(format!(
-            "read_serialized_projection_len: Read {} bytes from header",
-            bytes_read
-        ));
-
-        if bytes_read != 4 {
-            let error_msg = format!(
-                "Invalid data chunk length header - expected 4 bytes, got {}",
-                bytes_read
-            );
-            self.log(format!(
-                "read_serialized_projection_len: Error - {}",
-                error_msg
-            ));
-            return Err(anyhow::Error::msg(error_msg));
+        
+        // Use read_exact instead of read to ensure we get exactly 4 bytes
+        match uni.read_exact(&mut serialized_projection_header).await {
+            Ok(()) => {
+                self.log("read_serialized_projection_len: Successfully read 4-byte header".to_string());
+            }
+            Err(e) => {
+                use iroh::endpoint::ReadExactError;
+                // Check if this is an end-of-stream condition
+                match e {
+                    ReadExactError::FinishedEarly(_) => {
+                        self.log("read_serialized_projection_len: Reached end of stream, returning None".to_string());
+                        return Ok(None);
+                    }
+                    ReadExactError::ReadError(io_error) => {
+                        self.log(format!("read_serialized_projection_len: Error reading header: {}", io_error));
+                        return Err(io_error.into());
+                    }
+                }
+            }
         }
 
         let serialized_projection_len =
