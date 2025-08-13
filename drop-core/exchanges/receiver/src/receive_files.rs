@@ -613,7 +613,7 @@ impl Carrier {
             "read_next_projection: Reading {} bytes of projection data",
             len
         ));
-        self.read_projection_data(uni, &mut serialized_projection).await?;
+        uni.read_exact(&mut serialized_projection).await?;
 
         self.log(
             "read_next_projection: Deserializing projection from JSON"
@@ -667,43 +667,6 @@ impl Carrier {
 
         self.log(format!("read_serialized_projection_len: Decoded projection length: {} bytes", serialized_projection_len));
         Ok(Some(serialized_projection_len as usize))
-    }
-
-    async fn read_projection_data(
-        &self,
-        uni: &mut RecvStream,
-        buffer: &mut [u8],
-    ) -> Result<()> {
-        // For large buffers (>= 1KB), read in chunks to avoid hanging
-        const CHUNK_SIZE: usize = 1024; // 1KB chunks
-        let buffer_len = buffer.len();
-
-        if buffer_len < CHUNK_SIZE {
-            // Small buffer, read all at once
-            self.log(format!("read_projection_data: Reading {} bytes in single read", buffer_len));
-            uni.read_exact(buffer).await?;
-        } else {
-            // Large buffer, read in chunks
-            self.log(format!("read_projection_data: Reading {} bytes in chunks of {} bytes", buffer_len, CHUNK_SIZE));
-            
-            let mut bytes_read = 0;
-            while bytes_read < buffer_len {
-                let chunk_size = std::cmp::min(CHUNK_SIZE, buffer_len - bytes_read);
-                let chunk_end = bytes_read + chunk_size;
-                
-                self.log(format!("read_projection_data: Reading chunk {}-{} ({} bytes)", 
-                    bytes_read, chunk_end - 1, chunk_size));
-                
-                uni.read_exact(&mut buffer[bytes_read..chunk_end]).await?;
-                bytes_read += chunk_size;
-                
-                self.log(format!("read_projection_data: Successfully read chunk, total progress: {}/{} bytes", 
-                    bytes_read, buffer_len));
-            }
-        }
-        
-        self.log(format!("read_projection_data: Successfully read all {} bytes", buffer_len));
-        Ok(())
     }
 }
 
