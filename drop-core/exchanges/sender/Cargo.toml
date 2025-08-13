@@ -5,6 +5,7 @@ edition = "2024"
 
 [lib]
 name = "dropx_sender"
+bench = false
 
 [dependencies]
 drop-entities = { path = "../../entities" }
@@ -20,13 +21,3 @@ serde_json = "1.0.142"
 flate2 = "1.0"
 tracing = "0.1"
 futures = "0.3"
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-tokio = { version = "1.0", features = ["full"] }
-tempfile = "3.0"
-rand = "0.9.0"
-
-[[bench]]
-name = "transfer_benchmark"
-harness = false

@@ -46,13 +46,6 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --verbose
 
-      - name: Run drop-core exchange tests
-        run: |
-          echo "Running drop-core sender buffer size tests..."
-          cargo test --package dropx-sender buffer_size_tests --verbose
-          echo "Running drop-core receiver buffer size tests..."
-          cargo test --package dropx-receiver buffer_size_tests --verbose
-
       - name: Build Release
         run: cargo build --verbose --release
 
@@ -117,14 +110,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Run drop-core exchange benchmarks
-        run: |
-          echo "Running drop-core sender benchmarks..."
-          cargo bench --package dropx-sender --bench transfer_benchmark
-          echo "Running drop-core receiver benchmarks..."
-          cargo bench --package dropx-receiver --bench transfer_benchmark
-          
       - name: Run Criterion
         uses: boa-dev/criterion-compare-action@v3
         with:
