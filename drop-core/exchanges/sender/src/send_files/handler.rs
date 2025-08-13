@@ -334,7 +334,7 @@ impl ProtocolHandler for SendFilesHandler {
                     ));
                 });
 
-            carrier.finish();
+            // carrier.finish();
 
             subscribers
                 .read()
