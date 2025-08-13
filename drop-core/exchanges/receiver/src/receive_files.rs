@@ -503,14 +503,14 @@ impl Carrier {
             "process_projection_stream: Starting stream processing".to_string(),
         );
 
-        self.log(
-            "process_projection_stream: Reading projection data from stream"
-                .to_string(),
-        );
-        let projection_result = self.read_next_projection(&mut uni).await;
+        // Read projection data with timeout to avoid hanging
+        let projection_result = tokio::time::timeout(
+            std::time::Duration::from_secs(30), // 30 second timeout per chunk
+            self.read_next_projection(&mut uni)
+        ).await;
 
         let projection = match projection_result {
-            Ok(Some(proj)) => {
+            Ok(Ok(Some(proj))) => {
                 self.log(format!(
                     "process_projection_stream: Successfully read projection - File ID: {}, Data size: {} bytes",
                     proj.id,
@@ -518,23 +518,27 @@ impl Carrier {
                 ));
                 proj
             }
-            Ok(None) => {
+            Ok(Ok(None)) => {
                 self.log("process_projection_stream: No projection data found in stream (empty stream)".to_string());
                 return Ok(());
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 self.log(format!(
                     "process_projection_stream: Failed to read projection: {}",
                     e
                 ));
                 return Err(e);
             }
+            Err(_) => {
+                self.log("process_projection_stream: Timeout reading projection data".to_string());
+                return Err(anyhow::Error::msg("Timeout reading projection data"));
+            }
         };
 
         self.notify_receiving(projection);
 
-        self.log("process_projection_stream: Stopping unidirectional stream to signal completion".to_string());
-        uni.stop(VarInt::from_u32(0))?;
+        // self.log("process_projection_stream: Stopping unidirectional stream to signal completion".to_string());
+        // uni.stop(VarInt::from_u32(0))?;
 
         self.log(
             "process_projection_stream: Stream processing completed successfully"

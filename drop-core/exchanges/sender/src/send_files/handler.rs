@@ -726,16 +726,16 @@ impl Carrier {
             ));
             uni.finish()?;
 
-            // Wait for the stream to be acknowledged as stopped
-            log(format!(
-                "send_single_file: Waiting for stream to stop for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.stopped().await?;
-            log(format!(
-                "send_single_file: Stream stopped for chunk {} of file {}",
-                chunk_count, file.name
-            ));
+            // // Wait for the stream to be acknowledged as stopped
+            // log(format!(
+            //     "send_single_file: Waiting for stream to stop for chunk {} of file {}",
+            //     chunk_count, file.name
+            // ));
+            // uni.stopped().await?;
+            // log(format!(
+            //     "send_single_file: Stream stopped for chunk {} of file {}",
+            //     chunk_count, file.name
+            // ));
 
             // Update counters
             sent += data_len;
