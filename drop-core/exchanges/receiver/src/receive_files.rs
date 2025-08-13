@@ -58,9 +58,14 @@ impl ReceiveFilesBubble {
     pub fn start(&self) -> Result<()> {
         self.log("start: Checking if transfer can be started".to_string());
 
-        if self.is_running() || self.is_consumed() || self.is_finished() {
-            self.log(format!("start: Cannot start transfer - running: {}, consumed: {}, finished: {}", 
-                self.is_running(), self.is_consumed(), self.is_finished()));
+        // Acquiring, so we can check if the transfer has already started before
+        let is_consumed = self
+            .is_consumed
+            .load(std::sync::atomic::Ordering::Acquire);
+
+        if is_consumed {
+            self.log(format!("start: Cannot start transfer, it has already started - consumed: {}", 
+                is_consumed));
             return Err(anyhow::Error::msg(
                 "Already running or has run or finished.",
             ));
@@ -68,7 +73,7 @@ impl ReceiveFilesBubble {
 
         self.log("start: Setting running and consumed flags".to_string());
         self.is_running
-            .store(true, std::sync::atomic::Ordering::Release);
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.is_consumed
             .store(true, std::sync::atomic::Ordering::Release);
 
@@ -101,9 +106,7 @@ impl ReceiveFilesBubble {
                         "start: File reception completed successfully"
                             .to_string(),
                     );
-                    carrier
-                        .is_finished
-                        .store(true, std::sync::atomic::Ordering::Release);
+                    carrier.finish();
                 }
                 Err(e) => {
                     carrier.log(format!("start: File reception failed: {}", e));
@@ -124,7 +127,7 @@ impl ReceiveFilesBubble {
             carrier.log("start: Setting running flag to false".to_string());
             carrier
                 .is_running
-                .store(false, std::sync::atomic::Ordering::Release);
+                .store(false, std::sync::atomic::Ordering::Relaxed);
 
             carrier.log("start: File reception task completed".to_string());
         });
@@ -154,23 +157,15 @@ impl ReceiveFilesBubble {
     fn is_running(&self) -> bool {
         let running = self
             .is_running
-            .load(std::sync::atomic::Ordering::Acquire);
+            .load(std::sync::atomic::Ordering::Relaxed);
         self.log(format!("is_running check: {}", running));
         running
-    }
-
-    fn is_consumed(&self) -> bool {
-        let consumed = self
-            .is_consumed
-            .load(std::sync::atomic::Ordering::Acquire);
-        self.log(format!("is_consumed check: {}", consumed));
-        consumed
     }
 
     pub fn is_finished(&self) -> bool {
         let finished = self
             .is_finished
-            .load(std::sync::atomic::Ordering::Acquire);
+            .load(std::sync::atomic::Ordering::Relaxed);
         self.log(format!("is_finished check: {}", finished));
         finished
     }
@@ -465,7 +460,6 @@ impl Carrier {
                             if !has_next {
                                 self.log("receive_files: Stopping unidirectional stream to signal completion".to_string());
                                 uni.stop(VarInt::from_u32(0))?;
-                                self.finish();
                                 break;
                             }
                         }
@@ -588,7 +582,7 @@ impl Carrier {
             .store(true, std::sync::atomic::Ordering::Relaxed);
 
         self.log("finish: Transfer finished flag set to true".to_string());
-        self.log("finish: Transfer process completed successfully".to_string());        
+        self.log("finish: Transfer process completed successfully".to_string());
     }
 
     async fn read_next_projection(

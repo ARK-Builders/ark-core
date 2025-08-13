@@ -80,7 +80,7 @@ impl SendFilesHandler {
     pub fn is_consumed(&self) -> bool {
         let consumed = self
             .is_consumed
-            .load(std::sync::atomic::Ordering::Acquire);
+            .load(std::sync::atomic::Ordering::Relaxed);
         self.log(format!("is_consumed check: {}", consumed));
         consumed
     }
@@ -551,6 +551,12 @@ impl Carrier {
             self.files.len()
         ));
 
+        self.log(format!(
+            "send_files: Starting chunk transfer loop for {} files",
+            self.files.len()
+        ));
+        let mut uni = self.connection.open_uni().await?;
+
         for (file_index, file) in self.files.iter().enumerate() {
             self.log(format!(
                 "send_files: Processing file {} of {}: {} ({} bytes)",
@@ -560,18 +566,14 @@ impl Carrier {
                 file.data.len()
             ));
 
-            let connection = self.connection.clone();
             let config = self.config.clone();
             let file_clone = file.clone();
             let subscribers = self.subscribers.clone();
 
-            let send_result = Self::send_single_file(
-                connection,
-                config,
-                file_clone,
-                subscribers,
-            )
-            .await;
+            let send_result = self
+                .send_single_file(&mut uni, config, file_clone, subscribers)
+                .await;
+
             match &send_result {
                 Ok(_) => {
                     self.log(format!(
@@ -592,27 +594,29 @@ impl Carrier {
             }
         }
 
-        self.log("send_files: All files transferred successfully".to_string());
+        // // Properly finish the stream to signal end of data
+        // self.log(format!(
+        //     "send_single_file: Finishing stream for chunk {} of file {}",
+        //     chunk_count, file.name
+        // ));
+        // uni.finish()?;
+
+        // Wait for the stream to be acknowledged as stopped
+        self.log("send_single_file: Waiting for stream to stop".to_string());
+        uni.stopped().await?;
+        self.log("send_single_file: Stream stopped".to_string());
+
         Ok(())
     }
 
     async fn send_single_file(
-        connection: Connection,
+        &self,
+        uni: &mut SendStream,
         config: SenderConfig,
         file: File,
         subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
     ) -> Result<()> {
-        // Helper function to log to subscribers
-        let log =
-            |message: String| {
-                subscribers.read().unwrap().iter().for_each(
-                    |(id, subscriber)| {
-                        subscriber.log(format!("[{}] {}", id, message));
-                    },
-                );
-            };
-
-        log(format!(
+        self.log(format!(
             "send_single_file: Starting transfer for file: {} ({} bytes)",
             file.name,
             file.data.len()
@@ -623,13 +627,13 @@ impl Carrier {
         let mut remaining = total_len;
         let mut chunk_count = 0u64;
 
-        log(format!(
+        self.log(format!(
             "send_single_file: File {} - Total size: {} bytes, Buffer size: {} bytes",
             file.name, total_len, config.buffer_size
         ));
 
         // Initial progress notification
-        log(format!(
+        self.log(format!(
             "send_single_file: Sending initial progress notification for file {}",
             file.name
         ));
@@ -638,7 +642,7 @@ impl Carrier {
             .unwrap()
             .iter()
             .for_each(|(id, s)| {
-                log(format!("send_single_file: Notifying subscriber {} about initial progress", id));
+                self.log(format!("send_single_file: Notifying subscriber {} about initial progress", id));
                 s.notify_sending(SendFilesSendingEvent {
                     name: file.name.clone(),
                     sent,
@@ -646,20 +650,19 @@ impl Carrier {
                 });
             });
 
-        log(format!(
+        self.log(format!(
             "send_single_file: Starting chunk transfer loop for file {}",
             file.name
         ));
-
         loop {
-            log(format!(
+            self.log(format!(
                 "send_single_file: Reading next projection for file {} (chunk {})",
                 file.name,
                 chunk_count + 1
             ));
             let projection = Self::read_next_projection(&file, &config);
             if projection.is_none() {
-                log(format!(
+                self.log(format!(
                     "send_single_file: No more data to read for file {} - transfer complete",
                     file.name
                 ));
@@ -670,19 +673,14 @@ impl Carrier {
             let data_len = projection.data.len() as u64;
             chunk_count += 1;
 
-            log(format!(
+            self.log(format!(
                 "send_single_file: Read chunk {} for file {} - size: {} bytes",
                 chunk_count, file.name, data_len
             ));
 
             // Open unidirectional stream for this chunk
-            log(format!(
+            self.log(format!(
                 "send_single_file: Opening unidirectional stream for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            let mut uni = connection.open_uni().await?;
-            log(format!(
-                "send_single_file: Successfully opened stream for chunk {} of file {}",
                 chunk_count, file.name
             ));
 
@@ -692,7 +690,7 @@ impl Carrier {
             };
 
             // Serialize and send projection with larger buffer
-            log(format!(
+            self.log(format!(
                 "send_single_file: Serializing projection for chunk {} of file {}",
                 chunk_count, file.name
             ));
@@ -701,41 +699,23 @@ impl Carrier {
             let serialized_projection_header =
                 serialized_projection_len.to_be_bytes();
 
-            log(format!(
+            self.log(format!(
                 "send_single_file: Serialized projection size: {} bytes for chunk {} of file {}",
                 serialized_projection_len, chunk_count, file.name
             ));
 
-            log(format!(
+            self.log(format!(
                 "send_single_file: Writing projection header for chunk {} of file {}",
                 chunk_count, file.name
             ));
             uni.write_all(&serialized_projection_header)
                 .await?;
 
-            log(format!(
+            self.log(format!(
                 "send_single_file: Writing projection data for chunk {} of file {}",
                 chunk_count, file.name
             ));
             uni.write_all(&serialized_projection).await?;
-
-            // Properly finish the stream to signal end of data
-            log(format!(
-                "send_single_file: Finishing stream for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.finish()?;
-
-            // Wait for the stream to be acknowledged as stopped
-            log(format!(
-                "send_single_file: Waiting for stream to stop for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.stopped().await?;
-            log(format!(
-                "send_single_file: Stream stopped for chunk {} of file {}",
-                chunk_count, file.name
-            ));
 
             // Update counters
             sent += data_len;
@@ -751,7 +731,7 @@ impl Carrier {
                 100.0
             };
 
-            log(format!(
+            self.log(format!(
                 "send_single_file: Progress for file {}: {:.1}% ({}/{} bytes, chunk {})",
                 file.name, progress, sent, total_len, chunk_count
             ));
@@ -761,7 +741,7 @@ impl Carrier {
                 .unwrap()
                 .iter()
                 .for_each(|(id, s)| {
-                    log(format!("send_single_file: Notifying subscriber {} about progress update", id));
+                    self.log(format!("send_single_file: Notifying subscriber {} about progress update", id));
                     s.notify_sending(SendFilesSendingEvent {
                         name: file.name.clone(),
                         sent,
@@ -770,10 +750,11 @@ impl Carrier {
                 });
         }
 
-        log(format!(
+        self.log(format!(
             "send_single_file: Completed transfer for file: {} ({} bytes in {} chunks)",
             file.name, sent, chunk_count
         ));
+
         Ok(())
     }
 
