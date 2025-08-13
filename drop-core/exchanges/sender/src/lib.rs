@@ -44,7 +44,7 @@ pub struct SenderConfig {
 impl Default for SenderConfig {
     fn default() -> Self {
         Self {
-            buffer_size: 32768, // 32KB buffer for optimal balance
+            buffer_size: 2097152, // 2MB buffer
         }
     }
 }
