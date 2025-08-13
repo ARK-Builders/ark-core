@@ -280,8 +280,8 @@ impl Carrier {
         self.log("greet: Finishing send stream".to_string());
         bi.0.finish()?;
 
-        self.log("greet: Waiting for send stream to stop".to_string());
-        bi.0.stopped().await?;
+        // self.log("greet: Waiting for send stream to stop".to_string());
+        // bi.0.stopped().await?;
 
         self.log("greet: Handshake completed successfully".to_string());
         Ok(())
