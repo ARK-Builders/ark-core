@@ -8,7 +8,7 @@ use dropx_common::{
 };
 use futures::Future;
 use iroh::{
-    endpoint::{Connection, RecvStream, SendStream, VarInt},
+    endpoint::{Connection, RecvStream, SendStream},
     protocol::ProtocolHandler,
 };
 use std::{

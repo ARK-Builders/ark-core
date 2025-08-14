@@ -74,7 +74,7 @@ publishing {
             artifactId = 'drop'
             version = project.findProperty('releaseVersion') ?: System.getenv('RELEASE_VERSION')
             afterEvaluate {
-                from components.release
+                from components["release"]
             }
         }
     }
@@ -92,30 +92,32 @@ publishing {
 
 tasks.register('generateDropBindings', Exec) {
     workingDir '../..'
-    commandLine 'cargo', 'run', '--bin', 'uniffi-bindgen', 'generate', './src/drop.udl', '--config', './bindings/android/uniffi.toml',
-            '--language', 'kotlin', '--out-dir', './bindings/android/src/main/kotlin'
+    commandLine 'cargo', 'run', '--bin', 'uniffi-bindgen', 'generate', './src/drop.udl',
+        '--config', './bindings/android/uniffi.toml',
+        '--language', 'kotlin', '--out-dir', './bindings/android/src/main/kotlin'
     environment 'RUST_BACKTRACE', '1'
 }
 
 afterEvaluate {
-    tasks.named('compileReleaseKotlin') {
-        dependsOn tasks.named('generateDropBindings')
-    }
-    tasks.named('compileDebugKotlin') {
+    tasks.matching { it.name.toLowerCase().contains("compile") && it.name.toLowerCase().contains("kotlin") }.configureEach {
         dependsOn tasks.named('generateDropBindings')
     }
 }
 
 tasks.register('buildDropJNILibs', Exec) {
     workingDir = file('../..')
-    environment 'ANDROID_NDK_HOME', System.getenv('ANDROID_NDK_HOME') ?: android.ndkDirectory.absolutePath
+    def ndkHome = System.getenv('ANDROID_NDK_HOME')
+    if (!ndkHome) {
+        throw new GradleException("ANDROID_NDK_HOME not set; please export it before building.")
+    }
+    environment 'ANDROID_NDK_HOME', ndkHome
     commandLine 'cargo', 'ndk',
-            '--output-dir', './bindings/android/src/main/jniLibs',
-            '--target', 'aarch64-linux-android',
-            '--target', 'armv7-linux-androideabi',
-            '--target', 'i686-linux-android',
-            '--target', 'x86_64-linux-android',
-            'build', '--release'
+        '--output-dir', './bindings/android/src/main/jniLibs',
+        '--target', 'aarch64-linux-android',
+        '--target', 'armv7-linux-androideabi',
+        '--target', 'i686-linux-android',
+        '--target', 'x86_64-linux-android',
+        'build', '--release'
 }
 
 preBuild.dependsOn(generateDropBindings, buildDropJNILibs)
