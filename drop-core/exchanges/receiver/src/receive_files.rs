@@ -467,9 +467,9 @@ impl Carrier {
                             error_code: VarInt::from_u32(200),
                             reason: String::from("finished").into(),
                         });
-
                     if err.eq(&default_closing_reason) {
                         self.log("receive_files: Sender completed transfer with success code".to_string());
+                        return Ok(());
                     } else {
                         self.log(format!(
                             "receive_files: Connection unexpectedly closed: {:?}",
