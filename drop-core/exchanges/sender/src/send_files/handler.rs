@@ -8,7 +8,7 @@ use dropx_common::{
 };
 use futures::Future;
 use iroh::{
-    endpoint::{Connection, RecvStream, SendStream},
+    endpoint::{Connection, RecvStream, SendStream, VarInt},
     protocol::ProtocolHandler,
 };
 use std::{
@@ -551,12 +551,6 @@ impl Carrier {
             self.files.len()
         ));
 
-        self.log(format!(
-            "send_files: Starting chunk transfer loop for {} files",
-            self.files.len()
-        ));
-        let mut uni = self.connection.open_uni().await?;
-
         for (file_index, file) in self.files.iter().enumerate() {
             self.log(format!(
                 "send_files: Processing file {} of {}: {} ({} bytes)",
@@ -571,7 +565,7 @@ impl Carrier {
             let subscribers = self.subscribers.clone();
 
             let send_result = self
-                .send_single_file(&mut uni, config, file_clone, subscribers)
+                .send_single_file(config, file_clone, subscribers)
                 .await;
 
             match &send_result {
@@ -594,24 +588,11 @@ impl Carrier {
             }
         }
 
-        // // Properly finish the stream to signal end of data
-        // self.log(format!(
-        //     "send_single_file: Finishing stream for chunk {} of file {}",
-        //     chunk_count, file.name
-        // ));
-        // uni.finish()?;
-
-        // Wait for the stream to be acknowledged as stopped
-        self.log("send_single_file: Waiting for stream to stop".to_string());
-        uni.stopped().await?;
-        self.log("send_single_file: Stream stopped".to_string());
-
         Ok(())
     }
 
     async fn send_single_file(
         &self,
-        uni: &mut SendStream,
         config: SenderConfig,
         file: File,
         subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
@@ -700,6 +681,12 @@ impl Carrier {
                 serialized_projection_len.to_be_bytes();
 
             self.log(format!(
+                "send_single_file: Opening unidirectional stream for chunk {} of file {}",
+                chunk_count, file.name
+            ));
+            let mut uni = self.connection.open_uni().await?;
+
+            self.log(format!(
                 "send_single_file: Serialized projection size: {} bytes for chunk {} of file {}",
                 serialized_projection_len, chunk_count, file.name
             ));
@@ -748,6 +735,20 @@ impl Carrier {
                         remaining,
                     });
                 });
+
+            // // Properly finish the stream to signal end of data
+            // self.log(format!(
+            //     "send_single_file: Finishing stream for chunk {} of file {}",
+            //     chunk_count, file.name
+            // ));
+            // uni.finish()?;
+
+            // Wait for the stream to be acknowledged as stopped
+            self.log(
+                "send_single_file: Waiting for stream to stop".to_string(),
+            );
+            uni.stopped().await?;
+            self.log("send_single_file: Stream stopped".to_string());
         }
 
         self.log(format!(
@@ -779,8 +780,12 @@ impl Carrier {
 
         self.is_finished
             .store(true, std::sync::atomic::Ordering::Relaxed);
-
         self.log("finish: Transfer finished flag set to true".to_string());
+
+        self.log("finish: Connection closed".to_string());
+        self.connection
+            .close(VarInt::from_u32(200), "Transfer finished.".as_bytes());
+
         self.log("finish: Transfer process completed successfully".to_string());
     }
 
