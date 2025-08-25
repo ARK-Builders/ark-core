@@ -784,7 +784,7 @@ impl Carrier {
 
         self.log("finish: Connection closed".to_string());
         self.connection
-            .close(VarInt::from_u32(200), "Transfer finished.".as_bytes());
+            .close(VarInt::from_u32(200), "finished".as_bytes());
 
         self.log("finish: Transfer process completed successfully".to_string());
     }

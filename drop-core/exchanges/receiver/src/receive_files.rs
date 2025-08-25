@@ -426,6 +426,20 @@ impl Carrier {
         loop {
             chunk_count += 1;
 
+            if self.is_cancelled() {
+                self.log(
+                    "receive_files: Cancellation detected, closing connection"
+                        .to_string(),
+                );
+                self.connection.close(
+                    VarInt::from_u32(0),
+                    String::from("cancelled").as_bytes(),
+                );
+                return Err(anyhow::Error::msg(
+                    "Receive files has been cancelled.",
+                ));
+            }
+
             self.log(
                 format!(
                     "receive_files: Waiting for unidirectional stream from sender (chunk {})",
@@ -443,53 +457,34 @@ impl Carrier {
                         )
                     );
 
-                    loop {
-                        if self.is_cancelled() {
-                            self.log(
-                                "receive_files: Cancellation detected, closing connection"
-                                    .to_string()
-                            );
-                            self.connection.close(
-                                VarInt::from_u32(0),
-                                String::from(
-                                    "Receive files has been cancelled.",
-                                )
-                                .as_bytes(),
-                            );
-                            return Err(anyhow::Error::msg(
-                                "Receive files has been cancelled.",
+                    let process_result =
+                        self.process_projection_chunk(&mut uni).await;
+
+                    match process_result {
+                        Ok(has_next) => {
+                            self.log(format!("receive_files: Chunk {} processed successfully and has_next: {}", chunk_count, has_next));
+                            if !has_next {
+                                return Ok(());
+                            }
+                        }
+                        Err(e) => {
+                            self.log(format!(
+                                "receive_files: Chunk {} processing failed: {}",
+                                chunk_count, e
                             ));
+                            return Err(e);
                         }
-
-                        let process_result =
-                            self.process_projection_chunk(&mut uni).await;
-
-                        match process_result {
-                            Ok(has_next) => {
-                                self.log(format!("receive_files: Chunk {} processed successfully and has_next: {}", chunk_count, has_next));
-                                if !has_next {
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                self.log(format!(
-                                    "receive_files: Chunk {} processing failed: {}",
-                                    chunk_count, e
-                                ));
-                                return Err(e);
-                            }
-                        }
-
-                        self.log("receive_files: Stopping unidirectional stream to signal completion".to_string());
-                        uni.stop(VarInt::from_u32(0))?;
                     }
+
+                    self.log("receive_files: Stopping unidirectional stream to signal completion".to_string());
+                    uni.stop(VarInt::from_u32(0))?;
                 }
 
                 Err(err) => {
                     let default_closing_reason =
                         ConnectionError::ApplicationClosed(ApplicationClose {
                             error_code: VarInt::from_u32(200),
-                            reason: String::from("Transfer finished.").into(),
+                            reason: String::from("finished").into(),
                         });
 
                     if err.eq(&default_closing_reason) {
@@ -593,7 +588,7 @@ impl Carrier {
             .store(true, std::sync::atomic::Ordering::Relaxed);
 
         self.connection
-            .close(VarInt::from_u32(0), "Transfer finished.".as_bytes());
+            .close(VarInt::from_u32(200), "finished".as_bytes());
 
         self.log("finish: Transfer finished flag set to true".to_string());
         self.log("finish: Transfer process completed successfully".to_string());
