@@ -106,23 +106,13 @@ impl ReceiveFilesBubble {
                         "start: File reception completed successfully"
                             .to_string(),
                     );
-                    carrier.finish();
                 }
                 Err(e) => {
                     carrier.log(format!("start: File reception failed: {}", e));
                 }
             }
 
-            carrier
-                .log("start: Closing connection with success code".to_string());
-            // Close connection with success code
-            carrier.connection.close(
-                VarInt::from_u32(200),
-                String::from("Transfer finished.").as_bytes(),
-            );
-
-            carrier.log("start: Closing endpoint".to_string());
-            carrier.endpoint.close().await;
+            carrier.finish().await;
 
             carrier.log("start: Setting running flag to false".to_string());
             carrier
@@ -460,24 +450,15 @@ impl Carrier {
                     let process_result =
                         self.process_projection_chunk(&mut uni).await;
 
-                    match process_result {
-                        Ok(has_next) => {
-                            self.log(format!("receive_files: Chunk {} processed successfully and has_next: {}", chunk_count, has_next));
-                            if !has_next {
-                                return Ok(());
-                            }
-                        }
-                        Err(e) => {
-                            self.log(format!(
-                                "receive_files: Chunk {} processing failed: {}",
-                                chunk_count, e
-                            ));
-                            return Err(e);
-                        }
-                    }
-
-                    self.log("receive_files: Stopping unidirectional stream to signal completion".to_string());
                     uni.stop(VarInt::from_u32(0))?;
+
+                    if let Err(e) = process_result {
+                        self.log(format!(
+                            "receive_files: Chunk {} processing failed: {}",
+                            chunk_count, e
+                        ));
+                        return Err(e);
+                    }
                 }
 
                 Err(err) => {
@@ -506,7 +487,7 @@ impl Carrier {
     async fn process_projection_chunk(
         &self,
         uni: &mut RecvStream,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         self.log(
             "process_projection_chunk: Starting chunk processing".to_string(),
         );
@@ -528,7 +509,7 @@ impl Carrier {
             }
             Ok(None) => {
                 self.log("process_projection_chunk: No projection data found in chunk (empty chunk)".to_string());
-                return Ok(false);
+                return Ok(());
             }
             Err(e) => {
                 self.log(format!(
@@ -541,7 +522,7 @@ impl Carrier {
 
         self.notify_receiving(projection);
 
-        Ok(true)
+        return Ok(());
     }
 
     fn notify_receiving(&self, projection: FileProjection) {
@@ -581,14 +562,18 @@ impl Carrier {
             });
     }
 
-    fn finish(&self) {
+    async fn finish(&self) {
         self.log("finish: Starting transfer finish process".to_string());
 
         self.is_finished
             .store(true, std::sync::atomic::Ordering::Relaxed);
 
+        self.log("finish: Closing connection".to_string());
         self.connection
             .close(VarInt::from_u32(200), "finished".as_bytes());
+
+        self.log("finish: Closing endpoint".to_string());
+        self.endpoint.close().await;
 
         self.log("finish: Transfer finished flag set to true".to_string());
         self.log("finish: Transfer process completed successfully".to_string());
