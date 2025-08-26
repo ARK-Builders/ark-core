@@ -16,7 +16,7 @@ dictionary SenderFile {
 interface SenderFileData {
     u64 len();
     u8? read();
-    bytes read_chunk(u64 size);
+    bytes read_chunk(i32 size);
 };
 dictionary SenderConfig {
     u64 buffer_size;

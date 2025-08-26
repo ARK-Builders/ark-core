@@ -17,7 +17,7 @@ pub struct SenderFile {
 pub trait SenderFileData: Send + Sync {
     fn len(&self) -> u64;
     fn read(&self) -> Option<u8>;
-    fn read_chunk(&self, size: u64) -> Vec<u8>;
+    fn read_chunk(&self, size: i32) -> Vec<u8>;
 }
 struct SenderFileDataAdapter {
     inner: Arc<dyn SenderFileData>,
@@ -32,7 +32,7 @@ impl dropx_sender::SenderFileData for SenderFileDataAdapter {
     }
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
-        return self.inner.read_chunk(size);
+        return self.inner.read_chunk(size.try_into().unwrap());
     }
 }
 
