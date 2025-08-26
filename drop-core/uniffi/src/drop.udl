@@ -86,7 +86,7 @@ interface ReceiveFilesSubscriber {
 };
 dictionary ReceiveFilesReceivingEvent  {
     string id;
-    sequence<u8> data;
+    bytes data;
 };
 dictionary ReceiveFilesConnectingEvent   {
     ReceiveFilesProfile sender;
