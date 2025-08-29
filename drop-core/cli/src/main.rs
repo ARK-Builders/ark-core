@@ -21,10 +21,18 @@ async fn main() -> Result<()> {
 
 fn build_cli() -> Command {
     Command::new("drop-cli")
-        .about("A CLI tool for sending and receiving files")
-        .version("0.8.0")
-        .author("@oluiscabral")
+        .about("A Drop CLI tool for sending and receiving files")
+        .version("1.0.0")
+        .author("oluiscabral@ark-builders.dev")
         .arg_required_else_help(true)
+        .arg(
+            Arg::new("verbose")
+                .long("verbose")
+                .short('v')
+                .help("Enable verbose logging")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+        )
         .subcommand(
             Command::new("send")
                 .about("Send files to another user")
@@ -105,6 +113,8 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
         .cloned()
         .collect();
 
+    let verbose: bool = matches.get_flag("verbose");
+
     let profile = build_profile(matches)?;
 
     println!("📤 Preparing to send {} file(s)...", files.len());
@@ -127,13 +137,14 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
-    run_send_files(file_strings, profile).await
+    run_send_files(file_strings, profile, verbose).await
 }
 
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     let output_dir = matches.get_one::<PathBuf>("output").unwrap();
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
+    let verbose = matches.get_flag("verbose");
 
     let profile = build_profile(matches)?;
 
@@ -157,6 +168,7 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
         ticket.clone(),
         confirmation.clone(),
         profile,
+        verbose,
     )
     .await
 }

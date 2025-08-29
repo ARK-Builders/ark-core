@@ -69,7 +69,11 @@ impl FileSender {
         Self { profile }
     }
 
-    pub async fn send_files(&self, file_paths: Vec<PathBuf>) -> Result<()> {
+    pub async fn send_files(
+        &self,
+        file_paths: Vec<PathBuf>,
+        verbose: bool,
+    ) -> Result<()> {
         if file_paths.is_empty() {
             return Err(anyhow!("Cannot send an empty list of files"));
         }
@@ -94,7 +98,7 @@ impl FileSender {
             .await
             .context("Failed to initiate file sending")?;
 
-        let subscriber = FileSendSubscriber::new();
+        let subscriber = FileSendSubscriber::new(verbose);
         bubble.subscribe(Arc::new(subscriber));
 
         println!("📦 Ready to send files!");
@@ -161,6 +165,7 @@ impl FileReceiver {
         output_dir: PathBuf,
         ticket: String,
         confirmation: u8,
+        verbose: bool,
     ) -> Result<()> {
         // Create output directory if it doesn't exist
         if !output_dir.exists() {
@@ -191,7 +196,8 @@ impl FileReceiver {
             .await
             .context("Failed to initiate file receiving")?;
 
-        let subscriber = FileReceiveSubscriber::new(receiving_path.clone());
+        let subscriber =
+            FileReceiveSubscriber::new(receiving_path.clone(), verbose);
         bubble.subscribe(Arc::new(subscriber));
 
         println!("📥 Starting file transfer...");
@@ -224,12 +230,14 @@ impl FileReceiver {
 
 struct FileSendSubscriber {
     id: String,
+    verbose: bool,
 }
 
 impl FileSendSubscriber {
-    fn new() -> Self {
+    fn new(verbose: bool) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
+            verbose,
         }
     }
 }
@@ -240,7 +248,9 @@ impl SendFilesSubscriber for FileSendSubscriber {
     }
 
     fn log(&self, message: String) {
-        println!("🔍 DEBUG: {}", message);
+        if self.verbose {
+            println!("🔍 v: {}", message);
+        }
     }
 
     fn notify_sending(&self, event: SendFilesSendingEvent) {
@@ -267,14 +277,16 @@ struct FileReceiveSubscriber {
     id: String,
     receiving_path: PathBuf,
     files: RwLock<Vec<ReceiveFilesFile>>,
+    verbose: bool,
 }
 
 impl FileReceiveSubscriber {
-    fn new(receiving_path: PathBuf) -> Self {
+    fn new(receiving_path: PathBuf, verbose: bool) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             receiving_path,
             files: RwLock::new(Vec::new()),
+            verbose,
         }
     }
 }
@@ -285,7 +297,9 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     }
 
     fn log(&self, message: String) {
-        println!("🔍 DEBUG: {}", message);
+        if self.verbose {
+            println!("🔍 v: {}", message);
+        }
     }
 
     fn notify_receiving(&self, event: ReceiveFilesReceivingEvent) {
@@ -537,13 +551,14 @@ impl SenderFileData for FileData {
 pub async fn run_send_files(
     file_paths: Vec<String>,
     profile: Profile,
+    verbose: bool,
 ) -> Result<()> {
     let paths: Vec<PathBuf> = file_paths
         .into_iter()
         .map(PathBuf::from)
         .collect();
     let sender = FileSender::new(profile);
-    sender.send_files(paths).await
+    sender.send_files(paths, verbose).await
 }
 
 pub async fn run_receive_files(
@@ -551,6 +566,7 @@ pub async fn run_receive_files(
     ticket: String,
     confirmation: String,
     profile: Profile,
+    verbose: bool,
 ) -> Result<()> {
     let confirmation_code = u8::from_str(&confirmation).with_context(|| {
         format!("Invalid confirmation code: {}", confirmation)
@@ -558,6 +574,6 @@ pub async fn run_receive_files(
 
     let receiver = FileReceiver::new(profile);
     receiver
-        .receive_files(PathBuf::from(output_dir), ticket, confirmation_code)
+        .receive_files(PathBuf::from(output_dir), ticket, confirmation_code, verbose)
         .await
 }
