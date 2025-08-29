@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use crate::DropError;
 
-use super::ReceiverProfile;
+use super::{ReceiverConfig, ReceiverProfile};
 
 pub struct ReceiveFilesRequest {
     pub ticket: String,
     pub confirmation: u8,
     pub profile: ReceiverProfile,
+    pub config: Option<ReceiverConfig>,
 }
 
 pub struct ReceiveFilesBubble {
@@ -153,9 +154,17 @@ fn create_adapted_request(
         name: request.profile.name,
         avatar_b64: request.profile.avatar_b64,
     };
+    let config = request
+        .config
+        .map(|c| dropx_receiver::ReceiverConfig {
+            buffer_size: c.buffer_size,
+            chunk_size: c.chunk_size,
+            parallel_streams: c.parallel_streams,
+        });
     return dropx_receiver::ReceiveFilesRequest {
         profile,
         ticket: request.ticket,
         confirmation: request.confirmation,
+        config,
     };
 }

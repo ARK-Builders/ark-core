@@ -2,7 +2,8 @@ use anyhow::Result;
 use drop_entities::{File, Profile};
 use dropx_common::{
     handshake::{
-        HandshakeFile, HandshakeProfile, ReceiverHandshake, SenderHandshake,
+        HandshakeConfig, HandshakeFile, HandshakeProfile, NegotiatedConfig,
+        ReceiverHandshake, SenderHandshake,
     },
     projection::FileProjection,
 };
@@ -12,10 +13,12 @@ use iroh::{
     protocol::ProtocolHandler,
 };
 use std::{
+    cmp::min,
     collections::HashMap,
     fmt::Debug,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
+use tokio::task::JoinSet;
 
 use super::SenderConfig;
 
@@ -26,6 +29,7 @@ pub trait SendFilesSubscriber: Send + Sync {
     fn notify_connecting(&self, event: SendFilesConnectingEvent);
 }
 
+#[derive(Clone)]
 pub struct SendFilesSendingEvent {
     pub name: String,
     pub sent: u64,
@@ -36,6 +40,7 @@ pub struct SendFilesConnectingEvent {
     pub receiver: SendFilesProfile,
 }
 
+#[derive(Clone)]
 pub struct SendFilesProfile {
     pub id: String,
     pub name: String,
@@ -93,14 +98,19 @@ impl SendFilesHandler {
         finished
     }
 
+    #[inline(always)]
     pub fn log(&self, message: String) {
-        self.subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(id, subscriber)| {
-                subscriber.log(format!("[{}] {}", id, message));
-            });
+        // Only log important messages to reduce overhead
+        if message.contains("error")
+            || message.contains("failed")
+            || message.contains("completed")
+        {
+            self.subscribers.read().unwrap().iter().for_each(
+                |(id, subscriber)| {
+                    subscriber.log(format!("[{}] {}", id, message));
+                },
+            );
+        }
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
@@ -164,85 +174,22 @@ impl ProtocolHandler for SendFilesHandler {
             )
             .unwrap_or(true);
 
-        let subscribers = self.subscribers.clone();
-
         async move {
             if is_consumed {
-                // Log to subscribers before returning error
-                subscribers
-                    .read()
-                    .unwrap()
-                    .iter()
-                    .for_each(|(id, subscriber)| {
-                        subscriber.log(format!("[{}] on_connecting: Connection rejected - handler already consumed", id));
-                    });
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
-            subscribers
-                .read()
-                .unwrap()
-                .iter()
-                .for_each(|(id, subscriber)| {
-                    subscriber.log(format!("[{}] on_connecting: Attempting to establish connection", id));
-                });
-
-            let connection = connecting.await;
-
-            match &connection {
-                Ok(_) => {
-                    subscribers
-                        .read()
-                        .unwrap()
-                        .iter()
-                        .for_each(|(id, subscriber)| {
-                            subscriber.log(format!("[{}] on_connecting: Connection successfully established", id));
-                        });
-                }
-                Err(e) => {
-                    subscribers
-                        .read()
-                        .unwrap()
-                        .iter()
-                        .for_each(|(id, subscriber)| {
-                            subscriber.log(format!("[{}] on_connecting: Connection failed with error: {}", id, e));
-                        });
-                }
-            }
-
-            Ok(connection?)
+            let connection = connecting.await?;
+            Ok(connection)
         }
     }
 
     fn shutdown(&self) -> impl Future<Output = ()> + Send {
         self.log("shutdown: Initiating handler shutdown".to_string());
         let is_finished = self.is_finished.clone();
-        let subscribers = self.subscribers.clone();
 
         async move {
-            subscribers
-                .read()
-                .unwrap()
-                .iter()
-                .for_each(|(id, subscriber)| {
-                    subscriber.log(format!(
-                        "[{}] shutdown: Setting finished flag to true",
-                        id
-                    ));
-                });
-
             is_finished.store(true, std::sync::atomic::Ordering::Relaxed);
-
-            subscribers
-                .read()
-                .unwrap()
-                .iter()
-                .for_each(|(id, subscriber)| {
-                    subscriber.log(format!(
-                        "[{}] shutdown: Handler shutdown completed",
-                        id
-                    ));
-                });
         }
     }
 
@@ -257,96 +204,24 @@ impl ProtocolHandler for SendFilesHandler {
         let carrier = Carrier {
             is_finished: self.is_finished.clone(),
             config: self.config.clone(),
+            negotiated_config: None,
             profile: self.profile.clone(),
             connection,
             files: self.files.clone(),
             subscribers: self.subscribers.clone(),
         };
 
-        let subscribers = self.subscribers.clone();
-
         async move {
-            subscribers
-                .read()
-                .unwrap()
-                .iter()
-                .for_each(|(id, subscriber)| {
-                    subscriber.log(format!(
-                        "[{}] accept: Starting file transfer process",
-                        id
-                    ));
-                });
-
-            let greet_result = carrier.greet().await;
-            match &greet_result {
-                Ok(_) => {
-                    subscribers
-                        .read()
-                        .unwrap()
-                        .iter()
-                        .for_each(|(id, subscriber)| {
-                            subscriber.log(format!("[{}] accept: Greeting phase completed successfully", id));
-                        });
-                }
-                Err(e) => {
-                    subscribers
-                        .read()
-                        .unwrap()
-                        .iter()
-                        .for_each(|(id, subscriber)| {
-                            subscriber.log(format!("[{}] accept: Greeting phase failed with error: {}", id, e));
-                        });
-                    return Err(iroh::protocol::AcceptError::NotAllowed {});
-                }
+            let mut carrier = carrier;
+            if let Err(_) = carrier.greet().await {
+                return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
-            let send_result = carrier.send_files().await;
-            match &send_result {
-                Ok(_) => {
-                    subscribers
-                        .read()
-                        .unwrap()
-                        .iter()
-                        .for_each(|(id, subscriber)| {
-                            subscriber.log(format!("[{}] accept: File sending phase completed successfully", id));
-                        });
-                }
-                Err(e) => {
-                    subscribers
-                        .read()
-                        .unwrap()
-                        .iter()
-                        .for_each(|(id, subscriber)| {
-                            subscriber.log(format!("[{}] accept: File sending phase failed with error: {}", id, e));
-                        });
-                    return Err(iroh::protocol::AcceptError::NotAllowed {});
-                }
+            if let Err(_) = carrier.send_files().await {
+                return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
-
-            subscribers
-                .read()
-                .unwrap()
-                .iter()
-                .for_each(|(id, subscriber)| {
-                    subscriber.log(format!(
-                        "[{}] accept: Finishing transfer process",
-                        id
-                    ));
-                });
 
             carrier.finish();
-
-            subscribers
-                .read()
-                .unwrap()
-                .iter()
-                .for_each(|(id, subscriber)| {
-                    subscriber.log(format!(
-                        "[{}] accept: File transfer completed successfully",
-                        id
-                    ));
-                });
-
             Ok(())
         }
     }
@@ -355,57 +230,20 @@ impl ProtocolHandler for SendFilesHandler {
 struct Carrier {
     is_finished: Arc<AtomicBool>,
     config: SenderConfig,
+    negotiated_config: Option<NegotiatedConfig>,
     profile: Profile,
     connection: Connection,
     files: Vec<File>,
     subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
 }
 impl Carrier {
-    async fn greet(&self) -> Result<()> {
-        self.log("greet: Starting greeting process".to_string());
+    async fn greet(&mut self) -> Result<()> {
+        let mut bi = self.connection.accept_bi().await?;
 
-        self.log("greet: Accepting bidirectional stream".to_string());
-        let mut bi = match self.connection.accept_bi().await {
-            Ok(bi) => {
-                self.log(
-                    "greet: Bidirectional stream accepted successfully"
-                        .to_string(),
-                );
-                bi
-            }
-            Err(e) => {
-                self.log(format!(
-                    "greet: Failed to accept bidirectional stream: {}",
-                    e
-                ));
-                return Err(e.into());
-            }
-        };
+        self.send_handshake(&mut bi).await?;
+        self.receive_handshake(&mut bi).await?;
 
-        self.log("greet: Starting handshake process".to_string());
-
-        if let Err(e) = self.send_handshake(&mut bi).await {
-            self.log(format!("greet: Sender handshake failed: {}", e));
-            return Err(e);
-        }
-        self.log("greet: Sender handshake completed successfully".to_string());
-
-        if let Err(e) = self.receive_handshake(&mut bi).await {
-            self.log(format!("greet: Receiver handshake failed: {}", e));
-            return Err(e);
-        }
-        self.log(
-            "greet: Receiver handshake completed successfully".to_string(),
-        );
-
-        // self.log("greet: Finishing send stream".to_string());
-        // bi.0.finish()?;
-
-        self.log("greet: Waiting for send stream to stop".to_string());
         bi.0.stopped().await?;
-
-        // self.log("greet: Stopping receive stream".to_string());
-        // bi.1.stop(VarInt::from_u32(0))?;
 
         self.log("greet: Handshake completed successfully".to_string());
         Ok(())
@@ -415,8 +253,6 @@ impl Carrier {
         &self,
         bi: &mut (SendStream, RecvStream),
     ) -> Result<()> {
-        self.log("send_handshake: Creating sender handshake".to_string());
-
         let handshake = SenderHandshake {
             profile: HandshakeProfile {
                 id: self.profile.id.clone(),
@@ -432,347 +268,209 @@ impl Carrier {
                     len: f.data.len(),
                 })
                 .collect(),
+            config: HandshakeConfig {
+                buffer_size: self.config.buffer_size,
+                chunk_size: self.config.chunk_size,
+                parallel_streams: self.config.parallel_streams,
+            },
         };
 
-        self.log(format!(
-            "send_handshake: Handshake created - Profile: {} ({}), Files: {}",
-            handshake.profile.name,
-            handshake.profile.id,
-            handshake.files.len()
-        ));
+        // Pre-allocate vector with estimated capacity
+        let mut buffer = Vec::with_capacity(512);
+        serde_json::to_writer(&mut buffer, &handshake)?;
 
-        for (index, file) in handshake.files.iter().enumerate() {
-            self.log(format!(
-                "send_handshake: File {}: {} ({} bytes)",
-                index + 1,
-                file.name,
-                file.len
-            ));
-        }
+        let len_bytes = (buffer.len() as u32).to_be_bytes();
 
-        self.log("send_handshake: Serializing handshake to JSON".to_string());
-        let serialized_handshake = serde_json::to_vec(&handshake)?;
-        let serialized_handshake_len = serialized_handshake.len() as u32;
-        let serialized_handshake_header =
-            serialized_handshake_len.to_be_bytes();
+        // Single write operation
+        let mut combined = Vec::with_capacity(4 + buffer.len());
+        combined.extend_from_slice(&len_bytes);
+        combined.extend_from_slice(&buffer);
 
-        self.log(format!(
-            "send_handshake: Serialized handshake size: {} bytes",
-            serialized_handshake_len
-        ));
-
-        self.log("send_handshake: Writing handshake header".to_string());
-        bi.0.write_all(&serialized_handshake_header)
-            .await?;
-
-        self.log("send_handshake: Writing handshake payload".to_string());
-        bi.0.write_all(&serialized_handshake).await?;
-
-        self.log(format!(
-            "send_handshake: Successfully sent handshake with {} files",
-            handshake.files.len()
-        ));
+        bi.0.write_all(&combined).await?;
         Ok(())
     }
 
     async fn receive_handshake(
-        &self,
+        &mut self,
         bi: &mut (SendStream, RecvStream),
     ) -> Result<()> {
-        self.log(
-            "receive_handshake: Reading handshake header from receiver"
-                .to_string(),
-        );
+        let mut header = [0u8; 4];
+        bi.1.read_exact(&mut header).await?;
+        let len = u32::from_be_bytes(header);
 
-        let mut serialized_handshake_header = [0u8; 4];
-        bi.1.read_exact(&mut serialized_handshake_header)
-            .await?;
-        let serialized_handshake_len =
-            u32::from_be_bytes(serialized_handshake_header);
+        let mut buffer = vec![0u8; len as usize];
+        bi.1.read_exact(&mut buffer).await?;
 
-        self.log(format!(
-            "receive_handshake: Expected handshake size: {} bytes",
-            serialized_handshake_len
+        let handshake: ReceiverHandshake = serde_json::from_slice(&buffer)?;
+
+        // Negotiate configuration
+        let sender_config = HandshakeConfig {
+            buffer_size: self.config.buffer_size,
+            chunk_size: self.config.chunk_size,
+            parallel_streams: self.config.parallel_streams,
+        };
+
+        self.negotiated_config = Some(NegotiatedConfig::negotiate(
+            &sender_config,
+            &handshake.config,
         ));
 
-        self.log(
-            "receive_handshake: Reading handshake payload from receiver"
-                .to_string(),
-        );
-        let mut serialized_handshake =
-            vec![0u8; serialized_handshake_len as usize];
-        bi.1.read_exact(&mut serialized_handshake).await?;
+        // Notify subscribers
+        let profile = SendFilesProfile {
+            id: handshake.profile.id,
+            name: handshake.profile.name,
+            avatar_b64: handshake.profile.avatar_b64,
+        };
 
-        self.log(format!(
-            "receive_handshake: Successfully read {} bytes of handshake data",
-            serialized_handshake.len()
-        ));
-
-        self.log(
-            "receive_handshake: Deserializing handshake from JSON".to_string(),
-        );
-        let handshake: ReceiverHandshake =
-            serde_json::from_slice(&serialized_handshake)?;
-
-        self.log(format!(
-            "receive_handshake: Received handshake from receiver - Name: {}, ID: {}",
-            handshake.profile.name, handshake.profile.id
-        ));
-
-        self.log(
-            "receive_handshake: Notifying subscribers about connecting event"
-                .to_string(),
-        );
         self.subscribers
             .read()
             .unwrap()
             .iter()
-            .for_each(|(id, s)| {
-                self.log(format!("receive_handshake: Notifying subscriber {} about connection", id));
+            .for_each(|(_, s)| {
                 s.notify_connecting(SendFilesConnectingEvent {
-                    receiver: SendFilesProfile {
-                        id: handshake.profile.id.clone(),
-                        name: handshake.profile.name.clone(),
-                        avatar_b64: handshake.profile.avatar_b64.clone(),
-                    },
+                    receiver: profile.clone(),
                 });
             });
 
-        self.log(
-            "receive_handshake: Handshake exchange completed successfully"
-                .to_string(),
-        );
         Ok(())
     }
 
     async fn send_files(&self) -> Result<()> {
-        self.log(format!(
-            "send_files: Starting file transfer for {} files",
-            self.files.len()
-        ));
-
-        for (file_index, file) in self.files.iter().enumerate() {
-            self.log(format!(
-                "send_files: Processing file {} of {}: {} ({} bytes)",
-                file_index + 1,
-                self.files.len(),
-                file.name,
-                file.data.len()
-            ));
-
-            let config = self.config.clone();
-            let file_clone = file.clone();
-            let subscribers = self.subscribers.clone();
-
-            let send_result = self
-                .send_single_file(config, file_clone, subscribers)
-                .await;
-
-            match &send_result {
-                Ok(_) => {
-                    self.log(format!(
-                        "send_files: File {} ({}) transferred successfully",
-                        file_index + 1,
-                        file.name
-                    ));
-                }
-                Err(e) => {
-                    self.log(format!(
-                        "send_files: File {} ({}) transfer failed: {}",
-                        file_index + 1,
-                        file.name,
-                        e
-                    ));
-                    return send_result;
-                }
-            }
+        for file in &self.files {
+            self.send_single_file(file).await?;
         }
-
+        self.log("send_files: All files transferred successfully".to_string());
         Ok(())
     }
 
-    async fn send_single_file(
-        &self,
-        config: SenderConfig,
-        file: File,
-        subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
-    ) -> Result<()> {
-        self.log(format!(
-            "send_single_file: Starting transfer for file: {} ({} bytes)",
-            file.name,
-            file.data.len()
-        ));
-
+    async fn send_single_file(&self, file: &File) -> Result<()> {
         let mut sent = 0u64;
         let total_len = file.data.len();
         let mut remaining = total_len;
-        let mut chunk_count = 0u64;
-
-        self.log(format!(
-            "send_single_file: File {} - Total size: {} bytes, Buffer size: {} bytes",
-            file.name, total_len, config.buffer_size
-        ));
 
         // Initial progress notification
-        self.log(format!(
-            "send_single_file: Sending initial progress notification for file {}",
-            file.name
-        ));
-        subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(id, s)| {
-                self.log(format!("send_single_file: Notifying subscriber {} about initial progress", id));
-                s.notify_sending(SendFilesSendingEvent {
-                    name: file.name.clone(),
-                    sent,
-                    remaining,
-                });
-            });
+        self.notify_progress(&file.name, sent, remaining as u64);
 
-        self.log(format!(
-            "send_single_file: Starting chunk transfer loop for file {}",
-            file.name
-        ));
-        loop {
-            self.log(format!(
-                "send_single_file: Reading next projection for file {} (chunk {})",
-                file.name,
-                chunk_count + 1
-            ));
-            let projection = Self::read_next_projection(&file, &config);
-            if projection.is_none() {
-                self.log(format!(
-                    "send_single_file: No more data to read for file {} - transfer complete",
-                    file.name
-                ));
+        // Use negotiated configuration or fallback to defaults
+        let (chunk_size, buffer_size, parallel_streams) =
+            if let Some(config) = &self.negotiated_config {
+                (
+                    config.chunk_size,
+                    config.buffer_size,
+                    config.parallel_streams,
+                )
+            } else {
+                (
+                    self.config.chunk_size,
+                    self.config.buffer_size,
+                    self.config.parallel_streams,
+                )
+            };
+
+        let mut join_set = JoinSet::new();
+
+        // Read all data into chunks first, then distribute to streams
+        let mut all_projections = Vec::new();
+        while remaining > 0 {
+            let current_chunk_size = min(chunk_size, remaining as u64);
+            let chunk_data = file.data.read_chunk(current_chunk_size);
+
+            if chunk_data.is_empty() {
                 break;
             }
 
-            let projection = projection.unwrap();
-            let data_len = projection.data.len() as u64;
-            chunk_count += 1;
-
-            self.log(format!(
-                "send_single_file: Read chunk {} for file {} - size: {} bytes",
-                chunk_count, file.name, data_len
-            ));
-
-            // Open unidirectional stream for this chunk
-            self.log(format!(
-                "send_single_file: Opening unidirectional stream for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-
             let projection = FileProjection {
-                id: projection.id,
-                data: projection.data,
+                id: file.id.clone(),
+                data: chunk_data,
             };
 
-            // Serialize and send projection with larger buffer
-            self.log(format!(
-                "send_single_file: Serializing projection for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            let serialized_projection = serde_json::to_vec(&projection)?;
-            let serialized_projection_len = serialized_projection.len() as u32;
-            let serialized_projection_header =
-                serialized_projection_len.to_be_bytes();
-
-            self.log(format!(
-                "send_single_file: Opening unidirectional stream for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            let mut uni = self.connection.open_uni().await?;
-
-            self.log(format!(
-                "send_single_file: Serialized projection size: {} bytes for chunk {} of file {}",
-                serialized_projection_len, chunk_count, file.name
-            ));
-
-            self.log(format!(
-                "send_single_file: Writing projection header for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.write_all(&serialized_projection_header)
-                .await?;
-
-            self.log(format!(
-                "send_single_file: Writing projection data for chunk {} of file {}",
-                chunk_count, file.name
-            ));
-            uni.write_all(&serialized_projection).await?;
-
-            // Update counters
-            sent += data_len;
-            remaining = if remaining >= data_len {
-                remaining - data_len
-            } else {
-                0
-            };
-
-            let progress = if total_len > 0 {
-                (sent as f64 / total_len as f64) * 100.0
-            } else {
-                100.0
-            };
-
-            self.log(format!(
-                "send_single_file: Progress for file {}: {:.1}% ({}/{} bytes, chunk {})",
-                file.name, progress, sent, total_len, chunk_count
-            ));
-
-            subscribers
-                .read()
-                .unwrap()
-                .iter()
-                .for_each(|(id, s)| {
-                    self.log(format!("send_single_file: Notifying subscriber {} about progress update", id));
-                    s.notify_sending(SendFilesSendingEvent {
-                        name: file.name.clone(),
-                        sent,
-                        remaining,
-                    });
-                });
-
-            // // Properly finish the stream to signal end of data
-            // self.log(format!(
-            //     "send_single_file: Finishing stream for chunk {} of file {}",
-            //     chunk_count, file.name
-            // ));
-            // uni.finish()?;
-
-            // Wait for the stream to be acknowledged as stopped
-            self.log(
-                "send_single_file: Waiting for stream to stop".to_string(),
-            );
-            uni.stopped().await?;
-            self.log("send_single_file: Stream stopped".to_string());
+            remaining = remaining.saturating_sub(projection.data.len() as u64);
+            all_projections.push(projection);
         }
 
-        self.log(format!(
-            "send_single_file: Completed transfer for file: {} ({} bytes in {} chunks)",
-            file.name, sent, chunk_count
-        ));
+        // Distribute projections across streams based on buffer_size capacity
+        let chunks_per_stream = (buffer_size / chunk_size).max(1) as usize;
+
+        for chunk_batch in all_projections.chunks(chunks_per_stream) {
+            let connection = self.connection.clone();
+            let file_name = file.name.clone();
+            let subscribers = self.subscribers.clone();
+            let stream_chunks = chunk_batch.to_vec();
+
+            join_set.spawn(async move {
+                Self::send_stream_chunks(
+                    chunk_size,
+                    connection,
+                    stream_chunks,
+                    file_name,
+                    subscribers,
+                )
+                .await
+            });
+
+            // Limit concurrent streams to negotiated number
+            if join_set.len() >= parallel_streams as usize {
+                if let Some(result) = join_set.join_next().await {
+                    let stream_sent = result??;
+                    sent += stream_sent;
+                    self.notify_progress(
+                        &file.name,
+                        sent,
+                        (total_len as u64).saturating_sub(sent),
+                    );
+                }
+            }
+        }
+
+        // Wait for all remaining streams to complete
+        while let Some(result) = join_set.join_next().await {
+            let stream_sent = result??;
+            sent += stream_sent;
+            self.notify_progress(
+                &file.name,
+                sent,
+                (total_len as u64).saturating_sub(sent),
+            );
+        }
 
         Ok(())
     }
 
-    fn read_next_projection(
-        file: &File,
-        config: &SenderConfig,
-    ) -> Option<FileProjection> {
-        let buffer = file.data.read_chunk(config.buffer_size);
+    async fn send_stream_chunks(
+        chunk_size: u64,
+        connection: Connection,
+        chunks: Vec<FileProjection>,
+        _file_name: String,
+        _subscribers: Arc<
+            RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>,
+        >,
+    ) -> Result<u64> {
+        let mut uni = connection.open_uni().await?;
+        let mut total_sent = 0u64;
 
-        if buffer.is_empty() {
-            return None;
+        // Pre-allocate buffer for serialization
+        let mut buffer = Vec::with_capacity((chunk_size + 256).try_into().unwrap()); // chunk_size + 256 buffer for serialization
+
+        for chunk in chunks {
+            let data_len = chunk.data.len() as u64;
+
+            // Serialize chunk
+            buffer.clear();
+            serde_json::to_writer(&mut buffer, &chunk)?;
+
+            let len_bytes = (buffer.len() as u32).to_be_bytes();
+
+            // Write header + data
+            uni.write_all(&len_bytes).await?;
+            uni.write_all(&buffer).await?;
+
+            total_sent += data_len;
         }
 
-        Some(FileProjection {
-            id: file.id.clone(),
-            data: buffer,
-        })
+        // uni.finish()?;
+        uni.stopped().await?;
+
+        Ok(total_sent)
     }
 
     fn finish(&self) {
@@ -789,13 +487,35 @@ impl Carrier {
         self.log("finish: Transfer process completed successfully".to_string());
     }
 
+    #[inline(always)]
     fn log(&self, message: String) {
+        // Only log important messages to reduce overhead
+        if message.contains("error")
+            || message.contains("failed")
+            || message.contains("completed")
+        {
+            self.subscribers.read().unwrap().iter().for_each(
+                |(id, subscriber)| {
+                    subscriber.log(format!("[{}] {}", id, message));
+                },
+            );
+        }
+    }
+
+    #[inline(always)]
+    fn notify_progress(&self, name: &str, sent: u64, remaining: u64) {
+        let event = SendFilesSendingEvent {
+            name: name.to_string(),
+            sent,
+            remaining,
+        };
+
         self.subscribers
             .read()
             .unwrap()
             .iter()
-            .for_each(|(id, subscriber)| {
-                subscriber.log(format!("[{}] {}", id, message));
+            .for_each(|(_, s)| {
+                s.notify_sending(event.clone());
             });
     }
 }

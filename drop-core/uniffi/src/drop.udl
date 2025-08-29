@@ -20,6 +20,8 @@ interface SenderFileData {
 };
 dictionary SenderConfig {
     u64 buffer_size;
+    u64 chunk_size;
+    u64 parallel_streams;
 };
 dictionary SendFilesRequest {
     SenderProfile profile;
@@ -63,10 +65,16 @@ dictionary ReceiverProfile {
     string name;
     string? avatar_b64;
 };
+dictionary ReceiverConfig {
+    u64 buffer_size;
+    u64 chunk_size;
+    u64 parallel_streams;
+};
 dictionary ReceiveFilesRequest {
     string ticket;
     u8 confirmation;
     ReceiverProfile profile;
+    ReceiverConfig? config;
 };
 interface ReceiveFilesBubble {
     [Throws=DropError]

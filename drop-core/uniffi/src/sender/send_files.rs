@@ -152,6 +152,8 @@ fn create_adapted_request(
     let config = match request.config {
         Some(config) => dropx_sender::SenderConfig {
             buffer_size: config.buffer_size,
+            chunk_size: config.chunk_size,
+            parallel_streams: config.parallel_streams,
         },
         None => dropx_sender::SenderConfig::default(),
     };

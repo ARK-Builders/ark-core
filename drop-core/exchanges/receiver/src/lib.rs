@@ -12,6 +12,43 @@ pub struct ReceiverProfile {
     pub avatar_b64: Option<String>,
 }
 
+#[derive(Clone)]
+pub struct ReceiverConfig {
+    pub buffer_size: u64,
+    pub chunk_size: u64,
+    pub parallel_streams: u64,
+}
+impl Default for ReceiverConfig {
+    fn default() -> Self {
+        Self {
+            buffer_size: 4194304, // 4MB buffer
+            chunk_size: 524288,   // 512KB chunks
+            parallel_streams: 4,  // 4 parallel streams
+        }
+    }
+}
+impl ReceiverConfig {
+    pub fn high_performance() -> Self {
+        Self {
+            buffer_size: 8388608, // 8MB buffer
+            chunk_size: 524288,   // 512KB chunks
+            parallel_streams: 8,  // 8 parallel streams
+        }
+    }
+
+    pub fn balanced() -> Self {
+        Self::default()
+    }
+
+    pub fn low_bandwidth() -> Self {
+        Self {
+            buffer_size: 131072, // 128KB buffer
+            chunk_size: 65536,   // 64KB chunks
+            parallel_streams: 2, // 2 parallel streams
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ReceiverFile {
     pub id: String,

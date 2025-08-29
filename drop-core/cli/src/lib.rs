@@ -277,6 +277,7 @@ impl FileReceiver {
             ticket,
             confirmation,
             profile: self.get_receiver_profile(),
+            config: None,
         };
 
         let bubble = receive_files(request)
@@ -359,7 +360,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            println!("🔍 v: {}", message);
+            println!("🔍 verbose: {}", message);
         }
     }
 
@@ -408,7 +409,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            println!("🔍 v: {}", message);
+            println!("🔍 verbose: {}", message);
         }
     }
 

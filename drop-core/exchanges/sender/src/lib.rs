@@ -35,16 +35,21 @@ impl Data for SenderFileDataAdapter {
     fn read_chunk(&self, size: u64) -> Vec<u8> {
         return self.inner.read_chunk(size);
     }
+
 }
 
 #[derive(Clone)]
 pub struct SenderConfig {
     pub buffer_size: u64,
+    pub chunk_size: u64,
+    pub parallel_streams: u64,
 }
 impl Default for SenderConfig {
     fn default() -> Self {
         Self {
-            buffer_size: 2097152, // 2MB buffer
+            buffer_size: 4194304, // 4MB buffer
+            chunk_size: 524288,   // 512KB chunks
+            parallel_streams: 4,  // 4 parallel streams
         }
     }
 }
@@ -52,6 +57,8 @@ impl SenderConfig {
     pub fn high_performance() -> Self {
         Self {
             buffer_size: 8388608, // 8MB buffer
+            chunk_size: 524288,   // 512KB chunks
+            parallel_streams: 8,  // 8 parallel streams
         }
     }
 
@@ -62,6 +69,8 @@ impl SenderConfig {
     pub fn low_bandwidth() -> Self {
         Self {
             buffer_size: 131072, // 128KB buffer
+            chunk_size: 65536,   // 64KB chunks
+            parallel_streams: 2, // 2 parallel streams
         }
     }
 }
