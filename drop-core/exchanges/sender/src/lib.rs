@@ -35,7 +35,6 @@ impl Data for SenderFileDataAdapter {
     fn read_chunk(&self, size: u64) -> Vec<u8> {
         return self.inner.read_chunk(size);
     }
-
 }
 
 #[derive(Clone)]

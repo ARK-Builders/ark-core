@@ -343,12 +343,11 @@ impl Carrier {
                 self.config.parallel_streams
             };
 
-        let chunk_size =
-            if let Some(config) = &self.negotiated_config {
-                config.chunk_size
-            } else {
-                self.config.chunk_size
-            };
+        let chunk_size = if let Some(config) = &self.negotiated_config {
+            config.chunk_size
+        } else {
+            self.config.chunk_size
+        };
 
         // Limit concurrent stream processing based on negotiated config
         let semaphore =
@@ -373,7 +372,12 @@ impl Carrier {
 
                     join_set.spawn(async move {
                         let _permit = semaphore_clone.acquire().await.unwrap();
-                        Self::process_stream_chunks(chunk_size, uni, subscribers).await
+                        Self::process_stream_chunks(
+                            chunk_size,
+                            uni,
+                            subscribers,
+                        )
+                        .await
                     });
 
                     // Clean up completed tasks periodically
@@ -422,7 +426,8 @@ impl Carrier {
             RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>,
         >,
     ) -> Result<()> {
-        let mut buffer = Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
+        let mut buffer =
+            Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
 
         loop {
             let len =
