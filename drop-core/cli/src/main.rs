@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Arg, ArgMatches, Command};
-use drop_cli::{Profile, run_receive_files, run_send_files};
+use drop_cli::{Profile, run_receive_files, run_send_files, get_default_receive_dir, set_default_receive_dir, clear_default_receive_dir};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -11,6 +11,9 @@ async fn main() -> Result<()> {
         Some(("send", sub_matches)) => handle_send_command(sub_matches).await,
         Some(("receive", sub_matches)) => {
             handle_receive_command(sub_matches).await
+        }
+        Some(("config", sub_matches)) => {
+            handle_config_command(sub_matches).await
         }
         _ => {
             eprintln!("❌ Invalid command. Use --help for usage information.");
@@ -68,20 +71,30 @@ fn build_cli() -> Command {
             Command::new("receive")
                 .about("Receive files from another user")
                 .arg(
-                    Arg::new("output")
-                        .help("Output directory for received files")
-                        .required(true)
-                        .value_parser(clap::value_parser!(PathBuf))
-                )
-                .arg(
                     Arg::new("ticket")
                         .help("Transfer ticket")
                         .required(true)
+                        .index(1)
                 )
                 .arg(
                     Arg::new("confirmation")
                         .help("Confirmation code")
                         .required(true)
+                        .index(2)
+                )
+                .arg(
+                    Arg::new("output")
+                        .help("Output directory for received files (optional if default is set)")
+                        .long("output")
+                        .short('o')
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("save-dir")
+                        .long("save-dir")
+                        .help("Save the specified output directory as default for future use")
+                        .action(clap::ArgAction::SetTrue)
+                        .requires("output")
                 )
                 .arg(
                     Arg::new("name")
@@ -102,6 +115,28 @@ fn build_cli() -> Command {
                         .long("avatar-b64")
                         .help("Base64 encoded avatar image (alternative to --avatar)")
                         .conflicts_with("avatar")
+                )
+        )
+        .subcommand(
+            Command::new("config")
+                .about("Manage CLI configuration")
+                .subcommand(
+                    Command::new("show")
+                        .about("Show current configuration")
+                )
+                .subcommand(
+                    Command::new("set-receive-dir")
+                        .about("Set default receive directory")
+                        .arg(
+                            Arg::new("directory")
+                                .help("Directory path to set as default")
+                                .required(true)
+                                .value_parser(clap::value_parser!(PathBuf))
+                        )
+                )
+                .subcommand(
+                    Command::new("clear-receive-dir")
+                        .about("Clear default receive directory")
                 )
         )
 }
@@ -141,15 +176,30 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
 }
 
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
-    let output_dir = matches.get_one::<PathBuf>("output").unwrap();
+    let output_dir = matches.get_one::<PathBuf>("output").map(|p| p.to_string_lossy().to_string());
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
     let verbose = matches.get_flag("verbose");
+    let save_dir = matches.get_flag("save-dir");
 
     let profile = build_profile(matches)?;
 
     println!("📥 Preparing to receive files...");
-    println!("📁 Output directory: {}", output_dir.display());
+    
+    if let Some(ref dir) = output_dir {
+        println!("📁 Output directory: {}", dir);
+    } else {
+        match get_default_receive_dir()? {
+            Some(default_dir) => println!("📁 Using default directory: {}", default_dir),
+            None => {
+                eprintln!("❌ No output directory specified and no default directory saved.");
+                eprintln!("Use: drop-cli receive <ticket> <confirmation> --output <directory>");
+                eprintln!("Or set a default with: drop-cli config set-receive-dir <directory>");
+                return Err(anyhow!("No output directory available"));
+            }
+        }
+    }
+    
     println!("🎫 Ticket: {}", ticket);
     println!("🔑 Confirmation: {}", confirmation);
 
@@ -164,13 +214,59 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     }
 
     run_receive_files(
-        output_dir.to_string_lossy().to_string(),
+        output_dir,
         ticket.clone(),
         confirmation.clone(),
         profile,
         verbose,
+        save_dir,
     )
     .await
+}
+
+async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
+    match matches.subcommand() {
+        Some(("show", _)) => {
+            match get_default_receive_dir()? {
+                Some(dir) => {
+                    println!("📁 Default receive directory: {}", dir);
+                }
+                None => {
+                    println!("📁 No default receive directory set");
+                }
+            }
+        }
+        Some(("set-receive-dir", sub_matches)) => {
+            let directory = sub_matches.get_one::<PathBuf>("directory").unwrap();
+            let dir_str = directory.to_string_lossy().to_string();
+            
+            // Validate directory exists or can be created
+            if !directory.exists() {
+                match std::fs::create_dir_all(directory) {
+                    Ok(_) => println!("📁 Created directory: {}", dir_str),
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "Failed to create directory '{}': {}",
+                            dir_str,
+                            e
+                        ));
+                    }
+                }
+            }
+            
+            set_default_receive_dir(dir_str.clone())?;
+            println!("✅ Set default receive directory to: {}", dir_str);
+        }
+        Some(("clear-receive-dir", _)) => {
+            clear_default_receive_dir()?;
+            println!("✅ Cleared default receive directory");
+        }
+        _ => {
+            eprintln!("❌ Invalid config command. Use --help for usage information.");
+            std::process::exit(1);
+        }
+    }
+    Ok(())
 }
 
 fn build_profile(matches: &ArgMatches) -> Result<Profile> {
