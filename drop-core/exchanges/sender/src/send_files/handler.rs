@@ -449,7 +449,7 @@ impl Carrier {
         let mut total_sent = 0u64;
 
         // Pre-allocate buffer for serialization
-        let mut buffer = Vec::with_capacity((chunk_size + 256).try_into().unwrap()); // chunk_size + 256 buffer for serialization
+        let mut buffer = Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
 
         for chunk in chunks {
             let data_len = chunk.data.len() as u64;

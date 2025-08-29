@@ -422,7 +422,7 @@ impl Carrier {
             RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>,
         >,
     ) -> Result<()> {
-        let mut buffer = Vec::with_capacity((chunk_size + 256).try_into().unwrap()); // 768KB buffer
+        let mut buffer = Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
 
         loop {
             let len =
