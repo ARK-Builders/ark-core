@@ -467,7 +467,7 @@ impl Carrier {
             total_sent += data_len;
         }
 
-        // uni.finish()?;
+        uni.finish()?;
         uni.stopped().await?;
 
         Ok(total_sent)
