@@ -368,56 +368,65 @@ impl Carrier {
             };
 
         let mut join_set = JoinSet::new();
+        let chunks_per_stream = (buffer_size / chunk_size).max(1) as usize;
+        let mut batch_buffer = Vec::with_capacity(chunks_per_stream);
 
-        // Read all data into chunks first, then distribute to streams
-        let mut all_projections = Vec::new();
+        // Read and send data in batches to avoid loading entire file into memory
         while remaining > 0 {
-            let current_chunk_size = min(chunk_size, remaining as u64);
-            let chunk_data = file.data.read_chunk(current_chunk_size);
+            // Fill up a batch of chunks
+            batch_buffer.clear();
+            
+            for _ in 0..chunks_per_stream {
+                if remaining == 0 {
+                    break;
+                }
+                
+                let current_chunk_size = min(chunk_size, remaining as u64);
+                let chunk_data = file.data.read_chunk(current_chunk_size);
 
-            if chunk_data.is_empty() {
-                break;
+                if chunk_data.is_empty() {
+                    remaining = 0;
+                    break;
+                }
+
+                let projection = FileProjection {
+                    id: file.id.clone(),
+                    data: chunk_data,
+                };
+
+                remaining = remaining.saturating_sub(projection.data.len() as u64);
+                batch_buffer.push(projection);
             }
 
-            let projection = FileProjection {
-                id: file.id.clone(),
-                data: chunk_data,
-            };
+            // Send the batch if we have chunks
+            if !batch_buffer.is_empty() {
+                let connection = self.connection.clone();
+                let file_name = file.name.clone();
+                let subscribers = self.subscribers.clone();
+                let stream_chunks = batch_buffer.clone();
 
-            remaining = remaining.saturating_sub(projection.data.len() as u64);
-            all_projections.push(projection);
-        }
+                join_set.spawn(async move {
+                    Self::send_stream_chunks(
+                        chunk_size,
+                        connection,
+                        stream_chunks,
+                        file_name,
+                        subscribers,
+                    )
+                    .await
+                });
 
-        // Distribute projections across streams based on buffer_size capacity
-        let chunks_per_stream = (buffer_size / chunk_size).max(1) as usize;
-
-        for chunk_batch in all_projections.chunks(chunks_per_stream) {
-            let connection = self.connection.clone();
-            let file_name = file.name.clone();
-            let subscribers = self.subscribers.clone();
-            let stream_chunks = chunk_batch.to_vec();
-
-            join_set.spawn(async move {
-                Self::send_stream_chunks(
-                    chunk_size,
-                    connection,
-                    stream_chunks,
-                    file_name,
-                    subscribers,
-                )
-                .await
-            });
-
-            // Limit concurrent streams to negotiated number
-            if join_set.len() >= parallel_streams as usize {
-                if let Some(result) = join_set.join_next().await {
-                    let stream_sent = result??;
-                    sent += stream_sent;
-                    self.notify_progress(
-                        &file.name,
-                        sent,
-                        (total_len as u64).saturating_sub(sent),
-                    );
+                // Limit concurrent streams to negotiated number
+                if join_set.len() >= parallel_streams as usize {
+                    if let Some(result) = join_set.join_next().await {
+                        let stream_sent = result??;
+                        sent += stream_sent;
+                        self.notify_progress(
+                            &file.name,
+                            sent,
+                            (total_len as u64).saturating_sub(sent),
+                        );
+                    }
                 }
             }
         }

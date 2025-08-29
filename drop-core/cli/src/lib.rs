@@ -570,27 +570,28 @@ impl SenderFileData for FileData {
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
         use std::io::{Read, Seek, SeekFrom};
+        use std::sync::atomic::{Ordering};
 
-        if self
-            .is_finished
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.is_finished.load(Ordering::Acquire) {
             return Vec::new();
         }
 
-        // Get the current read position
-        let current_position = self
-            .bytes_read
-            .load(std::sync::atomic::Ordering::Relaxed);
+        // Atomically claim the next chunk position
+        let current_position = self.bytes_read.fetch_add(size, Ordering::AcqRel);
 
-        // Check if we've reached the end of the file
+        // Check if we've already passed the end of the file
         if current_position >= self.size {
-            self.is_finished
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+            // Reset the bytes_read counter and mark as finished
+            self.bytes_read.store(self.size, Ordering::Release);
+            self.is_finished.store(true, Ordering::Release);
             return Vec::new();
         }
 
-        // Open a new file handle for each chunk read to avoid seeking conflicts
+        // Calculate how much to actually read (don't exceed file size)
+        let remaining = self.size - current_position;
+        let to_read = std::cmp::min(size, remaining) as usize;
+
+        // Open a new file handle for this read operation
         let mut file = match std::fs::File::open(&self.path) {
             Ok(file) => file,
             Err(e) => {
@@ -599,13 +600,12 @@ impl SenderFileData for FileData {
                     self.path.display(),
                     e
                 );
-                self.is_finished
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                self.is_finished.store(true, Ordering::Release);
                 return Vec::new();
             }
         };
 
-        // Seek to the current position
+        // Seek to the claimed position
         if let Err(e) = file.seek(SeekFrom::Start(current_position)) {
             eprintln!(
                 "❌ Error seeking to position {} in file {}: {}",
@@ -613,33 +613,17 @@ impl SenderFileData for FileData {
                 self.path.display(),
                 e
             );
-            self.is_finished
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+            self.is_finished.store(true, Ordering::Release);
             return Vec::new();
         }
 
-        // Calculate how much to read (don't exceed file size)
-        let remaining = self.size - current_position;
-        let to_read = std::cmp::min(size, remaining) as usize;
-
-        // Read chunk from the file
+        // Read the chunk
         let mut buffer = vec![0u8; to_read];
         match file.read_exact(&mut buffer) {
             Ok(()) => {
-                // Update the position atomically
-                self.bytes_read.fetch_add(
-                    to_read as u64,
-                    std::sync::atomic::Ordering::Relaxed,
-                );
-
                 // Check if we've finished reading the entire file
-                if self
-                    .bytes_read
-                    .load(std::sync::atomic::Ordering::Relaxed)
-                    >= self.size
-                {
-                    self.is_finished
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                if current_position + to_read as u64 >= self.size {
+                    self.is_finished.store(true, Ordering::Release);
                 }
 
                 buffer
@@ -650,8 +634,7 @@ impl SenderFileData for FileData {
                     self.path.display(),
                     e
                 );
-                self.is_finished
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                self.is_finished.store(true, Ordering::Release);
                 Vec::new()
             }
         }
