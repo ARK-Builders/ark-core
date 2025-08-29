@@ -106,13 +106,16 @@ impl FileSender {
         println!("🔑 Confirmation: \"{}\"", bubble.get_confirmation());
         println!("⏳ Waiting for receiver... (Press Ctrl+C to cancel)");
 
-        tokio::signal::ctrl_c()
-            .await
-            .context("Failed to listen for Ctrl+C")?;
-
-        println!("🚫 Cancelling file transfer...");
-        let _ = bubble.cancel().await;
-        println!("✅ Transfer cancelled");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                println!("🚫 Cancelling file transfer...");
+                let _ = bubble.cancel().await;
+                println!("✅ Transfer cancelled");
+            }
+            _ = wait_for_send_completion(&bubble) => {
+                println!("✅ All files sent successfully!");
+            }
+        }
 
         Ok(())
     }
@@ -209,13 +212,16 @@ impl FileReceiver {
 
         println!("⏳ Receiving files... (Press Ctrl+C to cancel)");
 
-        tokio::signal::ctrl_c()
-            .await
-            .context("Failed to listen for Ctrl+C")?;
-
-        println!("🚫 Cancelling file transfer...");
-        bubble.cancel();
-        println!("✅ Transfer cancelled");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                println!("🚫 Cancelling file transfer...");
+                bubble.cancel();
+                println!("✅ Transfer cancelled");
+            }
+            _ = wait_for_receive_completion(&bubble) => {
+                println!("✅ All files received successfully!");
+            }
+        }
 
         Ok(())
     }
@@ -225,6 +231,24 @@ impl FileReceiver {
             name: self.profile.name.clone(),
             avatar_b64: self.profile.avatar_b64.clone(),
         }
+    }
+}
+
+async fn wait_for_send_completion(bubble: &dropx_sender::SendFilesBubble) {
+    loop {
+        if bubble.is_finished() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+async fn wait_for_receive_completion(bubble: &dropx_receiver::ReceiveFilesBubble) {
+    loop {
+        if bubble.is_finished() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 }
 
@@ -574,6 +598,11 @@ pub async fn run_receive_files(
 
     let receiver = FileReceiver::new(profile);
     receiver
-        .receive_files(PathBuf::from(output_dir), ticket, confirmation_code, verbose)
+        .receive_files(
+            PathBuf::from(output_dir),
+            ticket,
+            confirmation_code,
+            verbose,
+        )
         .await
 }
