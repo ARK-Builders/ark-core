@@ -1,6 +1,5 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     io::Write,
     path::PathBuf,
     str::FromStr,
@@ -19,8 +18,8 @@ use dropx_sender::{
     SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
     SenderProfile, send_files,
 };
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Configuration for the CLI application
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,14 +37,15 @@ impl Default for CliConfig {
 
 impl CliConfig {
     fn config_dir() -> Result<PathBuf> {
-        let config_dir = if let Ok(xdg_config_home) = env::var("XDG_CONFIG_HOME") {
-            PathBuf::from(xdg_config_home)
-        } else if let Ok(home) = env::var("HOME") {
-            PathBuf::from(home).join(".config")
-        } else {
-            return Err(anyhow!("Unable to determine config directory"));
-        };
-        
+        let config_dir =
+            if let Ok(xdg_config_home) = env::var("XDG_CONFIG_HOME") {
+                PathBuf::from(xdg_config_home)
+            } else if let Ok(home) = env::var("HOME") {
+                PathBuf::from(home).join(".config")
+            } else {
+                return Err(anyhow!("Unable to determine config directory"));
+            };
+
         Ok(config_dir.join("drop-cli"))
     }
 
@@ -55,35 +55,42 @@ impl CliConfig {
 
     fn load() -> Result<Self> {
         let config_file = Self::config_file()?;
-        
+
         if !config_file.exists() {
             return Ok(Self::default());
         }
 
-        let config_content = fs::read_to_string(&config_file)
-            .with_context(|| format!("Failed to read config file: {}", config_file.display()))?;
-        
+        let config_content =
+            fs::read_to_string(&config_file).with_context(|| {
+                format!("Failed to read config file: {}", config_file.display())
+            })?;
+
         let config: CliConfig = toml::from_str(&config_content)
             .with_context(|| "Failed to parse config file")?;
-        
+
         Ok(config)
     }
 
     fn save(&self) -> Result<()> {
         let config_dir = Self::config_dir()?;
         let config_file = Self::config_file()?;
-        
+
         if !config_dir.exists() {
-            fs::create_dir_all(&config_dir)
-                .with_context(|| format!("Failed to create config directory: {}", config_dir.display()))?;
+            fs::create_dir_all(&config_dir).with_context(|| {
+                format!(
+                    "Failed to create config directory: {}",
+                    config_dir.display()
+                )
+            })?;
         }
 
         let config_content = toml::to_string_pretty(self)
             .with_context(|| "Failed to serialize config")?;
-        
-        fs::write(&config_file, config_content)
-            .with_context(|| format!("Failed to write config file: {}", config_file.display()))?;
-        
+
+        fs::write(&config_file, config_content).with_context(|| {
+            format!("Failed to write config file: {}", config_file.display())
+        })?;
+
         Ok(())
     }
 
@@ -320,7 +327,9 @@ async fn wait_for_send_completion(bubble: &dropx_sender::SendFilesBubble) {
     }
 }
 
-async fn wait_for_receive_completion(bubble: &dropx_receiver::ReceiveFilesBubble) {
+async fn wait_for_receive_completion(
+    bubble: &dropx_receiver::ReceiveFilesBubble,
+) {
     loop {
         if bubble.is_finished() {
             break;
@@ -678,15 +687,18 @@ pub async fn run_receive_files(
     let final_output_dir = match output_dir {
         Some(dir) => {
             let path = PathBuf::from(&dir);
-            
+
             // Save this directory as default if requested
             if save_dir {
                 let mut config = CliConfig::load()?;
-                config.set_default_receive_dir(dir.clone())
-                    .with_context(|| "Failed to save default receive directory")?;
+                config
+                    .set_default_receive_dir(dir.clone())
+                    .with_context(
+                        || "Failed to save default receive directory",
+                    )?;
                 println!("💾 Saved '{}' as default receive directory", dir);
             }
-            
+
             path
         }
         None => {
@@ -694,7 +706,10 @@ pub async fn run_receive_files(
             let config = CliConfig::load()?;
             match config.get_default_receive_dir() {
                 Some(default_dir) => {
-                    println!("📁 Using saved default directory: {}", default_dir);
+                    println!(
+                        "📁 Using saved default directory: {}",
+                        default_dir
+                    );
                     PathBuf::from(default_dir)
                 }
                 None => {
@@ -710,12 +725,7 @@ pub async fn run_receive_files(
 
     let receiver = FileReceiver::new(profile);
     receiver
-        .receive_files(
-            final_output_dir,
-            ticket,
-            confirmation_code,
-            verbose,
-        )
+        .receive_files(final_output_dir, ticket, confirmation_code, verbose)
         .await
 }
 

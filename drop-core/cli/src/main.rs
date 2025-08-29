@@ -1,6 +1,9 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Arg, ArgMatches, Command};
-use drop_cli::{Profile, run_receive_files, run_send_files, get_default_receive_dir, set_default_receive_dir, clear_default_receive_dir};
+use drop_cli::{
+    Profile, clear_default_receive_dir, get_default_receive_dir,
+    run_receive_files, run_send_files, set_default_receive_dir,
+};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -176,7 +179,9 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
 }
 
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
-    let output_dir = matches.get_one::<PathBuf>("output").map(|p| p.to_string_lossy().to_string());
+    let output_dir = matches
+        .get_one::<PathBuf>("output")
+        .map(|p| p.to_string_lossy().to_string());
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
     let verbose = matches.get_flag("verbose");
@@ -185,21 +190,29 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     let profile = build_profile(matches)?;
 
     println!("📥 Preparing to receive files...");
-    
+
     if let Some(ref dir) = output_dir {
         println!("📁 Output directory: {}", dir);
     } else {
         match get_default_receive_dir()? {
-            Some(default_dir) => println!("📁 Using default directory: {}", default_dir),
+            Some(default_dir) => {
+                println!("📁 Using default directory: {}", default_dir)
+            }
             None => {
-                eprintln!("❌ No output directory specified and no default directory saved.");
-                eprintln!("Use: drop-cli receive <ticket> <confirmation> --output <directory>");
-                eprintln!("Or set a default with: drop-cli config set-receive-dir <directory>");
+                eprintln!(
+                    "❌ No output directory specified and no default directory saved."
+                );
+                eprintln!(
+                    "Use: drop-cli receive <ticket> <confirmation> --output <directory>"
+                );
+                eprintln!(
+                    "Or set a default with: drop-cli config set-receive-dir <directory>"
+                );
                 return Err(anyhow!("No output directory available"));
             }
         }
     }
-    
+
     println!("🎫 Ticket: {}", ticket);
     println!("🔑 Confirmation: {}", confirmation);
 
@@ -226,20 +239,20 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
 
 async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
     match matches.subcommand() {
-        Some(("show", _)) => {
-            match get_default_receive_dir()? {
-                Some(dir) => {
-                    println!("📁 Default receive directory: {}", dir);
-                }
-                None => {
-                    println!("📁 No default receive directory set");
-                }
+        Some(("show", _)) => match get_default_receive_dir()? {
+            Some(dir) => {
+                println!("📁 Default receive directory: {}", dir);
             }
-        }
+            None => {
+                println!("📁 No default receive directory set");
+            }
+        },
         Some(("set-receive-dir", sub_matches)) => {
-            let directory = sub_matches.get_one::<PathBuf>("directory").unwrap();
+            let directory = sub_matches
+                .get_one::<PathBuf>("directory")
+                .unwrap();
             let dir_str = directory.to_string_lossy().to_string();
-            
+
             // Validate directory exists or can be created
             if !directory.exists() {
                 match std::fs::create_dir_all(directory) {
@@ -253,7 +266,7 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
                     }
                 }
             }
-            
+
             set_default_receive_dir(dir_str.clone())?;
             println!("✅ Set default receive directory to: {}", dir_str);
         }
@@ -262,7 +275,9 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
             println!("✅ Cleared default receive directory");
         }
         _ => {
-            eprintln!("❌ Invalid config command. Use --help for usage information.");
+            eprintln!(
+                "❌ Invalid config command. Use --help for usage information."
+            );
             std::process::exit(1);
         }
     }
