@@ -18,7 +18,10 @@ use std::{
     fmt::Debug,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
-use tokio::task::JoinSet;
+use tokio::{
+    task::JoinSet,
+    time::{Duration, timeout},
+};
 
 use super::SenderConfig;
 
@@ -345,11 +348,11 @@ impl Carrier {
 
     async fn send_single_file(&self, file: &File) -> Result<()> {
         let mut sent = 0u64;
-        let total_len = file.data.len();
+        let total_len = file.data.len() as u64;
         let mut remaining = total_len;
 
         // Initial progress notification
-        self.notify_progress(&file.name, sent, remaining as u64);
+        self.notify_progress(&file.name, sent, remaining);
 
         // Use negotiated configuration or fallback to defaults
         let (chunk_size, buffer_size, parallel_streams) =
@@ -371,21 +374,27 @@ impl Carrier {
         let chunks_per_stream = (buffer_size / chunk_size).max(1) as usize;
         let mut batch_buffer = Vec::with_capacity(chunks_per_stream);
 
-        // Read and send data in batches to avoid loading entire file into memory
+        // Read and send data in batches to avoid loading entire file into
+        // memory
         while remaining > 0 {
             // Fill up a batch of chunks
             batch_buffer.clear();
-            
+
             for _ in 0..chunks_per_stream {
                 if remaining == 0 {
                     break;
                 }
-                
-                let current_chunk_size = min(chunk_size, remaining as u64);
+
+                let current_chunk_size = min(chunk_size, remaining);
                 let chunk_data = file.data.read_chunk(current_chunk_size);
 
                 if chunk_data.is_empty() {
-                    remaining = 0;
+                    if remaining > 0 {
+                        self.log(format!("send_single_file: Unexpected end of file. Expected {} more bytes", remaining));
+                        return Err(anyhow::Error::msg(
+                            "Unexpected end of file",
+                        ));
+                    }
                     break;
                 }
 
@@ -394,7 +403,17 @@ impl Carrier {
                     data: chunk_data,
                 };
 
-                remaining = remaining.saturating_sub(projection.data.len() as u64);
+                let bytes_read = projection.data.len() as u64;
+                sent += bytes_read;
+                remaining = remaining.saturating_sub(bytes_read);
+
+                // Update progress immediately after reading
+                self.notify_progress(
+                    &file.name,
+                    sent,
+                    total_len.saturating_sub(sent),
+                );
+
                 batch_buffer.push(projection);
             }
 
@@ -406,26 +425,42 @@ impl Carrier {
                 let stream_chunks = batch_buffer.clone();
 
                 join_set.spawn(async move {
-                    Self::send_stream_chunks(
-                        chunk_size,
-                        connection,
-                        stream_chunks,
-                        file_name,
-                        subscribers,
+                    // Add timeout to prevent hanging streams
+                    let result = timeout(
+                        Duration::from_secs(30),
+                        Self::send_stream_chunks(
+                            chunk_size,
+                            connection,
+                            stream_chunks,
+                            file_name,
+                            subscribers,
+                        ),
                     )
-                    .await
+                    .await;
+
+                    match result {
+                        Ok(stream_result) => stream_result,
+                        Err(_) => {
+                            Err(anyhow::Error::msg("Stream send timeout"))
+                        }
+                    }
                 });
 
                 // Limit concurrent streams to negotiated number
                 if join_set.len() >= parallel_streams as usize {
                     if let Some(result) = join_set.join_next().await {
-                        let stream_sent = result??;
-                        sent += stream_sent;
-                        self.notify_progress(
-                            &file.name,
-                            sent,
-                            (total_len as u64).saturating_sub(sent),
-                        );
+                        match result? {
+                            Ok(_) => {
+                                // Stream completed successfully
+                            }
+                            Err(e) => {
+                                self.log(format!(
+                                    "send_single_file: Stream failed: {}",
+                                    e
+                                ));
+                                return Err(e);
+                            }
+                        }
                     }
                 }
             }
@@ -433,14 +468,19 @@ impl Carrier {
 
         // Wait for all remaining streams to complete
         while let Some(result) = join_set.join_next().await {
-            let stream_sent = result??;
-            sent += stream_sent;
-            self.notify_progress(
-                &file.name,
-                sent,
-                (total_len as u64).saturating_sub(sent),
-            );
+            match result? {
+                Ok(_) => {
+                    // Stream completed successfully
+                }
+                Err(e) => {
+                    self.log(format!("send_single_file: Stream failed: {}", e));
+                    return Err(e);
+                }
+            }
         }
+
+        // Final progress notification to ensure 100% completion
+        self.notify_progress(&file.name, total_len, 0);
 
         Ok(())
     }
@@ -477,7 +517,6 @@ impl Carrier {
             total_sent += data_len;
         }
 
-        // uni.finish()?;
         uni.stopped().await?;
 
         Ok(total_sent)

@@ -569,20 +569,24 @@ impl SenderFileData for FileData {
     }
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
-        use std::io::{Read, Seek, SeekFrom};
-        use std::sync::atomic::{Ordering};
+        use std::{
+            io::{Read, Seek, SeekFrom},
+            sync::atomic::Ordering,
+        };
 
         if self.is_finished.load(Ordering::Acquire) {
             return Vec::new();
         }
 
         // Atomically claim the next chunk position
-        let current_position = self.bytes_read.fetch_add(size, Ordering::AcqRel);
+        let current_position =
+            self.bytes_read.fetch_add(size, Ordering::AcqRel);
 
         // Check if we've already passed the end of the file
         if current_position >= self.size {
             // Reset the bytes_read counter and mark as finished
-            self.bytes_read.store(self.size, Ordering::Release);
+            self.bytes_read
+                .store(self.size, Ordering::Release);
             self.is_finished.store(true, Ordering::Release);
             return Vec::new();
         }
