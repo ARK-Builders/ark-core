@@ -345,7 +345,7 @@ impl Carrier {
 
         let mut join_set = JoinSet::new();
 
-        'outer: loop {
+        'files_iterator: loop {
             if self.is_cancelled() {
                 self.connection
                     .close(VarInt::from_u32(0), b"cancelled");
@@ -366,13 +366,15 @@ impl Carrier {
             while join_set.len() >= parallel_streams as usize {
                 if let Some(result) = join_set.join_next().await {
                     if let Err(err) = result? {
-                        if err.type_id() == expected_close.type_id() {
-                            break 'outer;
-                        } else {
-                            return Err(anyhow::Error::msg(
-                                "Connection unexpectedly closed",
-                            ));
+                        // Downcast anyhow::Error to ConnectionError
+                        if let Some(connection_err) =
+                            err.downcast_ref::<ConnectionError>()
+                        {
+                            if connection_err == &expected_close {
+                                break 'files_iterator;
+                            }
                         }
+                        return Err(err);
                     }
                 }
             }
@@ -380,13 +382,15 @@ impl Carrier {
 
         while let Some(result) = join_set.join_next().await {
             if let Err(err) = result? {
-                if err.type_id() == expected_close.type_id() {
-                    return Ok(());
-                } else {
-                    return Err(anyhow::Error::msg(
-                        "Connection unexpectedly closed",
-                    ));
+                // Downcast anyhow::Error to ConnectionError
+                if let Some(connection_err) =
+                    err.downcast_ref::<ConnectionError>()
+                {
+                    if connection_err == &expected_close {
+                        continue;
+                    }
                 }
+                return Err(err);
             }
         }
 
