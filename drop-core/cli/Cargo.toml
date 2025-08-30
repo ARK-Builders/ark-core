@@ -1,0 +1,36 @@
+[package]
+name = "drop-cli"
+version = "1.0.0"
+edition = "2024"
+description = "A CLI tool for sending and receiving files"
+authors = ["@oluiscabral"]
+license = "MIT"
+repository = "https://github.com/Ark-Builders/ark-core"
+readme = "README.md"
+keywords = ["cli", "file-transfer", "p2p"]
+categories = ["command-line-utilities"]
+
+[lib]
+name = "drop_cli"
+bench = false
+
+[[bin]]
+name = "drop-cli"
+path = "src/main.rs"
+bench = false
+
+[dependencies]
+anyhow = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+uuid = { version = "1.0", features = ["v4"] }
+clap = { version = "4.0", features = ["derive"] }
+base64 = "0.21"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+dropx-receiver = { path = "../exchanges/receiver" }  
+dropx-sender = { path = "../exchanges/sender" }
+
+[dev-dependencies]
+tempfile = "3.0"
+tokio-test = "0.4"

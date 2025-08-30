@@ -13,7 +13,11 @@ members = [
     "fs-index",
     "fs-storage",
     "dev-hash",
-    "drop-core",
+    "drop-core/cli",
+    "drop-core/exchanges/common",
+    "drop-core/exchanges/sender",
+    "drop-core/exchanges/receiver",
+    "drop-core/uniffi",
 ]
 
 default-members = [
@@ -30,7 +34,11 @@ default-members = [
     "fs-index",
     "fs-storage",
     "dev-hash",
-    "drop-core",
+    "drop-core/cli",
+    "drop-core/exchanges/common",
+    "drop-core/exchanges/sender",
+    "drop-core/exchanges/receiver",
+    "drop-core/uniffi",
 ]
 
 resolver = "2"

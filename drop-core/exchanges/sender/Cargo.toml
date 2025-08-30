@@ -1,0 +1,24 @@
+[package]
+name = "dropx-sender"
+version = "1.1.0"
+edition = "2024"
+
+[lib]
+name = "dropx_sender"
+bench = false
+
+[dependencies]
+drop-entities = { path = "../../entities" }
+dropx-common = { path = "../common" }
+rand = "0.9.0"
+uuid = "1.16.0"
+iroh = "0.91.1"
+serde = "1.0.219"
+anyhow = "1.0.98"
+chrono = "0.4.41"
+iroh-base = "0.91.1"
+serde_json = "1.0.142"
+flate2 = "1.0"
+tracing = "0.1"
+futures = "0.3"
+tokio = "1.42"

@@ -1,5 +1,4 @@
 use data_error::ArklibError;
-use drop_core::erorr::IrohError;
 use std::io;
 use thiserror::Error;
 
@@ -55,7 +54,4 @@ pub enum AppError {
 
     #[error(transparent)]
     InlineJsonParseError(#[from] InlineJsonParseError),
-
-    #[error("Iroh error: {0}")]
-    Iroh(#[from] IrohError),
 }

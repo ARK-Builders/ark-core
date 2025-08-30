@@ -1,6 +1,6 @@
 [versions]
 gradle = "8.7.3"
-rustAndroid = "0.9.4"
+rustAndroid = "0.9.6"
 junitJupiterApi = "5.11.3"
 
 [libraries]
