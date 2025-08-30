@@ -16,13 +16,8 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     sync::{Arc, RwLock, atomic::AtomicBool},
-    time::Duration,
 };
-use tokio::{
-    sync::Semaphore,
-    task::JoinSet,
-    time::{error::Elapsed, timeout},
-};
+use tokio::{sync::Semaphore, task::JoinSet};
 
 use super::SenderConfig;
 
