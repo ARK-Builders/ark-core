@@ -379,6 +379,7 @@ impl Carrier {
         while remaining > 0 {
             // Fill up a batch of chunks
             batch_buffer.clear();
+            let mut batch_size = 0u64;
 
             for _ in 0..chunks_per_stream {
                 if remaining == 0 {
@@ -404,16 +405,8 @@ impl Carrier {
                 };
 
                 let bytes_read = projection.data.len() as u64;
-                sent += bytes_read;
+                batch_size += bytes_read;
                 remaining = remaining.saturating_sub(bytes_read);
-
-                // Update progress immediately after reading
-                self.notify_progress(
-                    &file.name,
-                    sent,
-                    total_len.saturating_sub(sent),
-                );
-
                 batch_buffer.push(projection);
             }
 
@@ -423,6 +416,7 @@ impl Carrier {
                 let file_name = file.name.clone();
                 let subscribers = self.subscribers.clone();
                 let stream_chunks = batch_buffer.clone();
+                let batch_bytes = batch_size;
 
                 join_set.spawn(async move {
                     // Add timeout to prevent hanging streams
@@ -439,7 +433,7 @@ impl Carrier {
                     .await;
 
                     match result {
-                        Ok(stream_result) => stream_result,
+                        Ok(stream_result) => stream_result.map(|_| batch_bytes),
                         Err(_) => {
                             Err(anyhow::Error::msg("Stream send timeout"))
                         }
@@ -450,8 +444,13 @@ impl Carrier {
                 if join_set.len() >= parallel_streams as usize {
                     if let Some(result) = join_set.join_next().await {
                         match result? {
-                            Ok(_) => {
-                                // Stream completed successfully
+                            Ok(transmitted_bytes) => {
+                                sent += transmitted_bytes;
+                                self.notify_progress(
+                                    &file.name,
+                                    sent,
+                                    total_len.saturating_sub(sent),
+                                );
                             }
                             Err(e) => {
                                 self.log(format!(
@@ -466,11 +465,16 @@ impl Carrier {
             }
         }
 
-        // Wait for all remaining streams to complete
+        // Wait for all remaining streams to complete and update final progress
         while let Some(result) = join_set.join_next().await {
             match result? {
-                Ok(_) => {
-                    // Stream completed successfully
+                Ok(transmitted_bytes) => {
+                    sent += transmitted_bytes;
+                    self.notify_progress(
+                        &file.name,
+                        sent,
+                        total_len.saturating_sub(sent),
+                    );
                 }
                 Err(e) => {
                     self.log(format!("send_single_file: Stream failed: {}", e));
