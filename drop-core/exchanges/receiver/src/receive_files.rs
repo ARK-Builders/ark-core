@@ -18,8 +18,9 @@ use iroh_base::ticket::NodeTicket;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicBool},
+    time::Duration,
 };
-use tokio::task::JoinSet;
+use tokio::{task::JoinSet, time::sleep};
 
 use uuid::Uuid;
 
@@ -437,6 +438,7 @@ impl Carrier {
                 });
         }
 
+        sleep(Duration::from_secs(1)).await;
         uni.stop(VarInt::from_u32(0))?;
 
         Ok(())
