@@ -45,16 +45,16 @@ pub struct SenderConfig {
 impl Default for SenderConfig {
     fn default() -> Self {
         Self {
-            chunk_size: 524288,   // 512KB chunks
-            parallel_streams: 4,  // 4 parallel streams
+            chunk_size: 524288,  // 512KB chunks
+            parallel_streams: 4, // 4 parallel streams
         }
     }
 }
 impl SenderConfig {
     pub fn high_performance() -> Self {
         Self {
-            chunk_size: 524288,   // 512KB chunks
-            parallel_streams: 8,  // 8 parallel streams
+            chunk_size: 524288,  // 512KB chunks
+            parallel_streams: 8, // 8 parallel streams
         }
     }
 
