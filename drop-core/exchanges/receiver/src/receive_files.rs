@@ -438,8 +438,8 @@ impl Carrier {
                 });
         }
 
-        sleep(Duration::from_secs(1)).await;
-        uni.stop(VarInt::from_u32(0))?;
+        // sleep(Duration::from_secs(1)).await;
+        // uni.stop(VarInt::from_u32(0))?;
 
         Ok(())
     }
