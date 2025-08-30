@@ -16,6 +16,7 @@ use iroh::{
 };
 use iroh_base::ticket::NodeTicket;
 use std::{
+    any::Any,
     collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
@@ -349,12 +350,18 @@ impl Carrier {
             self.config.chunk_size
         };
 
+        let expected_close =
+            ConnectionError::ApplicationClosed(ApplicationClose {
+                error_code: VarInt::from_u32(200),
+                reason: "finished".into(),
+            });
+
         // Limit concurrent stream processing based on negotiated config
         let semaphore =
             Arc::new(Semaphore::new(max_concurrent_streams as usize));
         let mut join_set = JoinSet::new();
 
-        loop {
+        'outer: loop {
             if self.is_cancelled() {
                 self.connection
                     .close(VarInt::from_u32(0), b"cancelled");
@@ -363,69 +370,55 @@ impl Carrier {
                 ));
             }
 
-            let uni_result = self.connection.accept_uni().await;
+            let sem = semaphore.clone();
+            let connection = self.connection.clone();
+            let subscribers = self.subscribers.clone();
+            join_set.spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
+                Self::process_stream_chunks(chunk_size, connection, subscribers)
+                    .await
+            });
 
-            match uni_result {
-                Ok(uni) => {
-                    let semaphore_clone = semaphore.clone();
-                    let subscribers = self.subscribers.clone();
-
-                    join_set.spawn(async move {
-                        let _permit = semaphore_clone.acquire().await.unwrap();
-                        Self::process_stream_chunks(
-                            chunk_size,
-                            uni,
-                            subscribers,
-                        )
-                        .await
-                    });
-
-                    // Clean up completed tasks periodically
-                    while join_set.len() >= max_concurrent_streams as usize {
-                        if let Some(result) = join_set.join_next().await {
-                            if let Err(e) = result? {
-                                return Err(e);
-                            }
+            // Clean up completed tasks periodically
+            while join_set.len() >= max_concurrent_streams as usize {
+                if let Some(result) = join_set.join_next().await {
+                    if let Err(err) = result? {
+                        if err.type_id() == expected_close.type_id() {
+                            break 'outer;
+                        } else {
+                            return Err(anyhow::Error::msg(
+                                "Connection unexpectedly closed",
+                            ));
                         }
-                    }
-                }
-                Err(err) => {
-                    // Wait for all remaining tasks to complete
-                    while let Some(result) = join_set.join_next().await {
-                        if let Err(e) = result? {
-                            return Err(e);
-                        }
-                    }
-
-                    let expected_close =
-                        ConnectionError::ApplicationClosed(ApplicationClose {
-                            error_code: VarInt::from_u32(200),
-                            reason: "finished".into(),
-                        });
-
-                    if err == expected_close {
-                        self.log(
-                            "receive_files: Transfer completed successfully"
-                                .to_string(),
-                        );
-                        return Ok(());
-                    } else {
-                        return Err(anyhow::Error::msg(
-                            "Connection unexpectedly closed",
-                        ));
                     }
                 }
             }
         }
+
+        while let Some(result) = join_set.join_next().await {
+            if let Err(err) = result? {
+                if err.type_id() == expected_close.type_id() {
+                    return Ok(());
+                } else {
+                    return Err(anyhow::Error::msg(
+                        "Connection unexpectedly closed",
+                    ));
+                }
+            }
+        }
+
+        return Ok(());
     }
 
     async fn process_stream_chunks(
         chunk_size: u64,
-        mut uni: RecvStream,
+        connection: Connection,
         subscribers: Arc<
             RwLock<HashMap<String, Arc<dyn ReceiveFilesSubscriber>>>,
         >,
     ) -> Result<()> {
+        let mut uni = connection.accept_uni().await?;
+
         let mut buffer =
             Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
 
