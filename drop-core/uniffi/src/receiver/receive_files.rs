@@ -90,6 +90,7 @@ impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
     }
 
     fn log(&self, message: String) {
+        #[cfg(debug_assertions)]
         return self.inner.log(message);
     }
 

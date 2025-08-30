@@ -98,7 +98,6 @@ impl SendFilesHandler {
     }
 
     pub fn log(&self, message: String) {
-        #[cfg(debug_assertions)]
         self.subscribers
             .read()
             .unwrap()
@@ -443,7 +442,6 @@ impl Carrier {
     }
 
     fn log(&self, message: String) {
-        #[cfg(debug_assertions)]
         self.subscribers
             .read()
             .unwrap()

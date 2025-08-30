@@ -89,6 +89,7 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     }
 
     fn log(&self, message: String) {
+        #[cfg(debug_assertions)]
         return self.inner.log(message);
     }
 
