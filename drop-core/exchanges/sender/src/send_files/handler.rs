@@ -422,6 +422,7 @@ impl Carrier {
             );
         }
 
+        uni.finish()?;
         uni.stopped().await?;
 
         return Ok(());
