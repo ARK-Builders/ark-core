@@ -16,7 +16,6 @@ use iroh::{
 };
 use iroh_base::ticket::NodeTicket;
 use std::{
-    any::Any,
     collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
