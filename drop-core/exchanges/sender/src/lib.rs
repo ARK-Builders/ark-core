@@ -37,7 +37,7 @@ impl Data for SenderFileDataAdapter {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SenderConfig {
     pub buffer_size: u64,
     pub chunk_size: u64,
