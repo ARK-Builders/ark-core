@@ -18,9 +18,8 @@ use iroh_base::ticket::NodeTicket;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicBool},
-    time::Duration,
 };
-use tokio::{task::JoinSet, time::sleep};
+use tokio::task::JoinSet;
 
 use uuid::Uuid;
 
