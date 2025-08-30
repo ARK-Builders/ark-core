@@ -89,7 +89,6 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     }
 
     fn log(&self, message: String) {
-        #[cfg(debug_assertions)]
         return self.inner.log(message);
     }
 
@@ -151,7 +150,6 @@ fn create_adapted_request(
         .collect();
     let config = match request.config {
         Some(config) => dropx_sender::SenderConfig {
-            buffer_size: config.buffer_size,
             chunk_size: config.chunk_size,
             parallel_streams: config.parallel_streams,
         },

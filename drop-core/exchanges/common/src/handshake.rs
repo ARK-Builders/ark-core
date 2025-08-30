@@ -47,10 +47,12 @@ impl NegotiatedConfig {
         Self {
             chunk_size: sender_config
                 .chunk_size
-                .min(receiver_config.chunk_size),
+                .min(receiver_config.chunk_size)
+                .max(1024),
             parallel_streams: sender_config
                 .parallel_streams
-                .min(receiver_config.parallel_streams),
+                .min(receiver_config.parallel_streams)
+                .max(1),
         }
     }
 }

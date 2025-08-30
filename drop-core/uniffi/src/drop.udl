@@ -19,7 +19,6 @@ interface SenderFileData {
     bytes read_chunk(i32 size);
 };
 dictionary SenderConfig {
-    u64 buffer_size;
     u64 chunk_size;
     u64 parallel_streams;
 };
@@ -66,7 +65,6 @@ dictionary ReceiverProfile {
     string? avatar_b64;
 };
 dictionary ReceiverConfig {
-    u64 buffer_size;
     u64 chunk_size;
     u64 parallel_streams;
 };

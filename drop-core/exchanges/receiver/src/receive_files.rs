@@ -205,19 +205,15 @@ impl ReceiveFilesBubble {
         }
     }
 
-    #[inline(always)]
     fn log(&self, message: String) {
-        // Only log important messages to reduce overhead
-        if message.contains("error")
-            || message.contains("failed")
-            || message.contains("completed")
-        {
-            self.subscribers.read().unwrap().iter().for_each(
-                |(id, subscriber)| {
-                    subscriber.log(format!("[{}] {}", id, message));
-                },
-            );
-        }
+        #[cfg(debug_assertions)]
+        self.subscribers
+            .read()
+            .unwrap()
+            .iter()
+            .for_each(|(id, subscriber)| {
+                subscriber.log(format!("[{}] {}", id, message));
+            });
     }
 }
 
@@ -257,7 +253,6 @@ impl Carrier {
                 avatar_b64: self.profile.avatar_b64.clone(),
             },
             config: HandshakeConfig {
-                buffer_size: self.config.buffer_size,
                 chunk_size: self.config.chunk_size,
                 parallel_streams: self.config.parallel_streams,
             },
@@ -291,7 +286,6 @@ impl Carrier {
 
         // Negotiate configuration
         let receiver_config = HandshakeConfig {
-            buffer_size: self.config.buffer_size,
             chunk_size: self.config.chunk_size,
             parallel_streams: self.config.parallel_streams,
         };
@@ -336,19 +330,12 @@ impl Carrier {
     }
 
     async fn receive_files(&self) -> Result<()> {
-        // Use negotiated parallel streams or fallback to default
-        let max_concurrent_streams =
+        let (chunk_size, parallel_streams) =
             if let Some(config) = &self.negotiated_config {
-                config.parallel_streams
+                (config.chunk_size, config.parallel_streams)
             } else {
-                self.config.parallel_streams
+                (self.config.chunk_size, self.config.parallel_streams)
             };
-
-        let chunk_size = if let Some(config) = &self.negotiated_config {
-            config.chunk_size
-        } else {
-            self.config.chunk_size
-        };
 
         let expected_close =
             ConnectionError::ApplicationClosed(ApplicationClose {
@@ -356,9 +343,6 @@ impl Carrier {
                 reason: "finished".into(),
             });
 
-        // Limit concurrent stream processing based on negotiated config
-        let semaphore =
-            Arc::new(Semaphore::new(max_concurrent_streams as usize));
         let mut join_set = JoinSet::new();
 
         'outer: loop {
@@ -370,17 +354,16 @@ impl Carrier {
                 ));
             }
 
-            let sem = semaphore.clone();
             let connection = self.connection.clone();
             let subscribers = self.subscribers.clone();
+
             join_set.spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                Self::process_stream_chunks(chunk_size, connection, subscribers)
+                Self::process_single_file(chunk_size, connection, subscribers)
                     .await
             });
 
             // Clean up completed tasks periodically
-            while join_set.len() >= max_concurrent_streams as usize {
+            while join_set.len() >= parallel_streams as usize {
                 if let Some(result) = join_set.join_next().await {
                     if let Err(err) = result? {
                         if err.type_id() == expected_close.type_id() {
@@ -410,7 +393,7 @@ impl Carrier {
         return Ok(());
     }
 
-    async fn process_stream_chunks(
+    async fn process_single_file(
         chunk_size: u64,
         connection: Connection,
         subscribers: Arc<
@@ -423,14 +406,14 @@ impl Carrier {
             Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
 
         loop {
+            buffer.clear();
+
             let len =
                 match Self::read_serialized_projection_len(&mut uni).await? {
                     Some(l) => l,
                     None => break, // Stream finished
                 };
 
-            // Reuse buffer, resize if needed
-            buffer.clear();
             buffer.resize(len, 0);
 
             uni.read_exact(&mut buffer).await?;
@@ -453,10 +436,10 @@ impl Carrier {
         }
 
         uni.stop(VarInt::from_u32(0))?;
+
         Ok(())
     }
 
-    #[inline(always)]
     fn is_cancelled(&self) -> bool {
         let cancelled = self
             .is_cancelled
@@ -465,19 +448,15 @@ impl Carrier {
         cancelled
     }
 
-    #[inline(always)]
     fn log(&self, message: String) {
-        // Only log important messages to reduce overhead
-        if message.contains("error")
-            || message.contains("failed")
-            || message.contains("completed")
-        {
-            self.subscribers.read().unwrap().iter().for_each(
-                |(id, subscriber)| {
-                    subscriber.log(format!("[{}] {}", id, message));
-                },
-            );
-        }
+        #[cfg(debug_assertions)]
+        self.subscribers
+            .read()
+            .unwrap()
+            .iter()
+            .for_each(|(id, subscriber)| {
+                subscriber.log(format!("[{}] {}", id, message));
+            });
     }
 
     async fn finish(&self) {

@@ -157,7 +157,6 @@ fn create_adapted_request(
     let config = request
         .config
         .map(|c| dropx_receiver::ReceiverConfig {
-            buffer_size: c.buffer_size,
             chunk_size: c.chunk_size,
             parallel_streams: c.parallel_streams,
         });

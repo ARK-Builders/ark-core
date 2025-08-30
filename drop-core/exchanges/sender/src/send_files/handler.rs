@@ -13,15 +13,11 @@ use iroh::{
     protocol::ProtocolHandler,
 };
 use std::{
-    cmp::min,
     collections::HashMap,
     fmt::Debug,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
-use tokio::{
-    task::JoinSet,
-    time::{Duration, timeout},
-};
+use tokio::task::JoinSet;
 
 use super::SenderConfig;
 
@@ -102,6 +98,7 @@ impl SendFilesHandler {
     }
 
     pub fn log(&self, message: String) {
+        #[cfg(debug_assertions)]
         self.subscribers
             .read()
             .unwrap()
@@ -347,17 +344,13 @@ impl Carrier {
             let subscribers = self.subscribers.clone();
 
             join_set.spawn(async move {
-                let result = Self::send_single_file(
+                return Self::send_single_file(
                     &file,
                     chunk_size,
                     connection,
                     subscribers,
                 )
                 .await;
-                match result {
-                    Ok(_) => return Ok(()),
-                    Err(err) => return Err(err),
-                }
             });
 
             // Limit concurrent streams to negotiated number
@@ -450,6 +443,7 @@ impl Carrier {
     }
 
     fn log(&self, message: String) {
+        #[cfg(debug_assertions)]
         self.subscribers
             .read()
             .unwrap()
