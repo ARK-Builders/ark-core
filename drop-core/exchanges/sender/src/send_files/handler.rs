@@ -16,8 +16,13 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     sync::{Arc, RwLock, atomic::AtomicBool},
+    time::Duration,
 };
-use tokio::task::JoinSet;
+use tokio::{
+    sync::Semaphore,
+    task::JoinSet,
+    time::{error::Elapsed, timeout},
+};
 
 use super::SenderConfig;
 
@@ -338,11 +343,14 @@ impl Carrier {
                 (self.config.chunk_size, self.config.parallel_streams)
             };
 
+        let semaphore = Arc::new(Semaphore::new(parallel_streams as usize));
+
         for file in self.files.clone() {
+            let sem = semaphore.clone();
             let connection = self.connection.clone();
             let subscribers = self.subscribers.clone();
-
             join_set.spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
                 return Self::send_single_file(
                     &file,
                     chunk_size,
@@ -351,16 +359,6 @@ impl Carrier {
                 )
                 .await;
             });
-
-            // Limit concurrent streams to negotiated number
-            if join_set.len() >= parallel_streams as usize {
-                if let Some(result) = join_set.join_next().await {
-                    if let Err(err) = result? {
-                        self.log(format!("send_files: Stream failed: {}", err));
-                        return Err(err);
-                    }
-                }
-            }
         }
 
         // Wait for all remaining streams to complete and update final progress
