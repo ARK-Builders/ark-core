@@ -167,8 +167,8 @@ pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
         files_len
     ));
     handler.log(format!(
-        "send_files: Buffer size configuration: {} bytes",
-        request.config.buffer_size
+        "send_files: Chunk size configuration: {} bytes",
+        request.config.chunk_size
     ));
 
     handler.log(

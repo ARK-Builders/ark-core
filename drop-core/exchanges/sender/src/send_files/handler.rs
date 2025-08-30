@@ -65,7 +65,7 @@ impl Debug for SendFilesHandler {
             .field("is_finished", &self.is_finished)
             .field("profile", &self.profile)
             .field("files", &self.files)
-            .field("config_buffer_size", &self.config.buffer_size)
+            .field("config", &self.config)
             .finish()
     }
 }
@@ -101,19 +101,14 @@ impl SendFilesHandler {
         finished
     }
 
-    #[inline(always)]
     pub fn log(&self, message: String) {
-        // Only log important messages to reduce overhead
-        if message.contains("error")
-            || message.contains("failed")
-            || message.contains("completed")
-        {
-            self.subscribers.read().unwrap().iter().for_each(
-                |(id, subscriber)| {
-                    subscriber.log(format!("[{}] {}", id, message));
-                },
-            );
-        }
+        self.subscribers
+            .read()
+            .unwrap()
+            .iter()
+            .for_each(|(id, subscriber)| {
+                subscriber.log(format!("[{}] {}", id, message));
+            });
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
@@ -272,7 +267,6 @@ impl Carrier {
                 })
                 .collect(),
             config: HandshakeConfig {
-                buffer_size: self.config.buffer_size,
                 chunk_size: self.config.chunk_size,
                 parallel_streams: self.config.parallel_streams,
             },
@@ -308,7 +302,6 @@ impl Carrier {
 
         // Negotiate configuration
         let sender_config = HandshakeConfig {
-            buffer_size: self.config.buffer_size,
             chunk_size: self.config.chunk_size,
             parallel_streams: self.config.parallel_streams,
         };
@@ -339,123 +332,40 @@ impl Carrier {
     }
 
     async fn send_files(&self) -> Result<()> {
-        for file in &self.files {
-            self.send_single_file(file).await?;
-        }
-        self.log("send_files: All files transferred successfully".to_string());
-        Ok(())
-    }
-
-    async fn send_single_file(&self, file: &File) -> Result<()> {
-        let mut sent = 0u64;
-        let total_len = file.data.len() as u64;
-        let mut remaining = total_len;
-
-        // Initial progress notification
-        self.notify_progress(&file.name, sent, remaining);
+        let mut join_set = JoinSet::new();
 
         // Use negotiated configuration or fallback to defaults
-        let (chunk_size, buffer_size, parallel_streams) =
+        let (chunk_size, parallel_streams) =
             if let Some(config) = &self.negotiated_config {
-                (
-                    config.chunk_size,
-                    config.buffer_size,
-                    config.parallel_streams,
-                )
+                (config.chunk_size, config.parallel_streams)
             } else {
-                (
-                    self.config.chunk_size,
-                    self.config.buffer_size,
-                    self.config.parallel_streams,
-                )
+                (self.config.chunk_size, self.config.parallel_streams)
             };
 
-        let mut join_set = JoinSet::new();
-        let chunks_per_stream = (buffer_size / chunk_size).max(1) as usize;
-        let mut batch_buffer = Vec::with_capacity(chunks_per_stream);
+        for file in self.files.clone() {
+            let connection = self.connection.clone();
+            let subscribers = self.subscribers.clone();
 
-        // Read and send data in batches to avoid loading entire file into
-        // memory
-        while remaining > 0 {
-            // Fill up a batch of chunks
-            batch_buffer.clear();
-            let mut batch_size = 0u64;
-
-            for _ in 0..chunks_per_stream {
-                if remaining == 0 {
-                    break;
+            join_set.spawn(async move {
+                let result = Self::send_single_file(
+                    &file,
+                    chunk_size,
+                    connection,
+                    subscribers,
+                )
+                .await;
+                match result {
+                    Ok(_) => return Ok(()),
+                    Err(err) => return Err(err),
                 }
+            });
 
-                let current_chunk_size = min(chunk_size, remaining);
-                let chunk_data = file.data.read_chunk(current_chunk_size);
-
-                if chunk_data.is_empty() {
-                    if remaining > 0 {
-                        self.log(format!("send_single_file: Unexpected end of file. Expected {} more bytes", remaining));
-                        return Err(anyhow::Error::msg(
-                            "Unexpected end of file",
-                        ));
-                    }
-                    break;
-                }
-
-                let projection = FileProjection {
-                    id: file.id.clone(),
-                    data: chunk_data,
-                };
-
-                let bytes_read = projection.data.len() as u64;
-                batch_size += bytes_read;
-                remaining = remaining.saturating_sub(bytes_read);
-                batch_buffer.push(projection);
-            }
-
-            // Send the batch if we have chunks
-            if !batch_buffer.is_empty() {
-                let connection = self.connection.clone();
-                let stream_chunks = batch_buffer.clone();
-                let batch_bytes = batch_size;
-
-                join_set.spawn(async move {
-                    // Add timeout to prevent hanging streams
-                    let result = timeout(
-                        Duration::from_secs(30),
-                        Self::send_stream_chunks(
-                            chunk_size,
-                            connection,
-                            stream_chunks,
-                        ),
-                    )
-                    .await;
-
-                    match result {
-                        Ok(stream_result) => stream_result.map(|_| batch_bytes),
-                        Err(_) => {
-                            Err(anyhow::Error::msg("Stream send timeout"))
-                        }
-                    }
-                });
-
-                // Limit concurrent streams to negotiated number
-                if join_set.len() >= parallel_streams as usize {
-                    if let Some(result) = join_set.join_next().await {
-                        match result? {
-                            Ok(transmitted_bytes) => {
-                                sent += transmitted_bytes;
-                                self.notify_progress(
-                                    &file.name,
-                                    sent,
-                                    total_len.saturating_sub(sent),
-                                );
-                            }
-                            Err(e) => {
-                                self.log(format!(
-                                    "send_single_file: Stream failed: {}",
-                                    e
-                                ));
-                                return Err(e);
-                            }
-                        }
+            // Limit concurrent streams to negotiated number
+            if join_set.len() >= parallel_streams as usize {
+                if let Some(result) = join_set.join_next().await {
+                    if let Err(err) = result? {
+                        self.log(format!("send_files: Stream failed: {}", err));
+                        return Err(err);
                     }
                 }
             }
@@ -463,59 +373,66 @@ impl Carrier {
 
         // Wait for all remaining streams to complete and update final progress
         while let Some(result) = join_set.join_next().await {
-            match result? {
-                Ok(transmitted_bytes) => {
-                    sent += transmitted_bytes;
-                    self.notify_progress(
-                        &file.name,
-                        sent,
-                        total_len.saturating_sub(sent),
-                    );
-                }
-                Err(e) => {
-                    self.log(format!("send_single_file: Stream failed: {}", e));
-                    return Err(e);
-                }
+            if let Err(err) = result? {
+                self.log(format!("send_single_file: Stream failed: {}", err));
+                return Err(err);
             }
         }
 
-        // Final progress notification to ensure 100% completion
-        self.notify_progress(&file.name, total_len, 0);
-
-        Ok(())
+        self.log("send_files: All files transferred successfully".to_string());
+        return Ok(());
     }
 
-    async fn send_stream_chunks(
+    async fn send_single_file(
+        file: &File,
         chunk_size: u64,
         connection: Connection,
-        chunks: Vec<FileProjection>,
-    ) -> Result<u64> {
+        subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
+    ) -> Result<()> {
+        let total_len = file.data.len() as u64;
+        let mut sent = 0u64;
+        let mut remaining = total_len;
+        let mut chunk_buffer =
+            Vec::with_capacity((chunk_size + 1024).try_into().unwrap());
+
         let mut uni = connection.open_uni().await?;
-        let mut total_sent = 0u64;
 
-        // Pre-allocate buffer for serialization
-        let mut buffer =
-            Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
+        Self::notify_progress(&file.name, sent, remaining, subscribers.clone());
 
-        for chunk in chunks {
-            let data_len = chunk.data.len() as u64;
+        loop {
+            chunk_buffer.clear();
 
-            // Serialize chunk
-            buffer.clear();
-            serde_json::to_writer(&mut buffer, &chunk)?;
+            let chunk_data = file.data.read_chunk(chunk_size);
+            if chunk_data.is_empty() {
+                break;
+            }
+            let projection = FileProjection {
+                id: file.id.clone(),
+                data: chunk_data,
+            };
 
-            let len_bytes = (buffer.len() as u32).to_be_bytes();
+            serde_json::to_writer(&mut chunk_buffer, &projection)?;
+            let len_bytes = (chunk_buffer.len() as u32).to_be_bytes();
 
             // Write header + data
             uni.write_all(&len_bytes).await?;
-            uni.write_all(&buffer).await?;
+            uni.write_all(&chunk_buffer).await?;
 
-            total_sent += data_len;
+            let data_len = projection.data.len() as u64;
+            sent += data_len;
+            remaining = remaining.saturating_sub(data_len);
+
+            Self::notify_progress(
+                &file.name,
+                sent,
+                remaining,
+                subscribers.clone(),
+            );
         }
 
         uni.stopped().await?;
 
-        Ok(total_sent)
+        return Ok(());
     }
 
     fn finish(&self) {
@@ -532,30 +449,29 @@ impl Carrier {
         self.log("finish: Transfer process completed successfully".to_string());
     }
 
-    #[inline(always)]
     fn log(&self, message: String) {
-        // Only log important messages to reduce overhead
-        if message.contains("error")
-            || message.contains("failed")
-            || message.contains("completed")
-        {
-            self.subscribers.read().unwrap().iter().for_each(
-                |(id, subscriber)| {
-                    subscriber.log(format!("[{}] {}", id, message));
-                },
-            );
-        }
+        self.subscribers
+            .read()
+            .unwrap()
+            .iter()
+            .for_each(|(id, subscriber)| {
+                subscriber.log(format!("[{}] {}", id, message));
+            });
     }
 
-    #[inline(always)]
-    fn notify_progress(&self, name: &str, sent: u64, remaining: u64) {
+    fn notify_progress(
+        name: &str,
+        sent: u64,
+        remaining: u64,
+        subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
+    ) {
         let event = SendFilesSendingEvent {
             name: name.to_string(),
             sent,
             remaining,
         };
 
-        self.subscribers
+        subscribers
             .read()
             .unwrap()
             .iter()

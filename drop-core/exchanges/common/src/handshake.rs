@@ -16,7 +16,6 @@ pub struct HandshakeFile {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HandshakeConfig {
-    pub buffer_size: u64,
     pub chunk_size: u64,
     pub parallel_streams: u64,
 }
@@ -36,7 +35,6 @@ pub struct ReceiverHandshake {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NegotiatedConfig {
-    pub buffer_size: u64,
     pub chunk_size: u64,
     pub parallel_streams: u64,
 }
@@ -47,9 +45,6 @@ impl NegotiatedConfig {
         receiver_config: &HandshakeConfig,
     ) -> Self {
         Self {
-            buffer_size: sender_config
-                .buffer_size
-                .min(receiver_config.buffer_size),
             chunk_size: sender_config
                 .chunk_size
                 .min(receiver_config.chunk_size),
