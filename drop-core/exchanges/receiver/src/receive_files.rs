@@ -20,7 +20,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
-use tokio::{sync::Semaphore, task::JoinSet};
+use tokio::{task::JoinSet};
 
 use uuid::Uuid;
 
