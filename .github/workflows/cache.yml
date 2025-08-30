@@ -47,7 +47,7 @@ jobs:
 
   mac-intel:
     name: MacOS Intel
-    runs-on: macos-14
+    runs-on: macos-13
 
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +65,7 @@ jobs:
 
   mac-arm:
     name: MacOS ARM
-    runs-on: macos-13-xlarge
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
