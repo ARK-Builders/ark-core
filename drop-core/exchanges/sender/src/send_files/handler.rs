@@ -413,8 +413,6 @@ impl Carrier {
             // Send the batch if we have chunks
             if !batch_buffer.is_empty() {
                 let connection = self.connection.clone();
-                let file_name = file.name.clone();
-                let subscribers = self.subscribers.clone();
                 let stream_chunks = batch_buffer.clone();
                 let batch_bytes = batch_size;
 
@@ -426,8 +424,6 @@ impl Carrier {
                             chunk_size,
                             connection,
                             stream_chunks,
-                            file_name,
-                            subscribers,
                         ),
                     )
                     .await;
@@ -493,10 +489,6 @@ impl Carrier {
         chunk_size: u64,
         connection: Connection,
         chunks: Vec<FileProjection>,
-        _file_name: String,
-        _subscribers: Arc<
-            RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>,
-        >,
     ) -> Result<u64> {
         let mut uni = connection.open_uni().await?;
         let mut total_sent = 0u64;
