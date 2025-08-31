@@ -1,118 +1,234 @@
+/// Cross-language API for Drop-style file transfers.
+/// This UDL describes the high-level sender/receiver flows, the data
+/// structures exchanged, and the subscription-based event streams.
+///
+/// Notes:
+/// - All byte payloads use a "chunked" approach for efficient streaming.
+/// - Async methods return immediately and complete work in the background.
+/// - Traits marked WithForeign are implemented on the foreign side (e.g., Swift/Kotlin/JS).
+/// - Errors are surfaced via DropError; consumers should present a user-friendly message.
+
 [Error]
+/// High-level error type surfaced to foreign languages.
 enum DropError {
+    /// Placeholder error code. Carries a message in bindings that support it.
     "TODO",
 };
 
-
+/// Metadata describing the sender user/device.
 dictionary SenderProfile {
+    /// Display name of the sender.
     string name;
+    /// Optional avatar encoded as base64 (e.g., PNG/JPEG).
     string? avatar_b64;
 };
+
+/// File to be sent, including its name and a streaming data source.
 dictionary SenderFile {
+    /// Friendly file name (may include extension).
     string name;
+    /// Streaming data provider implemented on the foreign side.
     SenderFileData data;
 };
+
+/// Streaming file data provider implemented by the embedding app.
+///
+/// Implementations should:
+/// - Report a stable total length in bytes.
+/// - Provide sequential reads via read() and chunked reads via read_chunk(size).
+/// - Be thread-safe; calls may happen on background threads.
 [Trait, WithForeign]
 interface SenderFileData {
+    /// Total length in bytes.
     u64 len();
+    /// Read the next byte, or null if EOF.
     u8? read();
+    /// Read up to size bytes, returning fewer at EOF.
     bytes read_chunk(i32 size);
 };
+
+/// Tuning parameters for the sending pipeline.
 dictionary SenderConfig {
+    /// Chunk size used for streaming (bytes).
     u64 chunk_size;
+    /// Number of parallel streams (connections/channels).
     u64 parallel_streams;
 };
+
+/// Request for starting a send session.
 dictionary SendFilesRequest {
+    /// Sender metadata.
     SenderProfile profile;
+    /// Files to send. Order is preserved.
     sequence<SenderFile> files;
+    /// Optional tuning parameters. If null, sensible defaults are used.
     SenderConfig? config;
 };
+
+/// Represents a running send session.
+/// Obtain status, subscribe to events, or cancel the session from here.
 interface SendFilesBubble {
+    /// One-time ticket that the receiver needs to join the session.
     string get_ticket();
+    /// Short confirmation code the receiver must provide to prevent mispairing.
     u8 get_confirmation();
+    /// Cancel the session. No further progress will be made.
     [Throws=DropError, Async]
     void cancel();
+    /// True once all files have been transmitted or the session is canceled.
     boolean is_finished();
+    /// True once a receiver has connected and the handshake completed.
     boolean is_connected();
+    /// ISO-8601 timestamp of when the session was created.
     string get_created_at();
+    /// Subscribe to log/progress/connection events.
     void subscribe(SendFilesSubscriber subscriber);
+    /// Unsubscribe a previously registered subscriber.
     void unsubscribe(SendFilesSubscriber subscriber);
 };
+
+/// Receive-side callbacks implemented by the embedding app to observe sending.
 [Trait, WithForeign]
 interface SendFilesSubscriber {
+    /// Stable unique id used for subscribe/unsubscribe identity.
     string get_id();
+    /// Debug/diagnostic logs. Only emitted in debug builds.
     void log(string message);
+    /// Emitted as bytes are sent for a given file.
     void notify_sending(SendFilesSendingEvent event);
+    /// Emitted when attempting to connect to a receiver.
     void notify_connecting(SendFilesConnectingEvent event);
 };
+
+/// Progress information for the current file.
 dictionary SendFilesSendingEvent  {
+    /// File name being sent.
     string name;
+    /// Bytes already sent.
     u64 sent;
+    /// Bytes remaining.
     u64 remaining;
 };
+
+/// Information about the remote peer attempting to connect.
 dictionary SendFilesConnectingEvent   {
+    /// Receiver metadata preview.
     SendFilesProfile receiver;
 };
+
+/// Receiver identity preview available to the sender.
 dictionary SendFilesProfile {
+    /// Receiver unique id (transport-specific).
     string id;
+    /// Display name.
     string name;
+    /// Optional base64 avatar.
     string? avatar_b64;
 };
 
-
+/// Metadata describing the receiver user/device.
 dictionary ReceiverProfile {
+    /// Display name of the receiver.
     string name;
+    /// Optional avatar encoded as base64.
     string? avatar_b64;
 };
+
+/// Tuning parameters for the receiving pipeline.
 dictionary ReceiverConfig {
+    /// Chunk size (bytes) expected/desired when receiving.
     u64 chunk_size;
+    /// Number of parallel streams to utilize.
     u64 parallel_streams;
 };
+
+/// Request for starting a receive session.
 dictionary ReceiveFilesRequest {
+    /// Ticket obtained from the sender.
     string ticket;
+    /// Short confirmation code provided by the sender.
     u8 confirmation;
+    /// Receiver metadata.
     ReceiverProfile profile;
+    /// Optional tuning parameters. If null, sensible defaults are used.
     ReceiverConfig? config;
 };
+
+/// Represents a receive session. Call start() to begin the transfer.
 interface ReceiveFilesBubble {
+    /// Begin the transfer. Blocks until setup finishes or fails.
     [Throws=DropError]
     void start();
+    /// Cancel the session. No further progress will be made.
     void cancel();
+    /// True when the session has completed (successfully or not).
     boolean is_finished();
+    /// True when the session has been canceled.
     boolean is_cancelled();
+    /// Subscribe to log/progress/connection events.
     void subscribe(ReceiveFilesSubscriber subscriber);
+    /// Unsubscribe a previously registered subscriber.
     void unsubscribe(ReceiveFilesSubscriber subscriber);
 };
+
+/// Sender-side callbacks implemented by the embedding app to observe receiving.
 [Trait, WithForeign]
 interface ReceiveFilesSubscriber {
+    /// Stable unique id used for subscribe/unsubscribe identity.
     string get_id();
+    /// Debug/diagnostic logs. Only emitted in debug builds.
     void log(string message);
+    /// Emitted with streamed bytes for a specific file id.
     void notify_receiving(ReceiveFilesReceivingEvent event);
+    /// Emitted when connecting and when the file manifest is known.
     void notify_connecting(ReceiveFilesConnectingEvent event);
 };
+
+/// Chunk payload for a specific file.
 dictionary ReceiveFilesReceivingEvent  {
+    /// File id that this chunk belongs to.
     string id;
+    /// Raw bytes of the chunk.
     bytes data;
 };
+
+/// Connection info and file manifest received from the sender.
 dictionary ReceiveFilesConnectingEvent   {
+    /// Sender metadata preview.
     ReceiveFilesProfile sender;
+    /// List of files that will be received.
     sequence<ReceiveFilesFile> files;
 };
+
+/// Sender identity preview available to the receiver.
 dictionary ReceiveFilesProfile {
+    /// Sender unique id (transport-specific).
     string id;
+    /// Display name.
     string name;
+    /// Optional base64 avatar.
     string? avatar_b64;
 };
+
+/// Information about a single file to be received.
 dictionary ReceiveFilesFile {
+    /// Transport/manifest id.
     string id;
+    /// Original file name.
     string name;
+    /// Total length in bytes.
     u64 len;
 };
 
-
+/// Top-level namespace for starting send/receive flows.
+///
+/// Both functions are async and return "bubbles" that control and observe
+/// the lifetime of the session via methods and subscriptions.
 namespace drop {
+    /// Start a new send session.
     [Throws=DropError, Async]
     SendFilesBubble send_files(SendFilesRequest request);
+    /// Start a new receive session.
     [Throws=DropError, Async]
     ReceiveFilesBubble receive_files(ReceiveFilesRequest request);
 };
