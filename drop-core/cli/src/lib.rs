@@ -1,3 +1,58 @@
+//! drop-cli library
+//!
+//! High-level send/receive helpers and UI for the DropX transfer crates.
+//!
+//! This library provides:
+//! - A minimal Profile type to identify the user.
+//! - FileSender and FileReceiver wrappers with progress bars and robust error
+//!   handling.
+//! - CLI-friendly helpers for configuration and selecting the receive
+//!   directory.
+//! - Public async functions to drive sending and receiving from a CLI or app.
+//!
+//! Concepts
+//! - Ticket: A short string that identifies an in-progress transfer session.
+//! - Confirmation code: Small numeric code to confirm the transfer pairing.
+//!
+//! Progress/UI
+//! - Uses indicatif to show per-file progress bars.
+//! - Verbose mode prints additional diagnostic logs from the underlying
+//!   transport.
+//!
+//! Configuration
+//! - Stores a default receive directory in:
+//!   $XDG_CONFIG_HOME/drop-cli/config.toml or
+//!   $HOME/.config/drop-cli/config.toml if XDG_CONFIG_HOME is not set.
+//!
+//! Examples
+//!
+//! Send files
+//! ```no_run
+//! use drop_cli::{run_send_files, Profile};
+//! # async fn demo() -> anyhow::Result<()> {
+//! let profile = Profile::new("Alice".into(), None);
+//! run_send_files(vec!["/path/file1.bin".into(), "/path/file2.jpg".into()], profile, true).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! Receive files
+//! ```no_run
+//! use drop_cli::{run_receive_files, Profile};
+//! # async fn demo() -> anyhow::Result<()> {
+//! let profile = Profile::default();
+//! // If you want to persist the directory, set save_dir = true
+//! run_receive_files(
+//!     Some("/tmp/downloads".into()),
+//!     "TICKET_STRING".into(),
+//!     "7".into(),
+//!     profile,
+//!     true,   // verbose
+//!     false,  // save_dir
+//! ).await?;
+//! # Ok(())
+//! # }
+//! ```
 use std::{
     collections::HashMap,
     env, fs,
@@ -23,7 +78,14 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Configuration for the CLI application
+/// Configuration for the CLI application.
+///
+/// This structure is persisted to TOML and stores user preferences for the CLI
+/// usage, such as the default directory to save received files.
+///
+/// Storage location:
+/// - $XDG_CONFIG_HOME/drop-cli/config.toml
+/// - or $HOME/.config/drop-cli/config.toml if XDG_CONFIG_HOME is not set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CliConfig {
     default_receive_dir: Option<String>,
@@ -38,6 +100,8 @@ impl Default for CliConfig {
 }
 
 impl CliConfig {
+    /// Returns the configuration directory path, creating a path under the
+    /// user's XDG or HOME config directory.
     fn config_dir() -> Result<PathBuf> {
         let config_dir =
             if let Ok(xdg_config_home) = env::var("XDG_CONFIG_HOME") {
@@ -51,10 +115,13 @@ impl CliConfig {
         Ok(config_dir.join("drop-cli"))
     }
 
+    /// Returns the full config file path.
     fn config_file() -> Result<PathBuf> {
         Ok(Self::config_dir()?.join("config.toml"))
     }
 
+    /// Loads the configuration from disk. If the file does not exist,
+    /// returns a default configuration.
     fn load() -> Result<Self> {
         let config_file = Self::config_file()?;
 
@@ -73,6 +140,8 @@ impl CliConfig {
         Ok(config)
     }
 
+    /// Saves the current configuration to disk, creating the directory if
+    /// needed.
     fn save(&self) -> Result<()> {
         let config_dir = Self::config_dir()?;
         let config_file = Self::config_file()?;
@@ -96,20 +165,27 @@ impl CliConfig {
         Ok(())
     }
 
+    /// Updates and persists the default receive directory.
     fn set_default_receive_dir(&mut self, dir: String) -> Result<()> {
         self.default_receive_dir = Some(dir);
         self.save()
     }
 
+    /// Returns the saved default receive directory, if any.
     fn get_default_receive_dir(&self) -> Option<&String> {
         self.default_receive_dir.as_ref()
     }
 }
 
-/// Profile for the CLI application
+/// Profile for the CLI application.
+///
+/// This profile is sent to peers during a transfer to help identify the user.
+/// You can set a display name and an optional avatar as a base64-encoded image.
 #[derive(Debug, Clone)]
 pub struct Profile {
+    /// Display name shown to peers.
     pub name: String,
+    /// Optional base64-encoded avatar image data.
     pub avatar_b64: Option<String>,
 }
 
@@ -123,12 +199,23 @@ impl Default for Profile {
 }
 
 impl Profile {
-    /// Create a new profile with custom name and optional avatar
+    /// Create a new profile with a custom name and optional base64 avatar.
+    ///
+    /// Example:
+    /// ```no_run
+    /// use drop_cli::Profile;
+    /// let p = Profile::new("Alice".into(), None);
+    /// ```
     pub fn new(name: String, avatar_b64: Option<String>) -> Self {
         Self { name, avatar_b64 }
     }
 
-    /// Load avatar from file path and encode as base64
+    /// Load avatar from a file path and encode it as base64.
+    ///
+    /// Returns an updated Profile on success.
+    ///
+    /// Errors:
+    /// - If the file cannot be read or encoded.
     pub fn with_avatar_file(mut self, avatar_path: &str) -> Result<Self> {
         let avatar_data = fs::read(avatar_path).with_context(|| {
             format!("Failed to read avatar file: {}", avatar_path)
@@ -138,23 +225,41 @@ impl Profile {
         Ok(self)
     }
 
-    /// Set avatar from base64 string
+    /// Set an avatar from a base64-encoded string and return the updated
+    /// profile.
     pub fn with_avatar_b64(mut self, avatar_b64: String) -> Self {
         self.avatar_b64 = Some(avatar_b64);
         self
     }
 }
 
-/// Enhanced file sender with better error handling and progress tracking
+/// Enhanced file sender with error handling and progress tracking.
+///
+/// Wraps the lower-level dropx_sender API and provides:
+/// - Validation for input paths.
+/// - Subscription to transfer events with progress bars.
+/// - Clean cancellation via Ctrl+C.
 pub struct FileSender {
     profile: Profile,
 }
 
 impl FileSender {
+    /// Create a new FileSender with the given profile.
     pub fn new(profile: Profile) -> Self {
         Self { profile }
     }
 
+    /// Send a list of files to a receiver.
+    ///
+    /// Behavior:
+    /// - Prints a ticket and confirmation code that must be shared with the
+    ///   receiver.
+    /// - Shows per-file progress bars.
+    /// - Cancels cleanly on Ctrl+C.
+    ///
+    /// Errors:
+    /// - If any provided path is missing or not a regular file.
+    /// - If the underlying sender fails to initialize or run.
     pub async fn send_files(
         &self,
         file_paths: Vec<PathBuf>,
@@ -206,6 +311,7 @@ impl FileSender {
         Ok(())
     }
 
+    /// Converts file paths into SenderFile entries backed by FileData.
     fn create_sender_files(
         &self,
         paths: Vec<PathBuf>,
@@ -231,6 +337,7 @@ impl FileSender {
         Ok(files)
     }
 
+    /// Returns a SenderProfile derived from this FileSender's Profile.
     fn get_sender_profile(&self) -> SenderProfile {
         SenderProfile {
             name: self.profile.name.clone(),
@@ -239,16 +346,39 @@ impl FileSender {
     }
 }
 
-/// Enhanced file receiver with better error handling and progress tracking
+/// Enhanced file receiver with error handling and progress tracking.
+///
+/// Wraps the lower-level dropx_receiver API and provides:
+/// - Output directory management (unique subdir per transfer).
+/// - Subscription to events with per-file progress bars.
+/// - Clean cancellation via Ctrl+C.
 pub struct FileReceiver {
     profile: Profile,
 }
 
 impl FileReceiver {
+    /// Create a new FileReceiver with the given profile.
     pub fn new(profile: Profile) -> Self {
         Self { profile }
     }
 
+    /// Receive files into the provided output directory.
+    ///
+    /// Behavior:
+    /// - Creates a unique subfolder for the session inside `output_dir`.
+    /// - Shows per-file progress bars for known file sizes.
+    /// - Cancels cleanly on Ctrl+C.
+    ///
+    /// Parameters:
+    /// - output_dir: Parent directory where the unique session folder will be
+    ///   created.
+    /// - ticket: The ticket provided by the sender.
+    /// - confirmation: The numeric confirmation code.
+    /// - verbose: Enables extra logging output.
+    ///
+    /// Errors:
+    /// - If directories cannot be created or written.
+    /// - If the underlying receiver fails to initialize or run.
     pub async fn receive_files(
         &self,
         output_dir: PathBuf,
@@ -313,6 +443,7 @@ impl FileReceiver {
         Ok(())
     }
 
+    /// Returns a ReceiverProfile derived from this FileReceiver's Profile.
     fn get_receiver_profile(&self) -> ReceiverProfile {
         ReceiverProfile {
             name: self.profile.name.clone(),
@@ -594,6 +725,17 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     }
 }
 
+/// In-memory, seek-based file data source for the sender.
+///
+/// This implementation:
+/// - Supports both single-byte reads (`read`) and ranged chunk reads
+///   (`read_chunk`).
+/// - Uses atomic counters to coordinate chunked read offsets safely.
+/// - Reports its total length through `len`.
+///
+/// Notes:
+/// - Errors are logged and will mark the stream as finished to prevent
+///   stalling.
 struct FileData {
     is_finished: AtomicBool,
     path: PathBuf,
@@ -603,6 +745,10 @@ struct FileData {
 }
 
 impl FileData {
+    /// Create a new FileData for the given path, capturing size metadata.
+    ///
+    /// Errors:
+    /// - If the file's metadata cannot be read.
     fn new(path: PathBuf) -> Result<Self> {
         let metadata = fs::metadata(&path).with_context(|| {
             format!("Failed to get metadata for file: {}", path.display())
@@ -619,10 +765,13 @@ impl FileData {
 }
 
 impl SenderFileData for FileData {
+    /// Returns the total file size in bytes.
     fn len(&self) -> u64 {
         self.size
     }
 
+    /// Reads a single byte, falling back to EOF (None) at end of file or on
+    /// errors.
     fn read(&self) -> Option<u8> {
         use std::io::Read;
 
@@ -683,6 +832,9 @@ impl SenderFileData for FileData {
         }
     }
 
+    /// Reads up to `size` bytes as a contiguous chunk starting from the next
+    /// claimed position. Returns an empty Vec when the file is fully consumed
+    /// or on errors.
     fn read_chunk(&self, size: u64) -> Vec<u8> {
         use std::{
             io::{Read, Seek, SeekFrom},
@@ -760,7 +912,27 @@ impl SenderFileData for FileData {
     }
 }
 
-/// Public API functions for the CLI
+/// Run a send operation with the provided list of file paths.
+///
+/// This is a convenience wrapper used by the CLI. It constructs a FileSender
+/// from the given Profile and forwards the request.
+///
+/// Parameters:
+/// - file_paths: Paths to regular files to be sent. Each path must exist.
+/// - profile: The local user profile to present to the receiver.
+/// - verbose: Enables transport logs and extra diagnostics.
+///
+/// Errors:
+/// - If any path is invalid or if the transport fails to initialize.
+///
+/// Example:
+/// ```no_run
+/// use drop_cli::{run_send_files, Profile};
+/// # async fn demo() -> anyhow::Result<()> {
+/// run_send_files(vec!["/tmp/a.bin".into()], Profile::default(), false).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub async fn run_send_files(
     file_paths: Vec<String>,
     profile: Profile,
@@ -774,6 +946,40 @@ pub async fn run_send_files(
     sender.send_files(paths, verbose).await
 }
 
+/// Run a receive operation, optionally persisting the chosen output directory.
+///
+/// If `output_dir` is None, a previously saved default directory is used.
+/// If `save_dir` is true and `output_dir` is Some, that directory is saved as
+/// the default for future runs.
+///
+/// Parameters:
+/// - output_dir: Optional parent directory to store the received files.
+/// - ticket: Ticket string provided by the sender.
+/// - confirmation: Numeric confirmation code as a string (parsed to u8).
+/// - profile: The local user profile to present to the sender.
+/// - verbose: Enables transport logs and extra diagnostics.
+/// - save_dir: If true and `output_dir` is Some, saves it as the default.
+///
+/// Errors:
+/// - If no output directory can be determined.
+/// - If the confirmation code is invalid.
+/// - If the transfer setup or I/O fails.
+///
+/// Example:
+/// ```no_run
+/// use drop_cli::{run_receive_files, Profile};
+/// # async fn demo() -> anyhow::Result<()> {
+/// run_receive_files(
+///     Some("/tmp/downloads".into()),
+///     "TICKET".into(),
+///     "3".into(),
+///     Profile::default(),
+///     false,
+///     true
+/// ).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub async fn run_receive_files(
     output_dir: Option<String>,
     ticket: String,
@@ -832,16 +1038,30 @@ pub async fn run_receive_files(
         .await
 }
 
+/// Returns the saved default receive directory path, if any.
+///
+/// This reads the TOML config file from the user's config directory.
+///
+/// Errors:
+/// - If the configuration file cannot be read or parsed.
 pub fn get_default_receive_dir() -> Result<Option<String>> {
     let config = CliConfig::load()?;
     Ok(config.get_default_receive_dir().cloned())
 }
 
+/// Sets the default receive directory and persists it to disk.
+///
+/// Errors:
+/// - If the configuration cannot be written to the user's config directory.
 pub fn set_default_receive_dir(dir: String) -> Result<()> {
     let mut config = CliConfig::load()?;
     config.set_default_receive_dir(dir)
 }
 
+/// Clears the saved default receive directory.
+///
+/// Errors:
+/// - If the configuration cannot be written to the user's config directory.
 pub fn clear_default_receive_dir() -> Result<()> {
     let mut config = CliConfig::load()?;
     config.default_receive_dir = None;
