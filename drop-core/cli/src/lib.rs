@@ -949,8 +949,9 @@ pub async fn run_send_files(
 /// Run a receive operation, optionally persisting the chosen output directory.
 ///
 /// If `output_dir` is None, a previously saved default directory is used.
-/// If `save_dir` is true and `output_dir` is Some, that directory is saved as
-/// the default for future runs.
+/// If no saved default exists, a sensible fallback is chosen:
+/// - $HOME/Downloads/Drop if HOME is set
+/// - or the current directory (.) otherwise
 ///
 /// Parameters:
 /// - output_dir: Optional parent directory to store the received files.
@@ -961,7 +962,6 @@ pub async fn run_send_files(
 /// - save_dir: If true and `output_dir` is Some, saves it as the default.
 ///
 /// Errors:
-/// - If no output directory can be determined.
 /// - If the confirmation code is invalid.
 /// - If the transfer setup or I/O fails.
 ///
@@ -1011,23 +1011,12 @@ pub async fn run_receive_files(
             path
         }
         None => {
-            // Try to use saved default directory
+            // Try to use saved default directory; otherwise use sensible
+            // fallback
             let config = CliConfig::load()?;
             match config.get_default_receive_dir() {
-                Some(default_dir) => {
-                    println!(
-                        "📁 Using saved default directory: {}",
-                        default_dir
-                    );
-                    PathBuf::from(default_dir)
-                }
-                None => {
-                    return Err(anyhow!(
-                        "No output directory specified and no default directory saved.\n\
-                        Use 'drop-cli receive <ticket> <confirmation> --output <directory>' to specify a directory,\n\
-                        or use 'drop-cli config set-receive-dir <directory>' to save a directory as default."
-                    ));
-                }
+                Some(default_dir) => PathBuf::from(default_dir),
+                None => default_receive_dir_fallback(),
             }
         }
     };
@@ -1047,6 +1036,23 @@ pub async fn run_receive_files(
 pub fn get_default_receive_dir() -> Result<Option<String>> {
     let config = CliConfig::load()?;
     Ok(config.get_default_receive_dir().cloned())
+}
+
+/// Returns a suggested default receive directory when no saved default exists:
+/// - $HOME/Downloads/Drop if HOME is set
+/// - current directory (.) otherwise
+pub fn suggested_default_receive_dir() -> PathBuf {
+    default_receive_dir_fallback()
+}
+
+/// Internal: resolve a sensible fallback for receive directory.
+fn default_receive_dir_fallback() -> PathBuf {
+    if let Ok(home) = env::var("HOME") {
+        PathBuf::from(home).join("Downloads").join("Drop")
+    } else {
+        // Last resort: current directory
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    }
 }
 
 /// Sets the default receive directory and persists it to disk.

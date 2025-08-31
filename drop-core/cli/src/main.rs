@@ -3,6 +3,7 @@ use clap::{Arg, ArgMatches, Command};
 use drop_cli::{
     Profile, clear_default_receive_dir, get_default_receive_dir,
     run_receive_files, run_send_files, set_default_receive_dir,
+    suggested_default_receive_dir,
 };
 use std::path::PathBuf;
 
@@ -193,24 +194,11 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
 
     if let Some(ref dir) = output_dir {
         println!("📁 Output directory: {}", dir);
+    } else if let Some(default_dir) = get_default_receive_dir()? {
+        println!("📁 Using default directory: {}", default_dir);
     } else {
-        match get_default_receive_dir()? {
-            Some(default_dir) => {
-                println!("📁 Using default directory: {}", default_dir)
-            }
-            None => {
-                eprintln!(
-                    "❌ No output directory specified and no default directory saved."
-                );
-                eprintln!(
-                    "Use: drop-cli receive <ticket> <confirmation> --output <directory>"
-                );
-                eprintln!(
-                    "Or set a default with: drop-cli config set-receive-dir <directory>"
-                );
-                return Err(anyhow!("No output directory available"));
-            }
-        }
+        let fallback = suggested_default_receive_dir();
+        println!("📁 Using default directory: {}", fallback.display());
     }
 
     println!("🎫 Ticket: {}", ticket);
