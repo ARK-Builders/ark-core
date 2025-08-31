@@ -1,3 +1,10 @@
+//! High-level send operation.
+//!
+//! This module contains the user-facing entry point `send_files` and the
+//! `SendFilesBubble` handle returned to the caller. The bubble exposes the
+//! ticket and confirmation code, supports cancellation, status queries, and
+//! observer subscription for logging and progress updates.
+
 mod handler;
 
 use crate::{SenderConfig, SenderFile, SenderFileDataAdapter, SenderProfile};
@@ -15,12 +22,23 @@ pub use handler::{
     SendFilesConnectingEvent, SendFilesSendingEvent, SendFilesSubscriber,
 };
 
+/// All inputs required to start a file transfer.
+///
+/// Construct this and pass it to [`send_files`].
 pub struct SendFilesRequest {
+    /// Sender profile data shown to the receiver during handshake.
     pub profile: SenderProfile,
+    /// Files to transfer. Each file must provide a `SenderFileData` source.
     pub files: Vec<SenderFile>,
+    /// Preferred transfer configuration. Actual values may be negotiated.
     pub config: SenderConfig,
 }
 
+/// A running file transfer session.
+///
+/// Returned by [`send_files`]. It exposes the ticket and a numeric confirmation
+/// code the receiver must present to connect. You can subscribe to progress
+/// updates, cancel the transfer, and poll the connection state.
 pub struct SendFilesBubble {
     ticket: String,
     confirmation: u8,
@@ -29,6 +47,7 @@ pub struct SendFilesBubble {
     created_at: DateTime<Utc>,
 }
 impl SendFilesBubble {
+    /// Create a new bubble. Internal use only.
     pub fn new(
         ticket: String,
         confirmation: u8,
@@ -44,14 +63,19 @@ impl SendFilesBubble {
         }
     }
 
+    /// Returns the iroh node ticket used by the receiver to dial this sender.
     pub fn get_ticket(&self) -> String {
         self.ticket.clone()
     }
 
+    /// Returns the confirmation code (0–99) that the receiver must echo during
+    /// the acceptance flow. Meant to prevent accidental connections.
     pub fn get_confirmation(&self) -> u8 {
         self.confirmation
     }
 
+    /// Asynchronously cancels the transfer, shutting down the router and
+    /// preventing any new connections.
     pub async fn cancel(&self) -> Result<()> {
         self.handler
             .log("cancel: Initiating file transfer cancellation".to_string());
@@ -76,6 +100,8 @@ impl SendFilesBubble {
         result
     }
 
+    /// Returns true when the router has been shut down or the handler has
+    /// finished sending. If finished, it ensures the router is shut down.
     pub fn is_finished(&self) -> bool {
         let router_shutdown = self.router.is_shutdown();
         let handler_finished = self.handler.is_finished();
@@ -95,6 +121,8 @@ impl SendFilesBubble {
         is_finished
     }
 
+    /// Returns true if a receiver has connected and been accepted (i.e.,
+    /// the handler has consumed the single allowed connection).
     pub fn is_connected(&self) -> bool {
         let finished = self.is_finished();
         if finished {
@@ -112,10 +140,15 @@ impl SendFilesBubble {
         consumed
     }
 
+    /// Returns the RFC3339 timestamp marking when this bubble was created.
     pub fn get_created_at(&self) -> String {
         self.created_at.to_rfc3339()
     }
 
+    /// Register a subscriber to receive logs and progress notifications.
+    ///
+    /// Subscribers must be `Send + Sync`. Duplicate IDs will replace previous
+    /// subscribers with the same ID.
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.handler.log(format!(
@@ -125,6 +158,7 @@ impl SendFilesBubble {
         self.handler.subscribe(subscriber);
     }
 
+    /// Remove a previously registered subscriber.
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.handler.log(format!(
@@ -135,6 +169,16 @@ impl SendFilesBubble {
     }
 }
 
+/// Starts a new file transfer and returns a [`SendFilesBubble`] handle.
+///
+/// The function:
+/// - Builds an iroh endpoint with discovery enabled.
+/// - Generates a random human-check confirmation code (0–99).
+/// - Spawns a protocol router that accepts exactly one receiver matching the
+///   confirmation code.
+/// - Returns the ticket and handle used to monitor or cancel the transfer.
+///
+/// Errors if the endpoint fails to bind or the router cannot be spawned.
 pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
     let profile = Profile {
         id: Uuid::new_v4().to_string(),

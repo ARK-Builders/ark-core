@@ -1,3 +1,11 @@
+//! Internal protocol handler for sending files.
+//!
+//! This module implements `iroh::protocol::ProtocolHandler` to accept a single
+//! receiver, exchange handshakes, negotiate configuration, and stream file data
+//! using unidirectional streams. It also provides an observer API via
+//! `SendFilesSubscriber` to report logs, connection metadata, and per-file
+//! progress updates.
+
 use anyhow::Result;
 use drop_entities::{File, Profile};
 use dropx_common::{
@@ -21,13 +29,31 @@ use tokio::task::JoinSet;
 
 use super::SenderConfig;
 
+/// Observer interface for transfer logs and progress.
+///
+/// Implementors must be thread-safe (`Send + Sync`) since notifications are
+/// dispatched from async tasks.
 pub trait SendFilesSubscriber: Send + Sync {
+    /// A stable unique identifier for this subscriber (used as a map key).
     fn get_id(&self) -> String;
+
+    /// Receives diagnostic log lines from the transfer pipeline.
     fn log(&self, message: String);
+
+    /// Receives progress updates for each file being sent.
+    ///
+    /// Multiple events can arrive out of order across files; within a file they
+    /// are monotonic in `sent` and `remaining`.
     fn notify_sending(&self, event: SendFilesSendingEvent);
+
+    /// Notified when a receiver connects and completes the handshake.
     fn notify_connecting(&self, event: SendFilesConnectingEvent);
 }
 
+/// Per-file progress event.
+///
+/// - `sent`: total bytes sent so far for this file.
+/// - `remaining`: bytes left until completion for this file.
 #[derive(Clone)]
 pub struct SendFilesSendingEvent {
     pub name: String,
@@ -35,10 +61,13 @@ pub struct SendFilesSendingEvent {
     pub remaining: u64,
 }
 
+/// Connection event carrying the receiver's profile as reported during
+/// handshake.
 pub struct SendFilesConnectingEvent {
     pub receiver: SendFilesProfile,
 }
 
+/// Receiver profile details surfaced to subscribers.
 #[derive(Clone)]
 pub struct SendFilesProfile {
     pub id: String,
@@ -46,6 +75,15 @@ pub struct SendFilesProfile {
     pub avatar_b64: Option<String>,
 }
 
+/// Protocol handler responsible for accepting a single receiver and streaming
+/// data.
+///
+/// A `SendFilesHandler`:
+/// - Enforces single-consumption of the incoming connection.
+/// - Performs JSON-based handshake exchange.
+/// - Negotiates chunking and concurrency parameters.
+/// - Streams files over unidirectional streams.
+/// - Emits events to registered subscribers.
 pub struct SendFilesHandler {
     is_consumed: AtomicBool,
     is_finished: Arc<AtomicBool>,
@@ -66,6 +104,8 @@ impl Debug for SendFilesHandler {
     }
 }
 impl SendFilesHandler {
+    /// Constructs a new handler for the given profile, files, and
+    /// configuration.
     pub fn new(
         profile: Profile,
         files: Vec<File>,
@@ -81,6 +121,9 @@ impl SendFilesHandler {
         };
     }
 
+    /// Returns true if a connection has already been accepted.
+    ///
+    /// This handler accepts at most one receiver for a bubble.
     pub fn is_consumed(&self) -> bool {
         let consumed = self
             .is_consumed
@@ -89,6 +132,8 @@ impl SendFilesHandler {
         consumed
     }
 
+    /// Returns true if the transfer has finished or the handler has been shut
+    /// down.
     pub fn is_finished(&self) -> bool {
         let finished = self
             .is_finished
@@ -97,6 +142,7 @@ impl SendFilesHandler {
         finished
     }
 
+    /// Broadcasts a log message to all subscribers.
     pub fn log(&self, message: String) {
         self.subscribers
             .read()
@@ -107,6 +153,7 @@ impl SendFilesHandler {
             });
     }
 
+    /// Registers a new subscriber or replaces an existing one with the same ID.
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.log(format!(
@@ -126,6 +173,7 @@ impl SendFilesHandler {
         ));
     }
 
+    /// Unregisters a subscriber by its ID.
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.log(format!(
@@ -221,6 +269,9 @@ impl ProtocolHandler for SendFilesHandler {
     }
 }
 
+/// Helper that performs handshake, configuration negotiation, and streaming.
+///
+/// Not exposed publicly; used internally by `SendFilesHandler`.
 struct Carrier {
     is_finished: Arc<AtomicBool>,
     config: SenderConfig,
@@ -231,6 +282,8 @@ struct Carrier {
     subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
 }
 impl Carrier {
+    /// Performs the bidirectional handshake exchange and notifies subscribers
+    /// about the receiver identity.
     async fn greet(&mut self) -> Result<()> {
         let mut bi = self.connection.accept_bi().await?;
 
@@ -243,6 +296,7 @@ impl Carrier {
         Ok(())
     }
 
+    /// Sends the sender's profile, file list, and preferred configuration.
     async fn send_handshake(
         &self,
         bi: &mut (SendStream, RecvStream),
@@ -283,6 +337,8 @@ impl Carrier {
         Ok(())
     }
 
+    /// Receives the receiver handshake and computes the negotiated
+    /// configuration.
     async fn receive_handshake(
         &mut self,
         bi: &mut (SendStream, RecvStream),
@@ -327,6 +383,8 @@ impl Carrier {
         Ok(())
     }
 
+    /// Streams all files using unidirectional streams and the negotiated
+    /// settings.
     async fn send_files(&self) -> Result<()> {
         let mut join_set = JoinSet::new();
 
@@ -375,6 +433,9 @@ impl Carrier {
         return Ok(());
     }
 
+    /// Streams a single file in JSON-framed chunks:
+    /// - 4-byte big-endian length header
+    /// - JSON payload containing `FileProjection { id, data }`
     async fn send_single_file(
         file: &File,
         chunk_size: u64,
@@ -428,6 +489,8 @@ impl Carrier {
         return Ok(());
     }
 
+    /// Marks the handler as finished and closes the connection with a code and
+    /// reason.
     fn finish(&self) {
         self.log("finish: Starting transfer finish process".to_string());
 
@@ -442,6 +505,7 @@ impl Carrier {
         self.log("finish: Transfer process completed successfully".to_string());
     }
 
+    /// Internal logger that prefixes subscriber IDs.
     fn log(&self, message: String) {
         self.subscribers
             .read()
@@ -452,6 +516,7 @@ impl Carrier {
             });
     }
 
+    /// Notifies all subscribers about the current per-file progress.
     fn notify_progress(
         name: &str,
         sent: u64,
