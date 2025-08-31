@@ -8,8 +8,8 @@
 /// - Traits marked WithForeign are implemented on the foreign side (e.g., Swift/Kotlin/JS).
 /// - Errors are surfaced via DropError; consumers should present a user-friendly message.
 
-[Error]
 /// High-level error type surfaced to foreign languages.
+[Error]
 enum DropError {
     /// Placeholder error code. Carries a message in bindings that support it.
     "TODO",
