@@ -30,6 +30,7 @@ toml = "0.8"
 
 dropx-receiver = { path = "../exchanges/receiver" }  
 dropx-sender = { path = "../exchanges/sender" }
+indicatif = "0.18.0"
 
 [dev-dependencies]
 tempfile = "3.0"

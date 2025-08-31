@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env, fs,
     io::Write,
     path::PathBuf,
@@ -18,6 +19,7 @@ use dropx_sender::{
     SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
     SenderProfile, send_files,
 };
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -342,6 +344,8 @@ async fn wait_for_receive_completion(
 struct FileSendSubscriber {
     id: String,
     verbose: bool,
+    mp: MultiProgress,
+    bars: RwLock<HashMap<String, ProgressBar>>,
 }
 
 impl FileSendSubscriber {
@@ -349,7 +353,17 @@ impl FileSendSubscriber {
         Self {
             id: Uuid::new_v4().to_string(),
             verbose,
+            mp: MultiProgress::new(),
+            bars: RwLock::new(HashMap::new()),
         }
+    }
+
+    fn bar_style() -> ProgressStyle {
+        ProgressStyle::with_template(
+            "{spinner:.green} {msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+        )
+        .unwrap()
+        .progress_chars("#>-")
     }
 }
 
@@ -360,27 +374,58 @@ impl SendFilesSubscriber for FileSendSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            println!("🔍 verbose: {}", message);
+            let _ = self.mp.println(format!("🔍 {}", message));
         }
     }
 
     fn notify_sending(&self, event: SendFilesSendingEvent) {
-        let progress = if event.sent + event.remaining > 0 {
-            (event.sent as f64 / (event.sent + event.remaining) as f64) * 100.0
-        } else {
-            0.0
-        };
+        // Get or create a progress bar for this file (by name)
+        let mut bars = self.bars.write().unwrap();
+        let pb = bars.entry(event.name.clone()).or_insert_with(|| {
+            let total = event.sent + event.remaining;
+            let pb = if total > 0 {
+                let pb = self.mp.add(ProgressBar::new(total));
+                pb.set_style(Self::bar_style());
+                pb
+            } else {
+                let pb = self.mp.add(ProgressBar::new_spinner());
+                pb.set_style(
+                    ProgressStyle::with_template(
+                        "{spinner:.green} {msg} {bytes} ({bytes_per_sec})",
+                    )
+                    .unwrap(),
+                );
+                pb.enable_steady_tick(std::time::Duration::from_millis(100));
+                pb
+            };
+            pb.set_message(format!("Sending {}", event.name));
+            pb
+        });
 
-        println!(
-            "📤 Sending: {} | Progress: {:.1}% | Sent: {} bytes | Remaining: {} bytes",
-            event.name, progress, event.sent, event.remaining
-        );
+        // Update the bar position
+        let total = event.sent + event.remaining;
+        if total > 0 {
+            pb.set_length(total);
+            pb.set_position(event.sent);
+        }
+
+        if event.remaining == 0 {
+            pb.finish_with_message(format!("✅ Sent {}", event.name));
+        } else {
+            pb.set_message(format!("Sending {}", event.name));
+        }
     }
 
     fn notify_connecting(&self, event: SendFilesConnectingEvent) {
-        println!("🔗 Connected to receiver:");
-        println!("   📛 Name: {}", event.receiver.name);
-        println!("   🆔 ID: {}", event.receiver.id);
+        let _ = self
+            .mp
+            .println("🔗 Connected to receiver:".to_string());
+        let _ = self
+            .mp
+            .println(format!("   📛 Name: {}", event.receiver.name));
+        let _ = self
+            .mp
+            .println(format!("   🆔 ID: {}", event.receiver.id));
     }
 }
 
@@ -389,8 +434,10 @@ struct FileReceiveSubscriber {
     receiving_path: PathBuf,
     files: RwLock<Vec<ReceiveFilesFile>>,
     verbose: bool,
+    mp: MultiProgress,
+    bars: RwLock<HashMap<String, ProgressBar>>,
+    received: RwLock<HashMap<String, u64>>,
 }
-
 impl FileReceiveSubscriber {
     fn new(receiving_path: PathBuf, verbose: bool) -> Self {
         Self {
@@ -398,10 +445,20 @@ impl FileReceiveSubscriber {
             receiving_path,
             files: RwLock::new(Vec::new()),
             verbose,
+            mp: MultiProgress::new(),
+            bars: RwLock::new(HashMap::new()),
+            received: RwLock::new(HashMap::new()),
         }
     }
-}
 
+    fn bar_style() -> ProgressStyle {
+        ProgressStyle::with_template(
+            "{spinner:.green} {msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+        )
+        .unwrap()
+        .progress_chars("#>-")
+    }
+}
 impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     fn get_id(&self) -> String {
         self.id.clone()
@@ -409,11 +466,12 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            println!("🔍 verbose: {}", message);
+            let _ = self.mp.println(format!("🔍 {}", message));
         }
     }
 
     fn notify_receiving(&self, event: ReceiveFilesReceivingEvent) {
+        // Look up file metadata by id
         let files = match self.files.read() {
             Ok(files) => files,
             Err(e) => {
@@ -421,7 +479,6 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 return;
             }
         };
-
         let file = match files.iter().find(|f| f.id == event.id) {
             Some(file) => file,
             None => {
@@ -429,6 +486,52 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 return;
             }
         };
+
+        // Create/find progress bar for this file
+        let mut bars = self.bars.write().unwrap();
+        let pb = bars.entry(event.id.clone()).or_insert_with(|| {
+            // Try to use total size if available; fallback to spinner
+            #[allow(unused_mut)]
+            let mut total_opt: Option<u64> = None;
+
+            if let Some(total) = total_opt {
+                let pb = self.mp.add(ProgressBar::new(total));
+                pb.set_style(Self::bar_style());
+                pb.set_message(format!("Receiving {}", file.name));
+                pb
+            } else {
+                let pb = self.mp.add(ProgressBar::new_spinner());
+                pb.set_style(
+                    ProgressStyle::with_template(
+                        "{spinner:.green} {msg} {bytes} ({bytes_per_sec})",
+                    )
+                    .unwrap(),
+                );
+                pb.enable_steady_tick(std::time::Duration::from_millis(100));
+                pb.set_message(format!("Receiving {}", file.name));
+                pb
+            }
+        });
+
+        // Update received byte count
+        {
+            let mut recvd = self.received.write().unwrap();
+            let entry = recvd.entry(event.id.clone()).or_insert(0);
+            *entry += event.data.len() as u64;
+
+            // If we have a length bar, update position and maybe finish
+            if let Some(len) = pb.length() {
+                pb.set_position(*entry);
+                if *entry >= len {
+                    pb.finish_with_message(format!(
+                        "✅ Received {}",
+                        file.name
+                    ));
+                }
+            } else {
+                pb.inc(event.data.len() as u64);
+            }
+        }
 
         let file_path = self.receiving_path.join(&file.name);
 
@@ -446,11 +549,6 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                     eprintln!("❌ Error flushing file {}: {}", file.name, e);
                     return;
                 }
-                println!(
-                    "📥 Received {} bytes for file: {}",
-                    event.data.len(),
-                    file.name
-                );
             }
             Err(e) => {
                 eprintln!("❌ Error opening file {}: {}", file.name, e);
@@ -459,18 +557,35 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     }
 
     fn notify_connecting(&self, event: ReceiveFilesConnectingEvent) {
-        println!("🔗 Connected to sender:");
-        println!("   📛 Name: {}", event.sender.name);
-        println!("   🆔 ID: {}", event.sender.id);
-        println!("   📁 Files to receive: {}", event.files.len());
+        let _ = self
+            .mp
+            .println("🔗 Connected to sender:".to_string());
+        let _ = self
+            .mp
+            .println(format!("   📛 Name: {}", event.sender.name));
+        let _ = self
+            .mp
+            .println(format!("   🆔 ID: {}", event.sender.id));
+        let _ = self
+            .mp
+            .println(format!("   📁 Files to receive: {}", event.files.len()));
 
-        for file in &event.files {
-            println!("     📄 {}", file.name);
+        for f in &event.files {
+            let _ = self.mp.println(format!("     📄 {}", f.name));
         }
 
+        // Keep the list of files and prepare bars if sizes are known
         match self.files.write() {
             Ok(mut files) => {
-                files.extend(event.files);
+                files.extend(event.files.clone());
+
+                let mut bars = self.bars.write().unwrap();
+                for f in &*files {
+                    let pb = self.mp.add(ProgressBar::new(f.len));
+                    pb.set_style(Self::bar_style());
+                    pb.set_message(format!("Receiving {}", f.name));
+                    bars.insert(f.id.clone(), pb);
+                }
             }
             Err(e) => {
                 eprintln!("❌ Error updating files list: {}", e);
