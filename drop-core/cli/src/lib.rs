@@ -84,8 +84,10 @@ use uuid::Uuid;
 /// usage, such as the default directory to save received files.
 ///
 /// Storage location:
-/// - $XDG_CONFIG_HOME/drop-cli/config.toml
-/// - or $HOME/.config/drop-cli/config.toml if XDG_CONFIG_HOME is not set.
+/// - Linux: $XDG_CONFIG_HOME/drop-cli/config.toml or
+///   $HOME/.config/drop-cli/config.toml
+/// - macOS: $HOME/Library/Application Support/drop-cli/config.toml
+/// - Windows: %APPDATA%\drop-cli\config.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CliConfig {
     default_receive_dir: Option<String>,
@@ -101,18 +103,52 @@ impl Default for CliConfig {
 
 impl CliConfig {
     /// Returns the configuration directory path, creating a path under the
-    /// user's XDG or HOME config directory.
+    /// user's platform-appropriate config directory.
     fn config_dir() -> Result<PathBuf> {
-        let config_dir =
-            if let Ok(xdg_config_home) = env::var("XDG_CONFIG_HOME") {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(appdata) = env::var("APPDATA") {
+                return Ok(PathBuf::from(appdata).join("drop-cli"));
+            }
+            // Fallback if APPDATA isn't set (rare)
+            if let Ok(userprofile) = env::var("USERPROFILE") {
+                return Ok(PathBuf::from(userprofile)
+                    .join(".config")
+                    .join("drop-cli"));
+            }
+            return Err(anyhow!(
+                "Unable to determine config directory (missing APPDATA/USERPROFILE)"
+            ));
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(home) = env::var("HOME") {
+                return Ok(PathBuf::from(home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("drop-cli"));
+            }
+            return Err(anyhow!(
+                "Unable to determine config directory (missing HOME)"
+            ));
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            let config_dir = if let Ok(xdg_config_home) =
+                env::var("XDG_CONFIG_HOME")
+            {
                 PathBuf::from(xdg_config_home)
             } else if let Ok(home) = env::var("HOME") {
                 PathBuf::from(home).join(".config")
             } else {
-                return Err(anyhow!("Unable to determine config directory"));
+                return Err(anyhow!(
+                    "Unable to determine config directory (missing XDG_CONFIG_HOME/HOME)"
+                ));
             };
-
-        Ok(config_dir.join("drop-cli"))
+            Ok(config_dir.join("drop-cli"))
+        }
     }
 
     /// Returns the full config file path.
@@ -1039,17 +1075,30 @@ pub fn get_default_receive_dir() -> Result<Option<String>> {
 }
 
 /// Returns a suggested default receive directory when no saved default exists:
-/// - $HOME/Downloads/Drop if HOME is set
-/// - current directory (.) otherwise
+/// - Linux/macOS: $HOME/Downloads/Drop
+/// - Windows: %USERPROFILE%\Downloads\Drop
 pub fn suggested_default_receive_dir() -> PathBuf {
     default_receive_dir_fallback()
 }
 
 /// Internal: resolve a sensible fallback for receive directory.
 fn default_receive_dir_fallback() -> PathBuf {
-    if let Ok(home) = env::var("HOME") {
-        PathBuf::from(home).join("Downloads").join("Drop")
-    } else {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(userprofile) = env::var("USERPROFILE") {
+            return PathBuf::from(userprofile)
+                .join("Downloads")
+                .join("Drop");
+        }
+        // Last resort: current directory
+        return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(home) = env::var("HOME") {
+            return PathBuf::from(home).join("Downloads").join("Drop");
+        }
         // Last resort: current directory
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
