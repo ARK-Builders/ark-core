@@ -640,7 +640,7 @@ pub struct ReceiveFilesFile {
 /// Example:
 /// ```rust no_run
 /// use std::sync::Arc;
-/// use your_crate::{
+/// use dropx_common::{
 ///     receive_files, ReceiveFilesRequest, ReceiverProfile, ReceiverConfig,
 ///     ReceiveFilesSubscriber, ReceiveFilesReceivingEvent, ReceiveFilesConnectingEvent,
 /// };
