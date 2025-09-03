@@ -20,8 +20,8 @@ name = "arkdrop"
 path = "src/main.rs"
 
 [dependencies]
-arkdrop-x-sender = { path = "../exchanges/sender" }
-arkdrop-x-receiver = { path = "../exchanges/receiver" }  
+arkdropx-sender = { path = "../exchanges/sender" }
+arkdropx-receiver = { path = "../exchanges/receiver" }  
 
 toml = "0.8"
 anyhow = "1.0"

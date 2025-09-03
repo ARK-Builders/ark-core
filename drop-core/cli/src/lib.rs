@@ -64,12 +64,12 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine, engine::general_purpose};
-use arkdrop_x_receiver::{
+use arkdropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
     ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
     receive_files,
 };
-use arkdrop_x_sender::{
+use arkdropx_sender::{
     SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
     SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
     SenderProfile, send_files,
@@ -271,7 +271,7 @@ impl Profile {
 
 /// Enhanced file sender with error handling and progress tracking.
 ///
-/// Wraps the lower-level arkdrop_x_sender API and provides:
+/// Wraps the lower-level arkdropx_sender API and provides:
 /// - Validation for input paths.
 /// - Subscription to transfer events with progress bars.
 /// - Clean cancellation via Ctrl+C.
@@ -384,7 +384,7 @@ impl FileSender {
 
 /// Enhanced file receiver with error handling and progress tracking.
 ///
-/// Wraps the lower-level arkdrop_x_receiver API and provides:
+/// Wraps the lower-level arkdropx_receiver API and provides:
 /// - Output directory management (unique subdir per transfer).
 /// - Subscription to events with per-file progress bars.
 /// - Clean cancellation via Ctrl+C.
@@ -488,7 +488,7 @@ impl FileReceiver {
     }
 }
 
-async fn wait_for_send_completion(bubble: &arkdrop_x_sender::SendFilesBubble) {
+async fn wait_for_send_completion(bubble: &arkdropx_sender::SendFilesBubble) {
     loop {
         if bubble.is_finished() {
             break;
@@ -498,7 +498,7 @@ async fn wait_for_send_completion(bubble: &arkdrop_x_sender::SendFilesBubble) {
 }
 
 async fn wait_for_receive_completion(
-    bubble: &arkdrop_x_receiver::ReceiveFilesBubble,
+    bubble: &arkdropx_receiver::ReceiveFilesBubble,
 ) {
     loop {
         if bubble.is_finished() {

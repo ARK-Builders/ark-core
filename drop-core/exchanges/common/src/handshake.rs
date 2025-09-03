@@ -124,7 +124,7 @@ impl NegotiatedConfig {
     ///
     /// Example:
     /// ```
-    /// use arkdrop_x_common::handshake::{HandshakeConfig, NegotiatedConfig};
+    /// use arkdropx_common::handshake::{HandshakeConfig, NegotiatedConfig};
     ///
     /// let sender = HandshakeConfig { chunk_size: 64 * 1024, parallel_streams: 4 };
     /// let receiver = HandshakeConfig { chunk_size: 32 * 1024, parallel_streams: 8 };

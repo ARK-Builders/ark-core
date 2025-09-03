@@ -1,15 +1,15 @@
 [package]
-name = "arkdrop-x-sender"
+name = "arkdropx-sender"
 version = "1.1.0"
 edition = "2024"
 
 [lib]
-name = "arkdrop_x_sender"
+name = "arkdropx_sender"
 bench = false
 
 [dependencies]
 arkdrop-entities = { path = "../../entities" }
-arkdrop-x-common = { path = "../common" }
+arkdropx-common = { path = "../common" }
 rand = "0.9.0"
 uuid = "1.16.0"
 iroh = "0.91.1"

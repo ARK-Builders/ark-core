@@ -14,8 +14,8 @@ path = "uniffi-bindgen.rs"
 bench = false
 
 [dependencies]
-arkdrop-x-sender = { path = "../exchanges/sender" }
-arkdrop-x-receiver = { path = "../exchanges/receiver" }
+arkdropx-sender = { path = "../exchanges/sender" }
+arkdropx-receiver = { path = "../exchanges/receiver" }
 
 tokio = "1.44.2"
 thiserror = "2.0.12"

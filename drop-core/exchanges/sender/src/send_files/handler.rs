@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use arkdrop_entities::{File, Profile};
-use arkdrop_x_common::{
+use arkdropx_common::{
     handshake::{
         HandshakeConfig, HandshakeFile, HandshakeProfile, NegotiatedConfig,
         ReceiverHandshake, SenderHandshake,

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use arkdrop_entities::Profile;
-use arkdrop_x_common::{
+use arkdropx_common::{
     handshake::{
         HandshakeConfig, HandshakeProfile, NegotiatedConfig, ReceiverHandshake,
         SenderHandshake,
@@ -640,7 +640,7 @@ pub struct ReceiveFilesFile {
 /// Example:
 /// ```rust no_run
 /// use std::sync::Arc;
-/// use arkdrop_x_receiver::{
+/// use arkdropx_receiver::{
 ///     receive_files, ReceiveFilesRequest, ReceiverProfile, ReceiverConfig,
 ///     ReceiveFilesSubscriber, ReceiveFilesReceivingEvent, ReceiveFilesConnectingEvent,
 /// };

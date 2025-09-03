@@ -1,10 +1,10 @@
 [package]
-name = "arkdrop-x-common"
+name = "arkdropx-common"
 version = "1.0.0"
 edition = "2024"
 
 [lib]
-name = "arkdrop_x_common"
+name = "arkdropx_common"
 bench = false
 
 [dependencies]

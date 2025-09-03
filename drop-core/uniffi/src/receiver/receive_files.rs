@@ -18,10 +18,10 @@ pub struct ReceiveFilesRequest {
 
 /// Handle to a receive session ("bubble").
 ///
-/// Wraps `arkdrop_x_receiver::ReceiveFilesBubble` and holds a dedicated Tokio
+/// Wraps `arkdropx_receiver::ReceiveFilesBubble` and holds a dedicated Tokio
 /// runtime used to drive the session and synchronous `start()`.
 pub struct ReceiveFilesBubble {
-    inner: arkdrop_x_receiver::ReceiveFilesBubble,
+    inner: arkdropx_receiver::ReceiveFilesBubble,
     runtime: tokio::runtime::Runtime,
 }
 impl ReceiveFilesBubble {
@@ -118,7 +118,7 @@ pub struct ReceiveFilesFile {
 struct ReceiveFilesSubscriberAdapter {
     inner: Arc<dyn ReceiveFilesSubscriber>,
 }
-impl arkdrop_x_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
+impl arkdropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
     fn get_id(&self) -> String {
         return self.inner.get_id();
     }
@@ -130,7 +130,7 @@ impl arkdrop_x_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapte
 
     fn notify_receiving(
         &self,
-        event: arkdrop_x_receiver::ReceiveFilesReceivingEvent,
+        event: arkdropx_receiver::ReceiveFilesReceivingEvent,
     ) {
         return self
             .inner
@@ -142,7 +142,7 @@ impl arkdrop_x_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapte
 
     fn notify_connecting(
         &self,
-        event: arkdrop_x_receiver::ReceiveFilesConnectingEvent,
+        event: arkdropx_receiver::ReceiveFilesConnectingEvent,
     ) {
         return self
             .inner
@@ -178,7 +178,7 @@ pub async fn receive_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return arkdrop_x_receiver::receive_files(adapted_request).await;
+            return arkdropx_receiver::receive_files(adapted_request).await;
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
     return Ok(Arc::new(ReceiveFilesBubble {
@@ -187,24 +187,24 @@ pub async fn receive_files(
     }));
 }
 
-/// Convert the high-level request into the arkdrop_x_receiver request format.
+/// Convert the high-level request into the arkdropx_receiver request format.
 ///
 /// - Copies metadata and session params.
 /// - Uses provided config if any, otherwise passes None and relies on defaults.
 fn create_adapted_request(
     request: ReceiveFilesRequest,
-) -> arkdrop_x_receiver::ReceiveFilesRequest {
-    let profile = arkdrop_x_receiver::ReceiverProfile {
+) -> arkdropx_receiver::ReceiveFilesRequest {
+    let profile = arkdropx_receiver::ReceiverProfile {
         name: request.profile.name,
         avatar_b64: request.profile.avatar_b64,
     };
     let config = request
         .config
-        .map(|c| arkdrop_x_receiver::ReceiverConfig {
+        .map(|c| arkdropx_receiver::ReceiverConfig {
             chunk_size: c.chunk_size,
             parallel_streams: c.parallel_streams,
         });
-    return arkdrop_x_receiver::ReceiveFilesRequest {
+    return arkdropx_receiver::ReceiveFilesRequest {
         profile,
         ticket: request.ticket,
         confirmation: request.confirmation,
