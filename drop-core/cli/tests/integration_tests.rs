@@ -5,7 +5,7 @@ use tempfile::TempDir;
 #[test]
 fn test_cli_binary_exists() {
     let output = Command::new("cargo")
-        .args(&["build", "--bin", "arkdrop"])
+        .args(["build", "--bin", "arkdrop"])
         .output()
         .expect("Failed to execute cargo build");
 
@@ -50,7 +50,7 @@ fn test_cli_version() {
 #[test]
 fn test_send_missing_file() {
     let output = Command::new("target/debug/arkdrop")
-        .args(&["send", "nonexistent.txt"])
+        .args(["send", "nonexistent.txt"])
         .output()
         .expect("Failed to run send command");
 
@@ -69,7 +69,7 @@ fn test_send_missing_file() {
 #[test]
 fn test_receive_missing_args() {
     let output = Command::new("target/debug/arkdrop")
-        .args(&["receive"])
+        .args(["receive"])
         .output()
         .expect("Failed to run receive command");
 
@@ -88,7 +88,7 @@ fn test_receive_missing_args() {
 fn test_config_commands() {
     // Test config show
     let output = Command::new("target/debug/arkdrop")
-        .args(&["config", "show"])
+        .args(["config", "show"])
         .output()
         .expect("Failed to run config show");
 
@@ -102,7 +102,7 @@ fn test_config_commands() {
 
     // Set receive directory
     let output = Command::new("target/debug/arkdrop")
-        .args(&["config", "set-receive-dir", temp_path])
+        .args(["config", "set-receive-dir", temp_path])
         .output()
         .expect("Failed to set receive directory");
 
@@ -110,7 +110,7 @@ fn test_config_commands() {
 
     // Verify it was set
     let output = Command::new("target/debug/arkdrop")
-        .args(&["config", "show"])
+        .args(["config", "show"])
         .output()
         .expect("Failed to show config");
 
@@ -119,7 +119,7 @@ fn test_config_commands() {
 
     // Clear receive directory
     let output = Command::new("target/debug/arkdrop")
-        .args(&["config", "clear-receive-dir"])
+        .args(["config", "clear-receive-dir"])
         .output()
         .expect("Failed to clear receive directory");
 
@@ -137,7 +137,7 @@ fn test_send_valid_files() {
     // This should fail because there's no receiver, but it should validate the
     // file first
     let output = Command::new("target/debug/arkdrop")
-        .args(&["send", file_path.to_str().unwrap()])
+        .args(["send", file_path.to_str().unwrap()])
         .output()
         .expect("Failed to run send command");
 
@@ -166,7 +166,7 @@ fn test_file_validation() {
 
     // Test with valid file - should pass validation, fail at connection
     let output = Command::new("target/debug/arkdrop")
-        .args(&[
+        .args([
             "send",
             "--name",
             "test-sender",
@@ -190,7 +190,7 @@ fn test_file_validation() {
 
     // Test with nonexistent file - should fail validation
     let output = Command::new("target/debug/arkdrop")
-        .args(&["send", "--name", "test-sender", "nonexistent.txt"])
+        .args(["send", "--name", "test-sender", "nonexistent.txt"])
         .output()
         .expect("Failed to run send with invalid file");
 
@@ -209,7 +209,7 @@ fn test_receive_parameters() {
 
     // Test with all required parameters - should attempt connection and fail
     let output = Command::new("target/debug/arkdrop")
-        .args(&[
+        .args([
             "receive",
             "test-ticket",
             "123",
@@ -251,7 +251,7 @@ fn test_avatar_options() {
 
     // Test with avatar file
     let output = Command::new("target/debug/arkdrop")
-        .args(&[
+        .args([
             "send",
             "--name",
             "avatar-sender",
@@ -268,7 +268,7 @@ fn test_avatar_options() {
 
     // Test with base64 avatar
     let output = Command::new("target/debug/arkdrop")
-        .args(&[
+        .args([
             "send",
             "--name",
             "b64-sender",
@@ -292,7 +292,7 @@ fn test_verbose_flag() {
         .expect("Failed to create test file");
 
     let output = Command::new("target/debug/arkdrop")
-        .args(&[
+        .args([
             "send",
             "--verbose",
             "--name",

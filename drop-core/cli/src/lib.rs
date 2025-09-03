@@ -88,17 +88,9 @@ use uuid::Uuid;
 ///   $HOME/.config/arkdrop/config.toml
 /// - macOS: $HOME/Library/Application Support/arkdrop/config.toml
 /// - Windows: %APPDATA%\arkdrop\config.toml
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct CliConfig {
     default_receive_dir: Option<String>,
-}
-
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            default_receive_dir: None,
-        }
-    }
 }
 
 impl CliConfig {
@@ -254,7 +246,7 @@ impl Profile {
     /// - If the file cannot be read or encoded.
     pub fn with_avatar_file(mut self, avatar_path: &str) -> Result<Self> {
         let avatar_data = fs::read(avatar_path).with_context(|| {
-            format!("Failed to read avatar file: {}", avatar_path)
+            format!("Failed to read avatar file: {avatar_path}")
         })?;
 
         self.avatar_b64 = Some(general_purpose::STANDARD.encode(&avatar_data));
@@ -541,7 +533,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            let _ = self.mp.println(format!("🔍 {}", message));
+            let _ = self.mp.println(format!("🔍 {message}"));
         }
     }
 
@@ -584,9 +576,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
     }
 
     fn notify_connecting(&self, event: SendFilesConnectingEvent) {
-        let _ = self
-            .mp
-            .println("🔗 Connected to receiver:".to_string());
+        let _ = self.mp.println("🔗 Connected to receiver:");
         let _ = self
             .mp
             .println(format!("   📛 Name: {}", event.receiver.name));
@@ -633,7 +623,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            let _ = self.mp.println(format!("🔍 {}", message));
+            let _ = self.mp.println(format!("🔍 {message}"));
         }
     }
 
@@ -642,7 +632,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
         let files = match self.files.read() {
             Ok(files) => files,
             Err(e) => {
-                eprintln!("❌ Error accessing files list: {}", e);
+                eprintln!("❌ Error accessing files list: {e}");
                 return;
             }
         };
@@ -714,7 +704,6 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 }
                 if let Err(e) = file_stream.flush() {
                     eprintln!("❌ Error flushing file {}: {}", file.name, e);
-                    return;
                 }
             }
             Err(e) => {
@@ -724,9 +713,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     }
 
     fn notify_connecting(&self, event: ReceiveFilesConnectingEvent) {
-        let _ = self
-            .mp
-            .println("🔗 Connected to sender:".to_string());
+        let _ = self.mp.println("🔗 Connected to sender:");
         let _ = self
             .mp
             .println(format!("   📛 Name: {}", event.sender.name));
@@ -755,7 +742,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 }
             }
             Err(e) => {
-                eprintln!("❌ Error updating files list: {}", e);
+                eprintln!("❌ Error updating files list: {e}");
             }
         }
     }
@@ -1025,7 +1012,7 @@ pub async fn run_receive_files(
     save_dir: bool,
 ) -> Result<()> {
     let confirmation_code = u8::from_str(&confirmation).with_context(|| {
-        format!("Invalid confirmation code: {}", confirmation)
+        format!("Invalid confirmation code: {confirmation}")
     })?;
 
     // Determine the output directory
@@ -1041,7 +1028,7 @@ pub async fn run_receive_files(
                     .with_context(
                         || "Failed to save default receive directory",
                     )?;
-                println!("💾 Saved '{}' as default receive directory", dir);
+                println!("💾 Saved '{dir}' as default receive directory");
             }
 
             path

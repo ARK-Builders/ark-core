@@ -163,7 +163,7 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
     }
 
     if let Some(name) = profile.name.strip_prefix("arkdrop-") {
-        println!("👤 Sender name: {}", name);
+        println!("👤 Sender name: {name}");
     } else {
         println!("👤 Sender name: {}", profile.name);
     }
@@ -194,19 +194,19 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     println!("📥 Preparing to receive files...");
 
     if let Some(ref dir) = output_dir {
-        println!("📁 Output directory: {}", dir);
+        println!("📁 Output directory: {dir}");
     } else if let Some(default_dir) = get_default_receive_dir()? {
-        println!("📁 Using default directory: {}", default_dir);
+        println!("📁 Using default directory: {default_dir}");
     } else {
         let fallback = suggested_default_receive_dir();
         println!("📁 Using default directory: {}", fallback.display());
     }
 
-    println!("🎫 Ticket: {}", ticket);
-    println!("🔑 Confirmation: {}", confirmation);
+    println!("🎫 Ticket: {ticket}");
+    println!("🔑 Confirmation: {confirmation}");
 
     if let Some(name) = profile.name.strip_prefix("arkdrop-") {
-        println!("👤 Receiver name: {}", name);
+        println!("👤 Receiver name: {name}");
     } else {
         println!("👤 Receiver name: {}", profile.name);
     }
@@ -230,7 +230,7 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
     match matches.subcommand() {
         Some(("show", _)) => match get_default_receive_dir()? {
             Some(dir) => {
-                println!("📁 Default receive directory: {}", dir);
+                println!("📁 Default receive directory: {dir}");
             }
             None => {
                 println!("📁 No default receive directory set");
@@ -245,7 +245,7 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
             // Validate directory exists or can be created
             if !directory.exists() {
                 match std::fs::create_dir_all(directory) {
-                    Ok(_) => println!("📁 Created directory: {}", dir_str),
+                    Ok(_) => println!("📁 Created directory: {dir_str}"),
                     Err(e) => {
                         return Err(anyhow!(
                             "Failed to create directory '{}': {}",
@@ -257,7 +257,7 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
             }
 
             set_default_receive_dir(dir_str.clone())?;
-            println!("✅ Set default receive directory to: {}", dir_str);
+            println!("✅ Set default receive directory to: {dir_str}");
         }
         Some(("clear-receive-dir", _)) => {
             clear_default_receive_dir()?;

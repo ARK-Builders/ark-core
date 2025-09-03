@@ -29,7 +29,7 @@ impl NetworkSimulator {
         self.save_state()?;
 
         Command::new("sudo")
-            .args(&[
+            .args([
                 "tc",
                 "qdisc",
                 "add",
@@ -38,7 +38,7 @@ impl NetworkSimulator {
                 "root",
                 "netem",
                 "loss",
-                &format!("{}%", percentage),
+                &format!("{percentage}%"),
             ])
             .output()?;
 
@@ -53,7 +53,7 @@ impl NetworkSimulator {
         self.save_state()?;
 
         Command::new("sudo")
-            .args(&[
+            .args([
                 "tc",
                 "qdisc",
                 "add",
@@ -62,7 +62,7 @@ impl NetworkSimulator {
                 "root",
                 "netem",
                 "delay",
-                &format!("{}ms", delay_ms),
+                &format!("{delay_ms}ms"),
             ])
             .output()?;
 
@@ -77,7 +77,7 @@ impl NetworkSimulator {
         self.save_state()?;
 
         Command::new("sudo")
-            .args(&[
+            .args([
                 "tc",
                 "qdisc",
                 "add",
@@ -86,7 +86,7 @@ impl NetworkSimulator {
                 "root",
                 "tbf",
                 "rate",
-                &format!("{}kbit", rate_kbps),
+                &format!("{rate_kbps}kbit"),
                 "burst",
                 "32kbit",
                 "latency",
@@ -106,7 +106,7 @@ impl NetworkSimulator {
         self.save_state()?;
 
         Command::new("sudo")
-            .args(&[
+            .args([
                 "tc",
                 "qdisc",
                 "add",
@@ -115,8 +115,8 @@ impl NetworkSimulator {
                 "root",
                 "netem",
                 "delay",
-                &format!("{}ms", base_delay_ms),
-                &format!("{}ms", jitter_ms),
+                &format!("{base_delay_ms}ms"),
+                &format!("{jitter_ms}ms"),
                 "distribution",
                 "normal",
             ])
@@ -128,7 +128,7 @@ impl NetworkSimulator {
     /// Save current network state
     fn save_state(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let output = Command::new("sudo")
-            .args(&["tc", "qdisc", "show", "dev", &self.interface])
+            .args(["tc", "qdisc", "show", "dev", &self.interface])
             .output()?;
 
         self.original_state =
@@ -139,7 +139,7 @@ impl NetworkSimulator {
     /// Reset network to original state
     pub fn reset(&self) -> Result<(), Box<dyn std::error::Error>> {
         Command::new("sudo")
-            .args(&["tc", "qdisc", "del", "dev", &self.interface, "root"])
+            .args(["tc", "qdisc", "del", "dev", &self.interface, "root"])
             .output()
             .ok(); // Ignore errors as there might not be any qdisc to delete
 
@@ -163,7 +163,7 @@ impl ARKDropRunner {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         // Build the CLI in release mode if not already built
         Command::new("cargo")
-            .args(&["build", "--release"])
+            .args(["build", "--release"])
             .current_dir(".")
             .output()?;
 
@@ -180,7 +180,7 @@ impl ARKDropRunner {
     ) -> Result<(std::process::Child, String, String), Box<dyn std::error::Error>>
     {
         let child = Command::new(&self.binary_path)
-            .args(&[
+            .args([
                 "receive",
                 "--name",
                 name,
@@ -322,8 +322,8 @@ mod tests {
         // Create multiple test files
         let mut test_files = Vec::new();
         for i in 0..3 {
-            let file = temp_dir.path().join(format!("test{}.txt", i));
-            fs::write(&file, format!("Content {}", i))
+            let file = temp_dir.path().join(format!("test{i}.txt"));
+            fs::write(&file, format!("Content {i}"))
                 .expect("Failed to write test file");
             test_files.push(file);
         }
@@ -343,14 +343,14 @@ mod tests {
 
         // Verify all files were received
         for i in 0..3 {
-            let received_file = output_dir.join(format!("test{}.txt", i));
-            assert!(received_file.exists(), "File {} was not received", i);
+            let received_file = output_dir.join(format!("test{i}.txt"));
+            assert!(received_file.exists(), "File {i} was not received");
 
             let content = fs::read_to_string(&received_file)
                 .expect("Failed to read received file");
             assert_eq!(
                 content,
-                format!("Content {}", i),
+                format!("Content {i}"),
                 "File {} content mismatch",
                 i
             );
