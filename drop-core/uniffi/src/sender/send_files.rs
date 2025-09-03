@@ -136,7 +136,10 @@ impl arkdropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
         });
     }
 
-    fn notify_connecting(&self, event: arkdropx_sender::SendFilesConnectingEvent) {
+    fn notify_connecting(
+        &self,
+        event: arkdropx_sender::SendFilesConnectingEvent,
+    ) {
         return self
             .inner
             .notify_connecting(SendFilesConnectingEvent {

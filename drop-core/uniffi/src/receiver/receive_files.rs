@@ -118,7 +118,9 @@ pub struct ReceiveFilesFile {
 struct ReceiveFilesSubscriberAdapter {
     inner: Arc<dyn ReceiveFilesSubscriber>,
 }
-impl arkdropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
+impl arkdropx_receiver::ReceiveFilesSubscriber
+    for ReceiveFilesSubscriberAdapter
+{
     fn get_id(&self) -> String {
         return self.inner.get_id();
     }

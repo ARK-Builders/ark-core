@@ -63,7 +63,6 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use base64::{Engine, engine::general_purpose};
 use arkdropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
     ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
@@ -74,6 +73,7 @@ use arkdropx_sender::{
     SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
     SenderProfile, send_files,
 };
+use base64::{Engine, engine::general_purpose};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

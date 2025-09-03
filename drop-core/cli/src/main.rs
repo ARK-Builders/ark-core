@@ -1,10 +1,10 @@
 use anyhow::{Context, Result, anyhow};
-use clap::{Arg, ArgMatches, Command};
 use arkdrop::{
     Profile, clear_default_receive_dir, get_default_receive_dir,
     run_receive_files, run_send_files, set_default_receive_dir,
     suggested_default_receive_dir,
 };
+use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
 
 #[tokio::main]
