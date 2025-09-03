@@ -2,35 +2,36 @@
 name = "arkdrop"
 version = "1.0.0"
 edition = "2024"
-description = "A CLI tool for sending and receiving files"
-authors = ["@oluiscabral"]
+description = "A CLI tool for sending and receiving data"
+authors = ["oluiscabral@ark-builders.dev"]
 license = "MIT"
-repository = "https://github.com/Ark-Builders/ark-core"
 readme = "README.md"
-keywords = ["cli", "file-transfer", "p2p"]
+repository = "https://github.com/Ark-Builders/ark-core"
 categories = ["command-line-utilities"]
+keywords = ["tui", "cli", "data-transfer", "file-transfer", "p2p"]
 
 [lib]
-name = "drop_cli"
 bench = false
+name = "arkdrop"
 
 [[bin]]
+bench = false
 name = "arkdrop"
 path = "src/main.rs"
-bench = false
 
 [dependencies]
-anyhow = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-uuid = { version = "1.0", features = ["v4"] }
-clap = { version = "4.0", features = ["derive"] }
-base64 = "0.21"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
+arkdrop-x-sender = { path = "../exchanges/sender" }
+arkdrop-x-receiver = { path = "../exchanges/receiver" }  
 
-dropx-receiver = { path = "../exchanges/receiver" }  
-dropx-sender = { path = "../exchanges/sender" }
+toml = "0.8"
+anyhow = "1.0"
+base64 = "0.21"
 indicatif = "0.18.0"
+
+uuid = { version = "1.0", features = ["v4"] }
+tokio = { version = "1.0", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3.0"

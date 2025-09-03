@@ -15,11 +15,11 @@ pub struct SendFilesRequest {
 
 /// Handle to a running send session ("bubble").
 ///
-/// This type wraps the underlying `dropx_sender::SendFilesBubble` and owns a
+/// This type wraps the underlying `arkdrop_x_sender::SendFilesBubble` and owns a
 /// dedicated Tokio runtime to drive async tasks. It exposes status accessors,
 /// subscription hooks, and cancellation.
 pub struct SendFilesBubble {
-    inner: dropx_sender::SendFilesBubble,
+    inner: arkdrop_x_sender::SendFilesBubble,
     _runtime: tokio::runtime::Runtime,
 }
 impl SendFilesBubble {
@@ -118,7 +118,7 @@ pub struct SendFilesProfile {
 struct SendFilesSubscriberAdapter {
     inner: Arc<dyn SendFilesSubscriber>,
 }
-impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
+impl arkdrop_x_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     fn get_id(&self) -> String {
         return self.inner.get_id();
     }
@@ -128,7 +128,7 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
         return self.inner.log(message);
     }
 
-    fn notify_sending(&self, event: dropx_sender::SendFilesSendingEvent) {
+    fn notify_sending(&self, event: arkdrop_x_sender::SendFilesSendingEvent) {
         return self.inner.notify_sending(SendFilesSendingEvent {
             name: event.name,
             sent: event.sent,
@@ -136,7 +136,7 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
         });
     }
 
-    fn notify_connecting(&self, event: dropx_sender::SendFilesConnectingEvent) {
+    fn notify_connecting(&self, event: arkdrop_x_sender::SendFilesConnectingEvent) {
         return self
             .inner
             .notify_connecting(SendFilesConnectingEvent {
@@ -162,7 +162,7 @@ pub async fn send_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return dropx_sender::send_files(adapted_request).await;
+            return arkdrop_x_sender::send_files(adapted_request).await;
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
     return Ok(Arc::new(SendFilesBubble {
@@ -171,15 +171,15 @@ pub async fn send_files(
     }));
 }
 
-/// Convert the high-level request into the dropx_sender request format.
+/// Convert the high-level request into the arkdrop_x_sender request format.
 ///
 /// - Copies metadata and files.
 /// - Wraps `SenderFileData` with an adapter implementing the dropx trait.
 /// - Supplies default config if none was provided.
 fn create_adapted_request(
     request: SendFilesRequest,
-) -> dropx_sender::SendFilesRequest {
-    let profile = dropx_sender::SenderProfile {
+) -> arkdrop_x_sender::SendFilesRequest {
+    let profile = arkdrop_x_sender::SenderProfile {
         name: request.profile.name,
         avatar_b64: request.profile.avatar_b64,
     };
@@ -188,20 +188,20 @@ fn create_adapted_request(
         .into_iter()
         .map(|f| {
             let data = SenderFileDataAdapter { inner: f.data };
-            return dropx_sender::SenderFile {
+            return arkdrop_x_sender::SenderFile {
                 name: f.name,
                 data: Arc::new(data),
             };
         })
         .collect();
     let config = match request.config {
-        Some(config) => dropx_sender::SenderConfig {
+        Some(config) => arkdrop_x_sender::SenderConfig {
             chunk_size: config.chunk_size,
             parallel_streams: config.parallel_streams,
         },
-        None => dropx_sender::SenderConfig::default(),
+        None => arkdrop_x_sender::SenderConfig::default(),
     };
-    return dropx_sender::SendFilesRequest {
+    return arkdrop_x_sender::SendFilesRequest {
         profile,
         files,
         config,

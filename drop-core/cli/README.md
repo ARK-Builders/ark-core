@@ -1,6 +1,6 @@
-# ARK Drop CLI
+# ARK Drop
 
-A clean, user-friendly CLI tool for sending and receiving files with customizable profiles.
+A clean, user-friendly CLI tool for sending and receiving data with customizable profiles.
 
 ## Features
 

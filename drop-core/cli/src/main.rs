@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Arg, ArgMatches, Command};
-use drop_cli::{
+use arkdrop::{
     Profile, clear_default_receive_dir, get_default_receive_dir,
     run_receive_files, run_send_files, set_default_receive_dir,
     suggested_default_receive_dir,
@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
 
 fn build_cli() -> Command {
     Command::new("arkdrop")
-        .about("A ARK Drop CLI tool for sending and receiving files")
+        .about("A ARK Drop tool for sending and receiving files")
         .version("1.0.0")
         .author("oluiscabral@ark-builders.dev")
         .arg_required_else_help(true)
@@ -124,7 +124,7 @@ fn build_cli() -> Command {
         )
         .subcommand(
             Command::new("config")
-                .about("Manage CLI configuration")
+                .about("Manage ARK Drop configuration")
                 .subcommand(
                     Command::new("show")
                         .about("Show current configuration")
@@ -187,7 +187,7 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
     let verbose = matches.get_flag("verbose");
-    let save_dir = matches.get_flag("save-dir");
+    let save_dir = matches.get_flag("save-output");
 
     let profile = build_profile(matches)?;
 

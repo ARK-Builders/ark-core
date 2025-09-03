@@ -222,9 +222,7 @@ impl ARKDropRunner {
             args.push(file.to_str().unwrap().to_string());
         }
 
-        args.push("--ticket".to_string());
         args.push(ticket.to_string());
-        args.push("--code".to_string());
         args.push(code.to_string());
 
         let output = Command::new(&self.binary_path)

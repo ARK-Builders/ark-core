@@ -1,6 +1,6 @@
 //! Public receiver-facing types re-exported to foreign bindings.
 //!
-//! These are thin, typed wrappers around the lower-level `dropx_receiver`
+//! These are thin, typed wrappers around the lower-level `arkdrop_x_receiver`
 //! crate.
 
 mod receive_files;

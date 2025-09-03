@@ -28,7 +28,7 @@
 //!
 //! Send files
 //! ```no_run
-//! use drop_cli::{run_send_files, Profile};
+//! use arkdrop::{run_send_files, Profile};
 //! # async fn demo() -> anyhow::Result<()> {
 //! let profile = Profile::new("Alice".into(), None);
 //! run_send_files(vec!["/path/file1.bin".into(), "/path/file2.jpg".into()], profile, true).await?;
@@ -38,7 +38,7 @@
 //!
 //! Receive files
 //! ```no_run
-//! use drop_cli::{run_receive_files, Profile};
+//! use arkdrop::{run_receive_files, Profile};
 //! # async fn demo() -> anyhow::Result<()> {
 //! let profile = Profile::default();
 //! // If you want to persist the directory, set save_dir = true
@@ -64,12 +64,12 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine, engine::general_purpose};
-use dropx_receiver::{
+use arkdrop_x_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
     ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
     receive_files,
 };
-use dropx_sender::{
+use arkdrop_x_sender::{
     SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
     SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
     SenderProfile, send_files,
@@ -239,7 +239,7 @@ impl Profile {
     ///
     /// Example:
     /// ```no_run
-    /// use drop_cli::Profile;
+    /// use arkdrop::Profile;
     /// let p = Profile::new("Alice".into(), None);
     /// ```
     pub fn new(name: String, avatar_b64: Option<String>) -> Self {
@@ -271,7 +271,7 @@ impl Profile {
 
 /// Enhanced file sender with error handling and progress tracking.
 ///
-/// Wraps the lower-level dropx_sender API and provides:
+/// Wraps the lower-level arkdrop_x_sender API and provides:
 /// - Validation for input paths.
 /// - Subscription to transfer events with progress bars.
 /// - Clean cancellation via Ctrl+C.
@@ -384,7 +384,7 @@ impl FileSender {
 
 /// Enhanced file receiver with error handling and progress tracking.
 ///
-/// Wraps the lower-level dropx_receiver API and provides:
+/// Wraps the lower-level arkdrop_x_receiver API and provides:
 /// - Output directory management (unique subdir per transfer).
 /// - Subscription to events with per-file progress bars.
 /// - Clean cancellation via Ctrl+C.
@@ -488,7 +488,7 @@ impl FileReceiver {
     }
 }
 
-async fn wait_for_send_completion(bubble: &dropx_sender::SendFilesBubble) {
+async fn wait_for_send_completion(bubble: &arkdrop_x_sender::SendFilesBubble) {
     loop {
         if bubble.is_finished() {
             break;
@@ -498,7 +498,7 @@ async fn wait_for_send_completion(bubble: &dropx_sender::SendFilesBubble) {
 }
 
 async fn wait_for_receive_completion(
-    bubble: &dropx_receiver::ReceiveFilesBubble,
+    bubble: &arkdrop_x_receiver::ReceiveFilesBubble,
 ) {
     loop {
         if bubble.is_finished() {
@@ -963,7 +963,7 @@ impl SenderFileData for FileData {
 ///
 /// Example:
 /// ```no_run
-/// use drop_cli::{run_send_files, Profile};
+/// use arkdrop::{run_send_files, Profile};
 /// # async fn demo() -> anyhow::Result<()> {
 /// run_send_files(vec!["/tmp/a.bin".into()], Profile::default(), false).await?;
 /// # Ok(())
@@ -1003,7 +1003,7 @@ pub async fn run_send_files(
 ///
 /// Example:
 /// ```no_run
-/// use drop_cli::{run_receive_files, Profile};
+/// use arkdrop::{run_receive_files, Profile};
 /// # async fn demo() -> anyhow::Result<()> {
 /// run_receive_files(
 ///     Some("/tmp/downloads".into()),
