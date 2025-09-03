@@ -155,10 +155,13 @@ jobs:
         working-directory: drop-core/cli
         run: |
           # Should fail with missing file error
-          if ./target/release/arkdrop send --name "Test" nonexistent.txt 2>&1 | grep -q "not found\|does not exist"; then
+          OUTPUT=$(./target/release/arkdrop send --name "Test" nonexistent.txt 2>&1) || true
+          if echo "$OUTPUT" | grep -qi "File does not exist\|not found\|does not exist"; then
             echo "✅ Missing file error handled correctly"
+            echo "Error output: $OUTPUT"
           else
             echo "❌ Missing file error not handled properly"
+            echo "Actual output: $OUTPUT"
             exit 1
           fi
       
