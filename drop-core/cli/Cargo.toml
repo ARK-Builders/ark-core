@@ -8,7 +8,7 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/Ark-Builders/ark-core"
 categories = ["command-line-utilities"]
-keywords = ["tui", "cli", "data-transfer", "file-transfer", "p2p"]
+keywords = ["cli", "data-transfer", "tui", "file-transfer", "p2p"]
 
 [lib]
 bench = false
