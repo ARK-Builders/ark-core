@@ -21,8 +21,8 @@
 //!
 //! Configuration
 //! - Stores a default receive directory in:
-//!   $XDG_CONFIG_HOME/arkdrop/config.toml or
-//!   $HOME/.config/arkdrop/config.toml if XDG_CONFIG_HOME is not set.
+//!   $XDG_CONFIG_HOME/arkdrop/config.toml or $HOME/.config/arkdrop/config.toml
+//!   if XDG_CONFIG_HOME is not set.
 //!
 //! Examples
 //!
