@@ -410,7 +410,6 @@ jobs:
       - name: Test transfer under ${{ matrix.condition }}
         timeout-minutes: 10
         run: |
-
           # Create test file
           dd if=/dev/urandom of=test-${{ matrix.condition }}.bin bs=1M count=5
 
