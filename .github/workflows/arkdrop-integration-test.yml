@@ -281,11 +281,10 @@ jobs:
           profile: minimal
           override: true
 
-      - name: Build ARK Drop (release mode)
+      - name: Build ARK Drop
         run: |
-          # Just check compilation without building
-          cargo check -p arkdrop --release
-          echo "✅ ARK Drop compilation checked successfully"
+          cargo build -p arkdrop --release
+          echo "✅ Binary built successfully at target/release/arkdrop"
 
       - name: Run ARK Drop performance checks
         run: |
