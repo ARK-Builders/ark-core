@@ -55,16 +55,13 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Cargo check
-        working-directory: drop-core/cli
-        run: cargo check --all-targets --all-features
+        run: cargo check -p arkdrop --all-targets --all-features
 
       - name: Cargo fmt check
-        working-directory: drop-core/cli
-        run: cargo fmt --all -- --check
+        run: cargo fmt -p arkdrop --all -- --check
 
       - name: Cargo clippy
-        working-directory: drop-core/cli
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy -p arkdrop --all-targets --all-features -- -D warnings
 
   # Test 1: Single closed network (localhost)
   test-single-network:
@@ -95,8 +92,15 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build CLI
-        working-directory: drop-core/cli
-        run: cargo build --release
+        run: |
+          cargo build --release -p arkdrop
+          # Verify binary was created at workspace root
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          echo "✅ Binary built successfully at target/release/arkdrop"
 
       - name: Setup test environment
         run: |
@@ -109,12 +113,10 @@ jobs:
       - name: Test localhost transfer
         timeout-minutes: 5
         run: |
-          cd drop-core/cli
-
           # Start receiver in background
           ./target/release/arkdrop receive \
             --name "Test Receiver" \
-            --dir ../../received-files \
+            --dir received-files \
             --verbose > receiver.log 2>&1 &
           RECEIVER_PID=$!
 
@@ -129,9 +131,9 @@ jobs:
           ./target/release/arkdrop send \
             --name "Test Sender" \
             --verbose \
-            ../../test-files/test1.txt \
-            ../../test-files/test2.txt \
-            ../../test-files/large.bin \
+            test-files/test1.txt \
+            test-files/test2.txt \
+            test-files/large.bin \
             --ticket "$TICKET" \
             --code "$CODE" || (kill $RECEIVER_PID; exit 1)
 
@@ -139,25 +141,25 @@ jobs:
           wait $RECEIVER_PID
 
           # Verify files
-          if [ ! -f "../../received-files/test1.txt" ]; then
+          if [ ! -f "received-files/test1.txt" ]; then
             echo "Error: test1.txt not received"
             exit 1
           fi
 
-          if [ ! -f "../../received-files/test2.txt" ]; then
+          if [ ! -f "received-files/test2.txt" ]; then
             echo "Error: test2.txt not received"
             exit 1
           fi
 
-          if [ ! -f "../../received-files/large.bin" ]; then
+          if [ ! -f "received-files/large.bin" ]; then
             echo "Error: large.bin not received"
             exit 1
           fi
 
           # Verify content integrity
-          diff ../../test-files/test1.txt ../../received-files/test1.txt
-          diff ../../test-files/test2.txt ../../received-files/test2.txt
-          diff ../../test-files/large.bin ../../received-files/large.bin
+          diff test-files/test1.txt received-files/test1.txt
+          diff test-files/test2.txt received-files/test2.txt
+          diff test-files/large.bin received-files/large.bin
 
           echo "✅ Localhost transfer test passed"
 
@@ -354,8 +356,15 @@ jobs:
           override: true
 
       - name: Build CLI
-        working-directory: drop-core/cli
-        run: cargo build --release
+        run: |
+          cargo build --release -p arkdrop
+          # Verify binary was created at workspace root
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          echo "✅ Binary built successfully at target/release/arkdrop"
 
       - name: Test with NAT
         timeout-minutes: 10
@@ -366,7 +375,7 @@ jobs:
           echo "NAT test content" > test-nat.txt
 
           # Copy binary to accessible location
-          sudo cp drop-core/cli/target/release/arkdrop /usr/local/bin/
+          sudo cp target/release/arkdrop /usr/local/bin/
 
           # Start receiver behind NAT
           sudo ip netns exec receiver_net /usr/local/bin/arkdrop receive \
@@ -423,8 +432,15 @@ jobs:
           override: true
 
       - name: Build CLI
-        working-directory: drop-core/cli
-        run: cargo build --release
+        run: |
+          cargo build --release -p arkdrop
+          # Verify binary was created at workspace root
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          echo "✅ Binary built successfully at target/release/arkdrop"
 
       - name: Configure network condition - ${{ matrix.condition }}
         run: |
@@ -454,7 +470,6 @@ jobs:
       - name: Test transfer under ${{ matrix.condition }}
         timeout-minutes: 10
         run: |
-          cd drop-core/cli
 
           # Create test file
           dd if=/dev/urandom of=test-${{ matrix.condition }}.bin bs=1M count=5
@@ -520,7 +535,7 @@ jobs:
     if: always()
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         continue-on-error: true
 
       - name: Generate test report
@@ -564,7 +579,7 @@ jobs:
           cat test-report.md
 
       - name: Upload test report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-report
           path: test-report.md

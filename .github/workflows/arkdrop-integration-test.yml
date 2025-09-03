@@ -59,8 +59,15 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       
       - name: Build CLI
-        working-directory: drop-core/cli
-        run: cargo build --release
+        run: |
+          cargo build --release -p arkdrop
+          # Verify binary was created at workspace root
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          echo "✅ Binary built successfully at target/release/arkdrop"
       
       - name: Generate test files for ${{ matrix.scenario.name }}
         run: |
@@ -92,8 +99,14 @@ jobs:
       - name: Test transfer - ${{ matrix.scenario.name }}
         timeout-minutes: 15
         run: |
-          cd drop-core/cli
           mkdir -p received-${{ matrix.scenario.name }}
+          
+          # Verify binary exists
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
           
           # Start receiver
           ./target/release/arkdrop receive \
@@ -111,7 +124,7 @@ jobs:
           # Send files
           FILES=""
           for file in ${{ matrix.scenario.files }}; do
-            FILES="$FILES ../../test-files-${{ matrix.scenario.name }}/$file"
+            FILES="$FILES test-files-${{ matrix.scenario.name }}/$file"
           done
           
           ./target/release/arkdrop send \
@@ -148,12 +161,25 @@ jobs:
           override: true
       
       - name: Build CLI
-        working-directory: drop-core/cli
-        run: cargo build --release
+        run: |
+          cargo build --release -p arkdrop
+          # Verify binary was created at workspace root
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          echo "✅ Binary built successfully at target/release/arkdrop"
       
       - name: Test missing file error
-        working-directory: drop-core/cli
         run: |
+          # Verify binary exists first
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          
           # Should fail with missing file error
           OUTPUT=$(./target/release/arkdrop send --name "Test" nonexistent.txt 2>&1) || true
           if echo "$OUTPUT" | grep -qi "File does not exist\|not found\|does not exist"; then
@@ -166,7 +192,6 @@ jobs:
           fi
       
       - name: Test invalid ticket format
-        working-directory: drop-core/cli
         run: |
           # Create a test file
           echo "test" > test.txt
@@ -181,8 +206,6 @@ jobs:
       
       - name: Test permission denied
         run: |
-          cd drop-core/cli
-          
           # Create read-only directory
           mkdir -p /tmp/readonly
           chmod 555 /tmp/readonly
@@ -202,8 +225,6 @@ jobs:
       - name: Test interrupted transfer
         timeout-minutes: 5
         run: |
-          cd drop-core/cli
-          
           # Create large file
           dd if=/dev/urandom of=large.bin bs=1M count=50
           
@@ -258,13 +279,25 @@ jobs:
           override: true
       
       - name: Build CLI
-        working-directory: drop-core/cli
-        run: cargo build --release
+        run: |
+          cargo build --release -p arkdrop
+          # Verify binary was created at workspace root
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          echo "✅ Binary built successfully at target/release/arkdrop"
       
       - name: Test multiple simultaneous transfers
         timeout-minutes: 10
         run: |
-          cd drop-core/cli
+          # Verify binary exists
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
           
           # Create test files for different transfers
           for i in {1..3}; do
@@ -338,8 +371,6 @@ jobs:
       
       - name: Run transfer benchmarks
         run: |
-          cd drop-core/cli
-          
           # Create benchmark results file
           echo "# ARK Drop CLI Performance Benchmarks" > benchmark-results.md
           echo "" >> benchmark-results.md
@@ -391,10 +422,10 @@ jobs:
           cat benchmark-results.md
       
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
-          path: drop-core/cli/benchmark-results.md
+          path: benchmark-results.md
           retention-days: 30
 
   # Memory and resource usage tests
@@ -417,13 +448,25 @@ jobs:
           override: true
       
       - name: Build CLI
-        working-directory: drop-core/cli
-        run: cargo build --release
+        run: |
+          cargo build --release -p arkdrop
+          # Verify binary was created at workspace root
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
+          echo "✅ Binary built successfully at target/release/arkdrop"
       
       - name: Monitor resource usage during transfer
         timeout-minutes: 10
         run: |
-          cd drop-core/cli
+          # Verify binary exists
+          if [ ! -f "target/release/arkdrop" ]; then
+            echo "❌ Binary not found at target/release/arkdrop"
+            ls -la target/release/
+            exit 1
+          fi
           
           # Create large test file
           dd if=/dev/urandom of=resource-test.bin bs=1M count=200
