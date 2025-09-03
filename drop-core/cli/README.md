@@ -22,8 +22,7 @@ Or build from source:
 
 ```bash
 git clone https://github.com/ARK-Builders/ark-core
-cd drop-core/cli
-cargo build --release
+cargo build -p arkdrop --release
 ```
 
 ## Usage

@@ -59,9 +59,8 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build ARK Drop
-        working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -142,9 +141,8 @@ jobs:
           override: true
 
       - name: Build ARK Drop
-        working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -243,9 +241,8 @@ jobs:
           override: true
 
       - name: Build ARK Drop
-        working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -300,9 +297,8 @@ jobs:
           override: true
 
       - name: Build ARK Drop (release mode)
-        working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -371,9 +367,8 @@ jobs:
           override: true
 
       - name: Build ARK Drop
-        working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
