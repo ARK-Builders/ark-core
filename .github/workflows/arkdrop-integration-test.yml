@@ -114,7 +114,7 @@ jobs:
           # Validate that files exist (without running the actual send command)
           echo "📋 Validating test files for scenario ${{ matrix.scenario.name }}:"
           for file in ${{ matrix.scenario.files }}; do
-            file_path="../../test-files-${{ matrix.scenario.name }}/$file"
+            file_path="test-files-${{ matrix.scenario.name }}/$file"
             if [ -f "$file_path" ]; then
               echo "   ✅ $file_path exists"
             else
