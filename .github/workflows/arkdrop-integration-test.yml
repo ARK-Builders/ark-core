@@ -1,0 +1,470 @@
+name: ARK Drop CLI Integration Tests
+
+on:
+  push:
+    paths:
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/cli/**"
+      - '.github/workflows/arkdrop-integration-test.yml'
+  pull_request:
+    paths:
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/cli/**"
+  workflow_dispatch:
+
+jobs:
+  test-file-scenarios:
+    name: File Transfer Scenarios
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        scenario:
+          - name: small-text
+            files: "small.txt"
+            size: "1K"
+            type: "text"
+          - name: large-binary
+            files: "large.bin"
+            size: "100M"
+            type: "binary"
+          - name: multiple-mixed
+            files: "doc.pdf image.jpg data.csv"
+            size: "mixed"
+            type: "mixed"
+          - name: unicode-names
+            files: "文件.txt файл.doc αρχείο.pdf"
+            size: "1K"
+            type: "unicode"
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Cache cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build CLI
+        working-directory: drop-core/cli
+        run: cargo build --release
+      
+      - name: Generate test files for ${{ matrix.scenario.name }}
+        run: |
+          mkdir -p test-files-${{ matrix.scenario.name }}
+          
+          case "${{ matrix.scenario.type }}" in
+            text)
+              for file in ${{ matrix.scenario.files }}; do
+                head -c ${{ matrix.scenario.size }} /dev/urandom | base64 > "test-files-${{ matrix.scenario.name }}/$file"
+              done
+              ;;
+            binary)
+              for file in ${{ matrix.scenario.files }}; do
+                dd if=/dev/urandom of="test-files-${{ matrix.scenario.name }}/$file" bs=${{ matrix.scenario.size }} count=1
+              done
+              ;;
+            mixed)
+              echo "PDF content" > "test-files-${{ matrix.scenario.name }}/doc.pdf"
+              echo "JPG content" > "test-files-${{ matrix.scenario.name }}/image.jpg"
+              echo "CSV,data,here" > "test-files-${{ matrix.scenario.name }}/data.csv"
+              ;;
+            unicode)
+              for file in ${{ matrix.scenario.files }}; do
+                echo "Unicode test content" > "test-files-${{ matrix.scenario.name }}/$file"
+              done
+              ;;
+          esac
+      
+      - name: Test transfer - ${{ matrix.scenario.name }}
+        timeout-minutes: 15
+        run: |
+          cd drop-core/cli
+          mkdir -p received-${{ matrix.scenario.name }}
+          
+          # Start receiver
+          ./target/release/arkdrop receive \
+            --name "Scenario Receiver" \
+            --dir received-${{ matrix.scenario.name }} \
+            --verbose > receiver.log 2>&1 &
+          RECEIVER_PID=$!
+          
+          sleep 2
+          
+          # Extract connection info
+          TICKET=$(grep -o 'Ticket: [^ ]*' receiver.log | cut -d' ' -f2)
+          CODE=$(grep -o 'Code: [^ ]*' receiver.log | cut -d' ' -f2)
+          
+          # Send files
+          FILES=""
+          for file in ${{ matrix.scenario.files }}; do
+            FILES="$FILES ../../test-files-${{ matrix.scenario.name }}/$file"
+          done
+          
+          ./target/release/arkdrop send \
+            --name "Scenario Sender" \
+            --verbose \
+            $FILES \
+            --ticket "$TICKET" \
+            --code "$CODE"
+          
+          wait $RECEIVER_PID
+          
+          # Verify all files received
+          for file in ${{ matrix.scenario.files }}; do
+            if [ ! -f "received-${{ matrix.scenario.name }}/$file" ]; then
+              echo "❌ File $file not received"
+              exit 1
+            fi
+          done
+          
+          echo "✅ Scenario ${{ matrix.scenario.name }} completed successfully"
+
+  # Test error handling and edge cases
+  test-error-handling:
+    name: Error Handling Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Build CLI
+        working-directory: drop-core/cli
+        run: cargo build --release
+      
+      - name: Test missing file error
+        working-directory: drop-core/cli
+        run: |
+          # Should fail with missing file error
+          if ./target/release/arkdrop send --name "Test" nonexistent.txt 2>&1 | grep -q "not found\|does not exist"; then
+            echo "✅ Missing file error handled correctly"
+          else
+            echo "❌ Missing file error not handled properly"
+            exit 1
+          fi
+      
+      - name: Test invalid ticket format
+        working-directory: drop-core/cli
+        run: |
+          # Create a test file
+          echo "test" > test.txt
+          
+          # Should fail with invalid ticket
+          if ./target/release/arkdrop send --name "Test" test.txt --ticket "invalid" --code "123" 2>&1 | grep -q "invalid\|error"; then
+            echo "✅ Invalid ticket error handled correctly"
+          else
+            echo "❌ Invalid ticket error not handled properly"
+            exit 1
+          fi
+      
+      - name: Test permission denied
+        run: |
+          cd drop-core/cli
+          
+          # Create read-only directory
+          mkdir -p /tmp/readonly
+          chmod 555 /tmp/readonly
+          
+          # Should fail with permission error
+          if ./target/release/arkdrop receive --name "Test" --dir /tmp/readonly 2>&1 | grep -q "permission\|denied\|access"; then
+            echo "✅ Permission error handled correctly"
+          else
+            echo "❌ Permission error not handled properly"
+            exit 1
+          fi
+          
+          # Cleanup
+          chmod 755 /tmp/readonly
+          rmdir /tmp/readonly
+      
+      - name: Test interrupted transfer
+        timeout-minutes: 5
+        run: |
+          cd drop-core/cli
+          
+          # Create large file
+          dd if=/dev/urandom of=large.bin bs=1M count=50
+          
+          # Start receiver
+          ./target/release/arkdrop receive \
+            --name "Interrupt Test" \
+            --dir /tmp/interrupted \
+            --verbose > receiver.log 2>&1 &
+          RECEIVER_PID=$!
+          
+          sleep 2
+          
+          # Get connection info
+          TICKET=$(grep -o 'Ticket: [^ ]*' receiver.log | cut -d' ' -f2)
+          CODE=$(grep -o 'Code: [^ ]*' receiver.log | cut -d' ' -f2)
+          
+          # Start sender in background
+          ./target/release/arkdrop send \
+            --name "Interrupt Sender" \
+            --verbose \
+            large.bin \
+            --ticket "$TICKET" \
+            --code "$CODE" > sender.log 2>&1 &
+          SENDER_PID=$!
+          
+          # Let transfer start
+          sleep 3
+          
+          # Interrupt transfer
+          kill -TERM $SENDER_PID 2>/dev/null || true
+          kill -TERM $RECEIVER_PID 2>/dev/null || true
+          
+          # Check for graceful shutdown messages
+          if grep -q "interrupt\|cancel\|abort\|stopping" sender.log receiver.log; then
+            echo "✅ Transfer interruption handled gracefully"
+          else
+            echo "⚠️ Transfer interruption handling unclear"
+          fi
+
+  # Test concurrent transfers
+  test-concurrent-transfers:
+    name: Concurrent Transfer Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Build CLI
+        working-directory: drop-core/cli
+        run: cargo build --release
+      
+      - name: Test multiple simultaneous transfers
+        timeout-minutes: 10
+        run: |
+          cd drop-core/cli
+          
+          # Create test files for different transfers
+          for i in {1..3}; do
+            mkdir -p transfer-$i/send transfer-$i/receive
+            echo "Content for transfer $i" > transfer-$i/send/file$i.txt
+            dd if=/dev/urandom of=transfer-$i/send/data$i.bin bs=1M count=5
+          done
+          
+          # Start multiple receivers
+          for i in {1..3}; do
+            ./target/release/arkdrop receive \
+              --name "Receiver $i" \
+              --dir transfer-$i/receive \
+              --verbose > transfer-$i/receiver.log 2>&1 &
+            echo $! > transfer-$i/receiver.pid
+          done
+          
+          sleep 3
+          
+          # Start multiple senders
+          for i in {1..3}; do
+            TICKET=$(grep -o 'Ticket: [^ ]*' transfer-$i/receiver.log | cut -d' ' -f2)
+            CODE=$(grep -o 'Code: [^ ]*' transfer-$i/receiver.log | cut -d' ' -f2)
+            
+            ./target/release/arkdrop send \
+              --name "Sender $i" \
+              --verbose \
+              transfer-$i/send/file$i.txt \
+              transfer-$i/send/data$i.bin \
+              --ticket "$TICKET" \
+              --code "$CODE" > transfer-$i/sender.log 2>&1 &
+            echo $! > transfer-$i/sender.pid
+          done
+          
+          # Wait for all transfers to complete
+          for i in {1..3}; do
+            wait $(cat transfer-$i/sender.pid)
+            wait $(cat transfer-$i/receiver.pid)
+          done
+          
+          # Verify all transfers completed successfully
+          FAILED=0
+          for i in {1..3}; do
+            if [ ! -f "transfer-$i/receive/file$i.txt" ] || [ ! -f "transfer-$i/receive/data$i.bin" ]; then
+              echo "❌ Transfer $i failed"
+              FAILED=1
+            else
+              echo "✅ Transfer $i completed successfully"
+            fi
+          done
+          
+          exit $FAILED
+
+  # Performance benchmarks
+  performance-benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Build CLI (release mode)
+        working-directory: drop-core/cli
+        run: cargo build --release
+      
+      - name: Run transfer benchmarks
+        run: |
+          cd drop-core/cli
+          
+          # Create benchmark results file
+          echo "# ARK Drop CLI Performance Benchmarks" > benchmark-results.md
+          echo "" >> benchmark-results.md
+          echo "| File Size | Transfer Time | Throughput |" >> benchmark-results.md
+          echo "|-----------|---------------|------------|" >> benchmark-results.md
+          
+          # Test different file sizes
+          for size in 1M 10M 50M 100M; do
+            # Create test file
+            dd if=/dev/urandom of=benchmark-$size.bin bs=$size count=1 2>/dev/null
+            
+            # Start receiver
+            ./target/release/arkdrop receive \
+              --name "Benchmark Receiver" \
+              --dir /tmp/benchmark \
+              --verbose > receiver.log 2>&1 &
+            RECEIVER_PID=$!
+            
+            sleep 2
+            
+            # Get connection info
+            TICKET=$(grep -o 'Ticket: [^ ]*' receiver.log | cut -d' ' -f2)
+            CODE=$(grep -o 'Code: [^ ]*' receiver.log | cut -d' ' -f2)
+            
+            # Measure transfer time
+            START_TIME=$(date +%s.%N)
+            
+            ./target/release/arkdrop send \
+              --name "Benchmark Sender" \
+              --verbose \
+              benchmark-$size.bin \
+              --ticket "$TICKET" \
+              --code "$CODE"
+            
+            END_TIME=$(date +%s.%N)
+            
+            # Calculate metrics
+            DURATION=$(echo "$END_TIME - $START_TIME" | bc)
+            SIZE_BYTES=$(stat -c%s benchmark-$size.bin)
+            THROUGHPUT=$(echo "scale=2; $SIZE_BYTES / $DURATION / 1048576" | bc)
+            
+            echo "| $size | ${DURATION}s | ${THROUGHPUT} MB/s |" >> benchmark-results.md
+            
+            # Cleanup
+            rm -rf /tmp/benchmark/*
+            wait $RECEIVER_PID
+          done
+          
+          cat benchmark-results.md
+      
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: drop-core/cli/benchmark-results.md
+          retention-days: 30
+
+  # Memory and resource usage tests
+  test-resource-usage:
+    name: Resource Usage Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install monitoring tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sysstat valgrind time
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Build CLI
+        working-directory: drop-core/cli
+        run: cargo build --release
+      
+      - name: Monitor resource usage during transfer
+        timeout-minutes: 10
+        run: |
+          cd drop-core/cli
+          
+          # Create large test file
+          dd if=/dev/urandom of=resource-test.bin bs=1M count=200
+          
+          # Start resource monitoring
+          sar -u -r 1 > resource-usage.log 2>&1 &
+          SAR_PID=$!
+          
+          # Start receiver with memory monitoring
+          /usr/bin/time -v ./target/release/arkdrop receive \
+            --name "Resource Receiver" \
+            --dir /tmp/resource-test \
+            --verbose > receiver.log 2>&1 &
+          RECEIVER_PID=$!
+          
+          sleep 3
+          
+          # Get connection info
+          TICKET=$(grep -o 'Ticket: [^ ]*' receiver.log | cut -d' ' -f2)
+          CODE=$(grep -o 'Code: [^ ]*' receiver.log | cut -d' ' -f2)
+          
+          # Send with memory monitoring
+          /usr/bin/time -v ./target/release/arkdrop send \
+            --name "Resource Sender" \
+            --verbose \
+            resource-test.bin \
+            --ticket "$TICKET" \
+            --code "$CODE" 2> sender-memory.log
+          
+          # Stop monitoring
+          kill $SAR_PID
+          wait $RECEIVER_PID
+          
+          # Extract and display resource usage
+          echo "=== Memory Usage Stats ==="
+          grep "Maximum resident" sender-memory.log || echo "Memory stats not available"
+          
+          echo "=== CPU Usage Stats ==="
+          sar -u -f /var/log/sysstat/sa$(date +%d) | tail -n 5
+          
+          # Check for memory leaks (basic check)
+          MAX_MEM=$(grep "Maximum resident" sender-memory.log | awk '{print $6}')
+          if [ "$MAX_MEM" -lt "500000" ]; then  # Less than 500MB
+            echo "✅ Memory usage within acceptable limits"
+          else
+            echo "⚠️ High memory usage detected: ${MAX_MEM}KB"
+          fi

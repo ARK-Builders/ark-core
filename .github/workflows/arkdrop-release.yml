@@ -1,9 +1,11 @@
-name: Drop CLI Release
+name: ARK Drop CLI Release
 
 on:
   push:
     paths:
-      - "drop-core/**"
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/cli/**"
   workflow_dispatch:
 
 jobs:
@@ -100,7 +102,7 @@ jobs:
 
       - name: Build binary
         run: |
-          cargo build --release --target ${{ matrix.target }} --package drop-cli
+          cargo build --release --target ${{ matrix.target }} --package arkdrop
 
       - name: Create archive name
         id: archive
@@ -109,10 +111,10 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION="drop-cli-v${{ github.run_id }}"
-            VERSION="${VERSION#drop-cli-v}"
+            VERSION="arkdrop-v${{ github.run_id }}"
+            VERSION="${VERSION#arkdrop-v}"
           fi
-          ARCHIVE_NAME="drop-cli-${VERSION}-${{ matrix.target }}"
+          ARCHIVE_NAME="arkdrop-${VERSION}-${{ matrix.target }}"
           echo "name=${ARCHIVE_NAME}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
@@ -121,9 +123,9 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           if [ "${{ matrix.target }}" == *"windows"* ]; then
-            BINARY_NAME="drop-cli.exe"
+            BINARY_NAME="arkdrop.exe"
           else
-            BINARY_NAME="drop-cli"
+            BINARY_NAME="arkdrop"
           fi
           tar -czf ${{ steps.archive.outputs.name }}.tar.gz ${BINARY_NAME}
           mv ${{ steps.archive.outputs.name }}.tar.gz ${{ github.workspace }}/
@@ -133,7 +135,7 @@ jobs:
         shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path "drop-cli.exe" -DestinationPath "${{ github.workspace }}/${{ steps.archive.outputs.name }}.zip"
+          Compress-Archive -Path "arkdrop.exe" -DestinationPath "${{ github.workspace }}/${{ steps.archive.outputs.name }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -154,8 +156,8 @@ jobs:
       - name: Set version
         id: version
         run: |
-          TAG_NAME="drop-cli-v${{ github.run_id }}"
-          VERSION="${TAG_NAME#drop-cli-v}"
+          TAG_NAME="arkdrop-v${{ github.run_id }}"
+          VERSION="${TAG_NAME#arkdrop-v}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
 
@@ -168,48 +170,48 @@ jobs:
         id: release_notes
         run: |
           cat > release_notes.md << 'EOF'
-          ## Drop CLI ${{ steps.version.outputs.version }}
+          ## ARK Drop CLI ${{ steps.version.outputs.version }}
 
           ### Downloads
 
           Choose the appropriate binary for your platform:
 
           #### Linux
-          - **x86_64 (glibc)**: `drop-cli-${{ steps.version.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz`
-          - **x86_64 (musl)**: `drop-cli-${{ steps.version.outputs.version }}-x86_64-unknown-linux-musl.tar.gz`
-          - **ARM64 (glibc)**: `drop-cli-${{ steps.version.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz`
-          - **ARM64 (musl)**: `drop-cli-${{ steps.version.outputs.version }}-aarch64-unknown-linux-musl.tar.gz`
-          - **ARMv7 (glibc)**: `drop-cli-${{ steps.version.outputs.version }}-armv7-unknown-linux-gnueabihf.tar.gz`
-          - **ARMv7 (musl)**: `drop-cli-${{ steps.version.outputs.version }}-armv7-unknown-linux-musleabihf.tar.gz`
+          - **x86_64 (glibc)**: `arkdrop-${{ steps.version.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz`
+          - **x86_64 (musl)**: `arkdrop-${{ steps.version.outputs.version }}-x86_64-unknown-linux-musl.tar.gz`
+          - **ARM64 (glibc)**: `arkdrop-${{ steps.version.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz`
+          - **ARM64 (musl)**: `arkdrop-${{ steps.version.outputs.version }}-aarch64-unknown-linux-musl.tar.gz`
+          - **ARMv7 (glibc)**: `arkdrop-${{ steps.version.outputs.version }}-armv7-unknown-linux-gnueabihf.tar.gz`
+          - **ARMv7 (musl)**: `arkdrop-${{ steps.version.outputs.version }}-armv7-unknown-linux-musleabihf.tar.gz`
 
           #### Windows
-          - **x86_64**: `drop-cli-${{ steps.version.outputs.version }}-x86_64-pc-windows-msvc.zip`
-          - **x86**: `drop-cli-${{ steps.version.outputs.version }}-i686-pc-windows-msvc.zip`
-          - **ARM64**: `drop-cli-${{ steps.version.outputs.version }}-aarch64-pc-windows-msvc.zip`
+          - **x86_64**: `arkdrop-${{ steps.version.outputs.version }}-x86_64-pc-windows-msvc.zip`
+          - **x86**: `arkdrop-${{ steps.version.outputs.version }}-i686-pc-windows-msvc.zip`
+          - **ARM64**: `arkdrop-${{ steps.version.outputs.version }}-aarch64-pc-windows-msvc.zip`
 
           #### macOS
-          - **Intel (x86_64)**: `drop-cli-${{ steps.version.outputs.version }}-x86_64-apple-darwin.tar.gz`
-          - **Apple Silicon (ARM64)**: `drop-cli-${{ steps.version.outputs.version }}-aarch64-apple-darwin.tar.gz`
+          - **Intel (x86_64)**: `arkdrop-${{ steps.version.outputs.version }}-x86_64-apple-darwin.tar.gz`
+          - **Apple Silicon (ARM64)**: `arkdrop-${{ steps.version.outputs.version }}-aarch64-apple-darwin.tar.gz`
 
           ### Installation
 
           1. Download the appropriate binary for your platform
           2. Extract the archive
           3. Move the binary to a location in your PATH (e.g., `/usr/local/bin` on Unix systems)
-          4. Make it executable (Unix systems): `chmod +x drop-cli`
+          4. Make it executable (Unix systems): `chmod +x arkdrop`
 
           ### Usage
 
-          Run `drop-cli --help` to see available commands and options.
+          Run `arkdrop --help` to see available commands and options.
           EOF
 
       - name: Create or update release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: Drop CLI ${{ steps.version.outputs.version }}
+          name: ARK Drop CLI ${{ steps.version.outputs.version }}
           body_path: release_notes.md
-          files: artifacts/drop-cli-*/*
+          files: artifacts/arkdrop-*/*
           draft: false
           prerelease: false
         env:

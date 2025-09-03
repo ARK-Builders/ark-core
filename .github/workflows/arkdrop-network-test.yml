@@ -1,0 +1,586 @@
+name: ARK Drop CLI Network Testing
+
+on:
+  push:
+    paths:
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/cli/**"
+      - ".github/workflows/arkdrop-network-test.yml"
+  pull_request:
+    paths:
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/cli/**"
+      - ".github/workflows/arkdrop-network-test.yml"
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: "Enable debug mode with tmate session"
+        required: false
+        default: false
+
+env:
+  RUST_BACKTRACE: full
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Basic checks and builds
+  preliminary-checks:
+    name: Cargo Check & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: rustfmt, clippy
+          override: true
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cargo check
+        working-directory: drop-core/cli
+        run: cargo check --all-targets --all-features
+
+      - name: Cargo fmt check
+        working-directory: drop-core/cli
+        run: cargo fmt --all -- --check
+
+      - name: Cargo clippy
+        working-directory: drop-core/cli
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # Test 1: Single closed network (localhost)
+  test-single-network:
+    name: Test Single Closed Network
+    runs-on: ubuntu-latest
+    needs: preliminary-checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build CLI
+        working-directory: drop-core/cli
+        run: cargo build --release
+
+      - name: Setup test environment
+        run: |
+          mkdir -p test-files
+          mkdir -p received-files
+          echo "Test content 1" > test-files/test1.txt
+          echo "Test content 2" > test-files/test2.txt
+          dd if=/dev/urandom of=test-files/large.bin bs=1M count=10
+
+      - name: Test localhost transfer
+        timeout-minutes: 5
+        run: |
+          cd drop-core/cli
+
+          # Start receiver in background
+          ./target/release/arkdrop receive \
+            --name "Test Receiver" \
+            --dir ../../received-files \
+            --verbose > receiver.log 2>&1 &
+          RECEIVER_PID=$!
+
+          # Wait for receiver to start
+          sleep 2
+
+          # Extract connection info from receiver output
+          TICKET=$(grep -o 'Ticket: [^ ]*' receiver.log | cut -d' ' -f2)
+          CODE=$(grep -o 'Code: [^ ]*' receiver.log | cut -d' ' -f2)
+
+          # Send files
+          ./target/release/arkdrop send \
+            --name "Test Sender" \
+            --verbose \
+            ../../test-files/test1.txt \
+            ../../test-files/test2.txt \
+            ../../test-files/large.bin \
+            --ticket "$TICKET" \
+            --code "$CODE" || (kill $RECEIVER_PID; exit 1)
+
+          # Wait for transfer completion
+          wait $RECEIVER_PID
+
+          # Verify files
+          if [ ! -f "../../received-files/test1.txt" ]; then
+            echo "Error: test1.txt not received"
+            exit 1
+          fi
+
+          if [ ! -f "../../received-files/test2.txt" ]; then
+            echo "Error: test2.txt not received"
+            exit 1
+          fi
+
+          if [ ! -f "../../received-files/large.bin" ]; then
+            echo "Error: large.bin not received"
+            exit 1
+          fi
+
+          # Verify content integrity
+          diff ../../test-files/test1.txt ../../received-files/test1.txt
+          diff ../../test-files/test2.txt ../../received-files/test2.txt
+          diff ../../test-files/large.bin ../../received-files/large.bin
+
+          echo "✅ Localhost transfer test passed"
+
+  # Test 2: Docker network simulation (no NAT)
+  test-docker-network:
+    name: Test Docker Network (No NAT)
+    runs-on: ubuntu-latest
+    needs: preliminary-checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Docker Compose
+        run: |
+          docker --version
+          docker-compose --version || sudo apt-get update && sudo apt-get install -y docker-compose
+
+      - name: Create Docker test environment
+        run: |
+          cat > docker-compose.test.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            sender:
+              build:
+                context: .
+                dockerfile: Dockerfile.test
+              networks:
+                - dropnet
+              volumes:
+                - ./test-files:/test-files:ro
+                - ./drop-core:/drop-core:ro
+              command: >
+                sh -c "
+                  cd /drop-core/cli &&
+                  cargo build --release &&
+                  echo 'Sender ready' &&
+                  tail -f /dev/null
+                "
+              
+            receiver:
+              build:
+                context: .
+                dockerfile: Dockerfile.test
+              networks:
+                - dropnet
+              volumes:
+                - ./received-files:/received-files
+                - ./drop-core:/drop-core:ro
+              command: >
+                sh -c "
+                  cd /drop-core/cli &&
+                  cargo build --release &&
+                  echo 'Receiver ready' &&
+                  tail -f /dev/null
+                "
+
+          networks:
+            dropnet:
+              driver: bridge
+              ipam:
+                config:
+                  - subnet: 172.25.0.0/16
+          EOF
+
+          cat > Dockerfile.test << 'EOF'
+          FROM rust:1.75
+
+          RUN apt-get update && apt-get install -y \
+              netcat-openbsd \
+              iputils-ping \
+              iproute2 \
+              tcpdump \
+              && rm -rf /var/lib/apt/lists/*
+
+          WORKDIR /app
+          EOF
+
+      - name: Setup test files
+        run: |
+          mkdir -p test-files received-files
+          echo "Docker test 1" > test-files/docker1.txt
+          echo "Docker test 2" > test-files/docker2.txt
+
+      - name: Run Docker network test
+        timeout-minutes: 10
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+
+          # Wait for containers to be ready
+          sleep 10
+
+          # Start receiver
+          docker-compose -f docker-compose.test.yml exec -T receiver bash -c "
+            cd /drop-core/cli &&
+            timeout 60 ./target/release/arkdrop receive \
+              --name 'Docker Receiver' \
+              --dir /received-files \
+              --verbose
+          " > receiver_output.txt 2>&1 &
+
+          sleep 3
+
+          # Extract connection info
+          TICKET=$(grep -o 'Ticket: [^ ]*' receiver_output.txt | cut -d' ' -f2)
+          CODE=$(grep -o 'Code: [^ ]*' receiver_output.txt | cut -d' ' -f2)
+
+          # Send files from sender container
+          docker-compose -f docker-compose.test.yml exec -T sender bash -c "
+            cd /drop-core/cli &&
+            ./target/release/arkdrop send \
+              --name 'Docker Sender' \
+              --verbose \
+              /test-files/docker1.txt \
+              /test-files/docker2.txt \
+              --ticket '$TICKET' \
+              --code '$CODE'
+          "
+
+          # Verify transfer
+          docker-compose -f docker-compose.test.yml exec -T receiver bash -c "
+            ls -la /received-files/ &&
+            test -f /received-files/docker1.txt &&
+            test -f /received-files/docker2.txt &&
+            echo '✅ Docker network test passed'
+          "
+
+          docker-compose -f docker-compose.test.yml down
+
+  # Test 3: NAT simulation with iptables
+  test-nat-traversal:
+    name: Test NAT Traversal
+    runs-on: ubuntu-latest
+    needs: preliminary-checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup complex NAT environment
+        run: |
+          cat > nat-test-setup.sh << 'EOF'
+          #!/bin/bash
+
+          # Create network namespaces to simulate NAT
+          sudo ip netns add sender_net
+          sudo ip netns add receiver_net
+          sudo ip netns add router
+
+          # Create virtual ethernet pairs
+          sudo ip link add veth-sender type veth peer name veth-router-s
+          sudo ip link add veth-receiver type veth peer name veth-router-r
+
+          # Move interfaces to namespaces
+          sudo ip link set veth-sender netns sender_net
+          sudo ip link set veth-receiver netns receiver_net
+          sudo ip link set veth-router-s netns router
+          sudo ip link set veth-router-r netns router
+
+          # Configure sender network
+          sudo ip netns exec sender_net ip addr add 192.168.1.10/24 dev veth-sender
+          sudo ip netns exec sender_net ip link set veth-sender up
+          sudo ip netns exec sender_net ip route add default via 192.168.1.1
+
+          # Configure receiver network  
+          sudo ip netns exec receiver_net ip addr add 192.168.2.10/24 dev veth-receiver
+          sudo ip netns exec receiver_net ip link set veth-receiver up
+          sudo ip netns exec receiver_net ip route add default via 192.168.2.1
+
+          # Configure router (NAT device)
+          sudo ip netns exec router ip addr add 192.168.1.1/24 dev veth-router-s
+          sudo ip netns exec router ip addr add 192.168.2.1/24 dev veth-router-r
+          sudo ip netns exec router ip link set veth-router-s up
+          sudo ip netns exec router ip link set veth-router-r up
+
+          # Enable IP forwarding in router
+          sudo ip netns exec router sysctl -w net.ipv4.ip_forward=1
+
+          # Setup NAT rules (symmetric NAT)
+          sudo ip netns exec router iptables -t nat -A POSTROUTING -o veth-router-r -j MASQUERADE
+          sudo ip netns exec router iptables -t nat -A POSTROUTING -o veth-router-s -j MASQUERADE
+
+          # Add connection tracking for established connections
+          sudo ip netns exec router iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+          sudo ip netns exec router iptables -A FORWARD -i veth-router-s -o veth-router-r -j ACCEPT
+
+          echo "NAT environment setup complete"
+          EOF
+
+          chmod +x nat-test-setup.sh
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Build CLI
+        working-directory: drop-core/cli
+        run: cargo build --release
+
+      - name: Test with NAT
+        timeout-minutes: 10
+        run: |
+          sudo ./nat-test-setup.sh
+
+          # Create test files
+          echo "NAT test content" > test-nat.txt
+
+          # Copy binary to accessible location
+          sudo cp drop-core/cli/target/release/arkdrop /usr/local/bin/
+
+          # Start receiver behind NAT
+          sudo ip netns exec receiver_net /usr/local/bin/arkdrop receive \
+            --name "NAT Receiver" \
+            --dir /tmp/received \
+            --verbose > nat_receiver.log 2>&1 &
+          RECEIVER_PID=$!
+
+          sleep 3
+
+          # Extract connection details
+          TICKET=$(grep -o 'Ticket: [^ ]*' nat_receiver.log | cut -d' ' -f2)
+          CODE=$(grep -o 'Code: [^ ]*' nat_receiver.log | cut -d' ' -f2)
+
+          # Send through NAT
+          sudo ip netns exec sender_net /usr/local/bin/arkdrop send \
+            --name "NAT Sender" \
+            --verbose \
+            test-nat.txt \
+            --ticket "$TICKET" \
+            --code "$CODE"
+
+          # Verify
+          sudo ip netns exec receiver_net test -f /tmp/received/test-nat.txt && \
+            echo "✅ NAT traversal test passed" || \
+            echo "❌ NAT traversal test failed"
+
+          # Cleanup
+          sudo ip netns del sender_net
+          sudo ip netns del receiver_net
+          sudo ip netns del router
+
+  # Test 4: Network stress and reliability
+  test-network-conditions:
+    name: Test Network Conditions
+    runs-on: ubuntu-latest
+    needs: preliminary-checks
+    strategy:
+      matrix:
+        condition: [packet-loss, bandwidth-limit, high-latency, jitter]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install network tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tc iproute2 wondershaper comcast
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Build CLI
+        working-directory: drop-core/cli
+        run: cargo build --release
+
+      - name: Configure network condition - ${{ matrix.condition }}
+        run: |
+          case "${{ matrix.condition }}" in
+            packet-loss)
+              # 5% packet loss
+              sudo tc qdisc add dev lo root netem loss 5%
+              echo "Configured 5% packet loss"
+              ;;
+            bandwidth-limit)
+              # Limit to 1Mbps
+              sudo tc qdisc add dev lo root tbf rate 1mbit burst 32kbit latency 400ms
+              echo "Configured 1Mbps bandwidth limit"
+              ;;
+            high-latency)
+              # Add 200ms latency
+              sudo tc qdisc add dev lo root netem delay 200ms
+              echo "Configured 200ms latency"
+              ;;
+            jitter)
+              # Add variable latency (jitter)
+              sudo tc qdisc add dev lo root netem delay 50ms 50ms distribution normal
+              echo "Configured network jitter"
+              ;;
+          esac
+
+      - name: Test transfer under ${{ matrix.condition }}
+        timeout-minutes: 10
+        run: |
+          cd drop-core/cli
+
+          # Create test file
+          dd if=/dev/urandom of=test-${{ matrix.condition }}.bin bs=1M count=5
+
+          # Start receiver
+          ./target/release/arkdrop receive \
+            --name "Stress Receiver" \
+            --dir /tmp/stress-received \
+            --verbose > stress_receiver.log 2>&1 &
+          RECEIVER_PID=$!
+
+          sleep 3
+
+          # Get connection info
+          TICKET=$(grep -o 'Ticket: [^ ]*' stress_receiver.log | cut -d' ' -f2)
+          CODE=$(grep -o 'Code: [^ ]*' stress_receiver.log | cut -d' ' -f2)
+
+          # Send file
+          timeout 300 ./target/release/arkdrop send \
+            --name "Stress Sender" \
+            --verbose \
+            test-${{ matrix.condition }}.bin \
+            --ticket "$TICKET" \
+            --code "$CODE" || true
+
+          # Check if transfer completed
+          wait $RECEIVER_PID
+
+          if [ -f "/tmp/stress-received/test-${{ matrix.condition }}.bin" ]; then
+            echo "✅ Transfer completed under ${{ matrix.condition }}"
+            # Verify integrity
+            diff test-${{ matrix.condition }}.bin /tmp/stress-received/test-${{ matrix.condition }}.bin && \
+              echo "✅ File integrity verified" || \
+              echo "⚠️ File corrupted during transfer"
+          else
+            echo "❌ Transfer failed under ${{ matrix.condition }}"
+            exit 1
+          fi
+
+      - name: Reset network conditions
+        if: always()
+        run: |
+          sudo tc qdisc del dev lo root 2>/dev/null || true
+
+  # Debug session for troubleshooting
+  debug-session:
+    name: Debug Session
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
+
+  # Summary and reporting
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [test-single-network, test-docker-network, test-nat-traversal, test-network-conditions]
+    if: always()
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        continue-on-error: true
+
+      - name: Generate test report
+        run: |
+          echo "# ARK Drop CLI Network Test Report" > test-report.md
+          echo "" >> test-report.md
+          echo "## Test Results" >> test-report.md
+          echo "" >> test-report.md
+
+          if [ "${{ needs.test-single-network.result }}" == "success" ]; then
+            echo "✅ **Single Network Test:** Passed" >> test-report.md
+          else
+            echo "❌ **Single Network Test:** Failed" >> test-report.md
+          fi
+
+          if [ "${{ needs.test-docker-network.result }}" == "success" ]; then
+            echo "✅ **Docker Network Test:** Passed" >> test-report.md
+          else
+            echo "❌ **Docker Network Test:** Failed" >> test-report.md
+          fi
+
+          if [ "${{ needs.test-nat-traversal.result }}" == "success" ]; then
+            echo "✅ **NAT Traversal Test:** Passed" >> test-report.md
+          else
+            echo "❌ **NAT Traversal Test:** Failed" >> test-report.md
+          fi
+
+          if [ "${{ needs.test-network-conditions.result }}" == "success" ]; then
+            echo "✅ **Network Conditions Test:** Passed" >> test-report.md
+          else
+            echo "❌ **Network Conditions Test:** Failed" >> test-report.md
+          fi
+
+          echo "" >> test-report.md
+          echo "## Summary" >> test-report.md
+          echo "- **Workflow:** ${{ github.workflow }}" >> test-report.md
+          echo "- **Run ID:** ${{ github.run_id }}" >> test-report.md
+          echo "- **Triggered by:** ${{ github.actor }}" >> test-report.md
+          echo "- **Branch:** ${{ github.ref }}" >> test-report.md
+
+          cat test-report.md
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-report
+          path: test-report.md
+          retention-days: 30
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('test-report.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });

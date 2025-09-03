@@ -1,4 +1,4 @@
-# Drop CLI
+# ARK Drop CLI
 
 A clean, user-friendly CLI tool for sending and receiving files with customizable profiles.
 
@@ -15,14 +15,14 @@ A clean, user-friendly CLI tool for sending and receiving files with customizabl
 ## Installation
 
 ```bash
-cargo install drop-cli
+cargo install arkdrop
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/yourusername/drop-cli
-cd drop-cli
+git clone https://github.com/ARK-Builders/ark-core
+cd drop-core/cli
 cargo build --release
 ```
 
@@ -32,34 +32,34 @@ cargo build --release
 
 Basic file sending:
 ```bash
-drop-cli send file1.txt file2.jpg document.pdf
+arkdrop send file1.txt file2.jpg document.pdf
 ```
 
 With custom name:
 ```bash
-drop-cli send --name "Alice" file1.txt file2.jpg
+arkdrop send --name "Alice" file1.txt file2.jpg
 ```
 
 With avatar from file:
 ```bash
-drop-cli send --name "Alice" --avatar avatar.png file1.txt
+arkdrop send --name "Alice" --avatar avatar.png file1.txt
 ```
 
 With base64 avatar:
 ```bash
-drop-cli send --name "Alice" --avatar-b64 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==" file1.txt
+arkdrop send --name "Alice" --avatar-b64 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==" file1.txt
 ```
 
 ### Receiving Files
 
 Basic file receiving:
 ```bash
-drop-cli receive ./downloads "ticket-string" "123"
+arkdrop receive ./downloads "ticket-string" "123"
 ```
 
 With custom name and avatar:
 ```bash
-drop-cli receive --name "Bob" --avatar profile.jpg ./downloads "ticket-string" "123"
+arkdrop receive --name "Bob" --avatar profile.jpg ./downloads "ticket-string" "123"
 ```
 
 ## Command Reference
@@ -72,13 +72,13 @@ Send files to another user.
 - `files`: One or more files to send (required)
 
 **Options:**
-- `-n, --name <NAME>`: Your display name (default: "drop-cli-sender")
+- `-n, --name <NAME>`: Your display name (default: "arkdrop-sender")
 - `-a, --avatar <PATH>`: Path to avatar image file
 - `--avatar-b64 <BASE64>`: Base64 encoded avatar image
 
 **Example:**
 ```bash
-drop-cli send --name "John" --avatar ./my-avatar.png file1.txt file2.pdf
+arkdrop send --name "John" --avatar ./my-avatar.png file1.txt file2.pdf
 ```
 
 ### `receive` command
@@ -91,13 +91,13 @@ Receive files from another user.
 - `confirmation`: Confirmation code from sender (required)
 
 **Options:**
-- `-n, --name <NAME>`: Your display name (default: "drop-cli-receiver")
+- `-n, --name <NAME>`: Your display name (default: "arkdrop-receiver")
 - `-a, --avatar <PATH>`: Path to avatar image file
 - `--avatar-b64 <BASE64>`: Base64 encoded avatar image
 
 **Example:**
 ```bash
-drop-cli receive --name "Jane" ./downloads "abc123ticket" "456"
+arkdrop receive --name "Jane" ./downloads "abc123ticket" "456"
 ```
 
 ## Configuration
@@ -125,7 +125,7 @@ Avatars can be provided in two ways:
 
 ```bash
 # Send multiple files with custom profile
-drop-cli send \
+arkdrop send \
   --name "Alice Smith" \
   --avatar ./profile.jpg \
   document.pdf \
@@ -151,7 +151,7 @@ Output:
 
 ```bash
 # Receive files with custom profile
-drop-cli receive \
+arkdrop receive \
   --name "Bob Johnson" \
   --avatar ./avatar.png \
   ./downloads \

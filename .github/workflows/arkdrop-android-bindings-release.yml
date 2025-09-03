@@ -1,9 +1,12 @@
-name: Drop Android Bindings Release
+name: ARK Drop Android Bindings Release
 
 on:
   push:
     paths:
-      - "drop-core/**"
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/uniffi/**"
+      - ".github/workflows/arkdrop-bindings-release.yml"
   workflow_dispatch:
 
 jobs:

@@ -1,4 +1,4 @@
-//! drop-cli library
+//! arkdrop library
 //!
 //! High-level send/receive helpers and UI for the DropX transfer crates.
 //!
@@ -21,8 +21,8 @@
 //!
 //! Configuration
 //! - Stores a default receive directory in:
-//!   $XDG_CONFIG_HOME/drop-cli/config.toml or
-//!   $HOME/.config/drop-cli/config.toml if XDG_CONFIG_HOME is not set.
+//!   $XDG_CONFIG_HOME/arkdrop/config.toml or
+//!   $HOME/.config/arkdrop/config.toml if XDG_CONFIG_HOME is not set.
 //!
 //! Examples
 //!
@@ -84,10 +84,10 @@ use uuid::Uuid;
 /// usage, such as the default directory to save received files.
 ///
 /// Storage location:
-/// - Linux: $XDG_CONFIG_HOME/drop-cli/config.toml or
-///   $HOME/.config/drop-cli/config.toml
-/// - macOS: $HOME/Library/Application Support/drop-cli/config.toml
-/// - Windows: %APPDATA%\drop-cli\config.toml
+/// - Linux: $XDG_CONFIG_HOME/arkdrop/config.toml or
+///   $HOME/.config/arkdrop/config.toml
+/// - macOS: $HOME/Library/Application Support/arkdrop/config.toml
+/// - Windows: %APPDATA%\arkdrop\config.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CliConfig {
     default_receive_dir: Option<String>,
@@ -108,13 +108,13 @@ impl CliConfig {
         #[cfg(target_os = "windows")]
         {
             if let Ok(appdata) = env::var("APPDATA") {
-                return Ok(PathBuf::from(appdata).join("drop-cli"));
+                return Ok(PathBuf::from(appdata).join("arkdrop"));
             }
             // Fallback if APPDATA isn't set (rare)
             if let Ok(userprofile) = env::var("USERPROFILE") {
                 return Ok(PathBuf::from(userprofile)
                     .join(".config")
-                    .join("drop-cli"));
+                    .join("arkdrop"));
             }
             return Err(anyhow!(
                 "Unable to determine config directory (missing APPDATA/USERPROFILE)"
@@ -127,7 +127,7 @@ impl CliConfig {
                 return Ok(PathBuf::from(home)
                     .join("Library")
                     .join("Application Support")
-                    .join("drop-cli"));
+                    .join("arkdrop"));
             }
             return Err(anyhow!(
                 "Unable to determine config directory (missing HOME)"
@@ -147,7 +147,7 @@ impl CliConfig {
                     "Unable to determine config directory (missing XDG_CONFIG_HOME/HOME)"
                 ));
             };
-            Ok(config_dir.join("drop-cli"))
+            Ok(config_dir.join("arkdrop"))
         }
     }
 
@@ -228,7 +228,7 @@ pub struct Profile {
 impl Default for Profile {
     fn default() -> Self {
         Self {
-            name: "drop-cli".to_string(),
+            name: "arkdrop".to_string(),
             avatar_b64: None,
         }
     }
@@ -986,7 +986,7 @@ pub async fn run_send_files(
 ///
 /// If `output_dir` is None, a previously saved default directory is used.
 /// If no saved default exists, a sensible fallback is chosen:
-/// - $HOME/Downloads/Drop if HOME is set
+/// - $HOME/Downloads/ARK-Drop if HOME is set
 /// - or the current directory (.) otherwise
 ///
 /// Parameters:
@@ -1075,7 +1075,7 @@ pub fn get_default_receive_dir() -> Result<Option<String>> {
 }
 
 /// Returns a suggested default receive directory when no saved default exists:
-/// - Linux/macOS: $HOME/Downloads/Drop
+/// - Linux/macOS: $HOME/Downloads/ARK-Drop
 /// - Windows: %USERPROFILE%\Downloads\Drop
 pub fn suggested_default_receive_dir() -> PathBuf {
     default_receive_dir_fallback()

@@ -27,8 +27,8 @@ async fn main() -> Result<()> {
 }
 
 fn build_cli() -> Command {
-    Command::new("drop-cli")
-        .about("A Drop CLI tool for sending and receiving files")
+    Command::new("arkdrop")
+        .about("A ARK Drop CLI tool for sending and receiving files")
         .version("1.0.0")
         .author("oluiscabral@ark-builders.dev")
         .arg_required_else_help(true)
@@ -55,7 +55,7 @@ fn build_cli() -> Command {
                         .long("name")
                         .short('n')
                         .help("Your display name")
-                        .default_value("drop-cli-sender")
+                        .default_value("arkdrop-sender")
                 )
                 .arg(
                     Arg::new("avatar")
@@ -94,8 +94,9 @@ fn build_cli() -> Command {
                         .value_parser(clap::value_parser!(PathBuf))
                 )
                 .arg(
-                    Arg::new("save-dir")
-                        .long("save-dir")
+                    Arg::new("save-output")
+                        .long("save-output")
+                        .short('u')
                         .help("Save the specified output directory as default for future use")
                         .action(clap::ArgAction::SetTrue)
                         .requires("output")
@@ -105,7 +106,7 @@ fn build_cli() -> Command {
                         .long("name")
                         .short('n')
                         .help("Your display name")
-                        .default_value("drop-cli-receiver")
+                        .default_value("arkdrop-receiver")
                 )
                 .arg(
                     Arg::new("avatar")
@@ -161,7 +162,7 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
         println!("   📄 {}", file.display());
     }
 
-    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
+    if let Some(name) = profile.name.strip_prefix("arkdrop-") {
         println!("👤 Sender name: {}", name);
     } else {
         println!("👤 Sender name: {}", profile.name);
@@ -204,7 +205,7 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     println!("🎫 Ticket: {}", ticket);
     println!("🔑 Confirmation: {}", confirmation);
 
-    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
+    if let Some(name) = profile.name.strip_prefix("arkdrop-") {
         println!("👤 Receiver name: {}", name);
     } else {
         println!("👤 Receiver name: {}", profile.name);
