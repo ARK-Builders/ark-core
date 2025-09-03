@@ -418,37 +418,34 @@ impl Carrier {
 
             // Clean up completed tasks periodically
             while join_set.len() >= parallel_streams as usize {
-                if let Some(result) = join_set.join_next().await {
-                    if let Err(err) = result? {
-                        // Downcast anyhow::Error to ConnectionError
-                        if let Some(connection_err) =
-                            err.downcast_ref::<ConnectionError>()
-                        {
-                            if connection_err == &expected_close {
-                                break 'files_iterator;
-                            }
-                        }
-                        return Err(err);
-                    }
-                }
-            }
-        }
-
-        while let Some(result) = join_set.join_next().await {
-            if let Err(err) = result? {
-                // Downcast anyhow::Error to ConnectionError
-                if let Some(connection_err) =
-                    err.downcast_ref::<ConnectionError>()
+                if let Some(result) = join_set.join_next().await
+                    && let Err(err) = result?
                 {
-                    if connection_err == &expected_close {
-                        continue;
+                    // Downcast anyhow::Error to ConnectionError
+                    if let Some(connection_err) =
+                        err.downcast_ref::<ConnectionError>()
+                        && connection_err == &expected_close
+                    {
+                        break 'files_iterator;
                     }
+                    return Err(err);
                 }
-                return Err(err);
             }
         }
 
-        return Ok(());
+        while let Some(result) = join_set.join_next().await
+            && let Err(err) = result?
+        {
+            // Downcast anyhow::Error to ConnectionError
+            if let Some(connection_err) = err.downcast_ref::<ConnectionError>()
+                && connection_err == &expected_close
+            {
+                continue;
+            }
+            return Err(err);
+        }
+
+        Ok(())
     }
 
     /// Process a single unidirectional stream and emit receiving events per
