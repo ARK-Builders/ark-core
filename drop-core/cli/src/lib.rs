@@ -793,6 +793,11 @@ impl SenderFileData for FileData {
         self.size
     }
 
+    /// Checks if the data is empty (length is 0).
+    fn is_empty(&self) -> bool {
+        self.size == 0
+    }
+
     /// Reads a single byte, falling back to EOF (None) at end of file or on
     /// errors.
     fn read(&self) -> Option<u8> {

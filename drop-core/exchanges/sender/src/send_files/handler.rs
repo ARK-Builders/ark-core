@@ -176,10 +176,7 @@ impl SendFilesHandler {
     /// Unregisters a subscriber by its ID.
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
-        self.log(format!(
-            "Unsubscribing subscriber with ID: {}",
-            subscriber_id
-        ));
+        self.log(format!("Unsubscribing subscriber with ID: {subscriber_id}"));
 
         let removed = self
             .subscribers
@@ -188,11 +185,10 @@ impl SendFilesHandler {
             .remove(&subscriber_id);
 
         if removed.is_some() {
-            self.log(format!("Subscriber {} successfully unsubscribed. Remaining subscribers: {}", subscriber_id, self.subscribers.read().unwrap().len()));
+            self.log(format!("Subscriber {subscriber_id} successfully unsubscribed. Remaining subscribers: {}", self.subscribers.read().unwrap().len()));
         } else {
             self.log(format!(
-                "Subscriber {} was not found during unsubscribe operation",
-                subscriber_id
+                "Subscriber {subscriber_id} was not found during unsubscribe operation"
             ));
         }
     }
@@ -414,7 +410,7 @@ impl Carrier {
             if join_set.len() >= parallel_streams as usize {
                 if let Some(result) = join_set.join_next().await {
                     if let Err(err) = result? {
-                        self.log(format!("send_files: Stream failed: {}", err));
+                        self.log(format!("send_files: Stream failed: {err}"));
                         return Err(err);
                     }
                 }
@@ -424,7 +420,7 @@ impl Carrier {
         // Wait for all remaining streams to complete and update final progress
         while let Some(result) = join_set.join_next().await {
             if let Err(err) = result? {
-                self.log(format!("send_single_file: Stream failed: {}", err));
+                self.log(format!("send_single_file: Stream failed: {err}"));
                 return Err(err);
             }
         }
@@ -512,7 +508,7 @@ impl Carrier {
             .unwrap()
             .iter()
             .for_each(|(id, subscriber)| {
-                subscriber.log(format!("[{}] {}", id, message));
+                subscriber.log(format!("[{id}] {message}"));
             });
     }
 

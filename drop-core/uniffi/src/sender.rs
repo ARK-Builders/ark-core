@@ -32,8 +32,13 @@ pub struct SenderFile {
 pub trait SenderFileData: Send + Sync {
     /// Total number of bytes available.
     fn len(&self) -> u64;
+
+    /// Checks if the data is empty (length is 0).
+    fn is_empty(&self) -> bool;
+
     /// Read the next byte, or None at EOF.
     fn read(&self) -> Option<u8>;
+
     /// Read up to `size` bytes; fewer may be returned at EOF.
     fn read_chunk(&self, size: i32) -> Vec<u8>;
 }
@@ -46,6 +51,10 @@ struct SenderFileDataAdapter {
 impl arkdropx_sender::SenderFileData for SenderFileDataAdapter {
     fn len(&self) -> u64 {
         return self.inner.len();
+    }
+
+    fn is_empty(&self) -> bool {
+        return self.inner.is_empty();
     }
 
     fn read(&self) -> Option<u8> {
