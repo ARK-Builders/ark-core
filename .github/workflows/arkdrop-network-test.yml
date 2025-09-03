@@ -65,7 +65,7 @@ jobs:
       - name: Cargo clippy
         working-directory: drop-core/cli
         run: cargo clippy --all-targets --all-features -- -D warnings
-        
+
       - name: Run unit tests
         working-directory: drop-core/cli
         run: cargo test --lib
@@ -124,26 +124,23 @@ jobs:
           # Start receiver in background with simulated input
           # Since ARK Drop requires interactive input, we'll need to simulate it
           echo "Creating receive session..."
-          
-          # Test ARK Drop functionality in single network environment
-          cd drop-core/cli
-          
+
           # Test that the binary at least runs and shows help
           ./target/release/arkdrop --help
-          
+
           # Test send command help
           ./target/release/arkdrop send --help
-          
+
           # Test receive command help  
           ./target/release/arkdrop receive --help
-          
+
           # Test config command
           ./target/release/arkdrop config show
-          
+
           # Build and run integration tests
           cargo build --tests
           cargo test --test integration_tests
-          
+
           echo "✅ ARK Drop single network test passed"
 
   # Test 2: Docker network simulation (no NAT)
@@ -417,11 +414,9 @@ jobs:
           # Create test file
           dd if=/dev/urandom of=test-${{ matrix.condition }}.bin bs=1M count=5
 
-          # Test ARK Drop under network stress conditions
-          cd drop-core/cli
           ./target/release/arkdrop --help
           ./target/release/arkdrop config show
-          
+
           echo "✅ ARK Drop functional under ${{ matrix.condition }} conditions"
 
       - name: Reset network conditions

@@ -99,8 +99,6 @@ jobs:
       - name: Test ARK Drop functionality - ${{ matrix.scenario.name }}
         timeout-minutes: 15
         run: |
-          cd drop-core/cli
-
           # Verify binary exists
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -153,8 +151,6 @@ jobs:
 
       - name: Test missing file error
         run: |
-          cd drop-core/cli
-
           # Verify binary exists first
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -175,8 +171,6 @@ jobs:
 
       - name: Test command structure
         run: |
-          cd drop-core/cli
-
           # Create a test file
           echo "test" > test.txt
 
@@ -190,8 +184,6 @@ jobs:
 
       - name: Test output directory handling
         run: |
-          cd drop-core/cli
-
           # Test config commands for directory management
           ./target/release/arkdrop config show
 
@@ -215,8 +207,6 @@ jobs:
       - name: Test ARK Drop signal handling
         timeout-minutes: 2
         run: |
-          cd drop-core/cli
-
           # Test that ARK Drop responds to basic signals
           echo "Testing ARK Drop responsiveness..."
 
@@ -254,8 +244,6 @@ jobs:
       - name: Test ARK Drop with multiple file scenarios
         timeout-minutes: 5
         run: |
-          cd drop-core/cli
-
           # Verify binary exists
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -314,9 +302,6 @@ jobs:
           echo "" >> benchmark-results.md
           echo "| Test | Result |" >> benchmark-results.md
           echo "|------|--------|" >> benchmark-results.md
-
-          # Change to ARK Drop directory
-          cd drop-core/cli
 
           # Test ARK Drop startup time
           START_TIME=$(date +%s.%N)
@@ -393,9 +378,6 @@ jobs:
           # Start resource monitoring
           sar -u -r 1 > resource-usage.log 2>&1 &
           SAR_PID=$!
-
-          # Change to ARK Drop directory
-          cd drop-core/cli
 
           # Monitor basic resource usage for ARK Drop commands
           echo "=== Resource Usage Test ==="
