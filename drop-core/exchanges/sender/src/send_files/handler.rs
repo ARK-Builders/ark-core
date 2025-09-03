@@ -7,7 +7,7 @@
 //! progress updates.
 
 use anyhow::Result;
-use drop_entities::{File, Profile};
+use arkdrop_entities::{File, Profile};
 use arkdrop_x_common::{
     handshake::{
         HandshakeConfig, HandshakeFile, HandshakeProfile, NegotiatedConfig,

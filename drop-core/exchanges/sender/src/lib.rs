@@ -19,7 +19,7 @@
 
 mod send_files;
 
-use drop_entities::Data;
+use arkdrop_entities::Data;
 use std::sync::Arc;
 
 pub use send_files::*;

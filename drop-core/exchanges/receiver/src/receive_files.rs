@@ -1,5 +1,5 @@
 use anyhow::Result;
-use drop_entities::Profile;
+use arkdrop_entities::Profile;
 use arkdrop_x_common::{
     handshake::{
         HandshakeConfig, HandshakeProfile, NegotiatedConfig, ReceiverHandshake,

@@ -10,7 +10,7 @@ mod handler;
 use crate::{SenderConfig, SenderFile, SenderFileDataAdapter, SenderProfile};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use drop_entities::{File, Profile};
+use arkdrop_entities::{File, Profile};
 use handler::SendFilesHandler;
 use iroh::{Endpoint, Watcher, protocol::Router};
 use iroh_base::ticket::NodeTicket;
