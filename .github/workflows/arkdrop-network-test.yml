@@ -99,9 +99,8 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build ARK Drop
-        working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -138,8 +137,8 @@ jobs:
           ./target/release/arkdrop config show
 
           # Build and run integration tests
-          cargo build --tests
-          cargo test --test integration_tests
+          cargo build -p arkdrop --tests
+          cargo test -p arkdrop --test integration_tests
 
           echo "✅ ARK Drop single network test passed"
 
@@ -173,8 +172,7 @@ jobs:
                 - ./drop-core:/drop-core:ro
               command: >
                 sh -c "
-                  cd /drop-core/cli &&
-                  cargo build --release &&
+                  cargo build -p arkdrop --release &&
                   echo 'Sender ready' &&
                   tail -f /dev/null
                 "
@@ -190,8 +188,7 @@ jobs:
                 - ./drop-core:/drop-core:ro
               command: >
                 sh -c "
-                  cd /drop-core/cli &&
-                  cargo build --release &&
+                  cargo build -p arkdrop --release &&
                   echo 'Receiver ready' &&
                   tail -f /dev/null
                 "
@@ -314,9 +311,8 @@ jobs:
           override: true
 
       - name: Build ARK Drop
-        working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"
@@ -373,7 +369,7 @@ jobs:
       - name: Build ARK Drop
         working-directory: drop-core/cli
         run: |
-          cargo build --release
+          cargo build -p arkdrop --release
           # Verify binary was created
           if [ ! -f "target/release/arkdrop" ]; then
             echo "❌ Binary not found at target/release/arkdrop"

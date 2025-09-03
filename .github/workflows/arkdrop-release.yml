@@ -103,7 +103,7 @@ jobs:
 
       - name: Build binary
         run: |
-          cargo build --release --target ${{ matrix.target }} --package arkdrop
+          cargo build -p arkdrop --release --target ${{ matrix.target }}
 
       - name: Create archive name
         id: archive
