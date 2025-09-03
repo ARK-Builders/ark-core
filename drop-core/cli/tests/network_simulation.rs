@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::Duration,
@@ -176,7 +176,7 @@ impl ARKDropRunner {
     pub fn start_receiver(
         &self,
         name: &str,
-        output_dir: &PathBuf,
+        output_dir: &Path,
     ) -> Result<(std::process::Child, String, String), Box<dyn std::error::Error>>
     {
         let child = Command::new(&self.binary_path)
