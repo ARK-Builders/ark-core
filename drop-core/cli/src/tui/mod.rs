@@ -13,11 +13,11 @@ use crossterm::{
 use ratatui::{
     Frame, Terminal,
     backend::{Backend, CrosstermBackend},
-    layout::{Alignment, Constraint, Direction, Layout, Margin},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Gauge, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 use std::io;
 use tokio::time::Duration;
@@ -127,7 +127,7 @@ fn ui<B: Backend>(f: &mut Frame, app: &mut App) {
     match app.current_page {
         Page::Main => render_main_page(f, app, main_chunks[1]),
         Page::Send => render_send_page::<B>(f, app, main_chunks[1]),
-        Page::Receive => render_receive_page(f, app, main_chunks[1]),
+        Page::Receive => render_receive_page::<B>(f, app, main_chunks[1]),
         Page::Config => render_config_page(f, app, main_chunks[1]),
         Page::Help => render_help_page(f, app, main_chunks[1]),
         Page::SendProgress => render_send_progress_page(f, app, main_chunks[1]),
@@ -208,18 +208,29 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
         (KeyCode::Char('h') | KeyCode::Char('H'), KeyModifiers::CONTROL) => {
             app.current_page = Page::Help;
         }
-        _ => match app.current_page {
-            Page::Main => match key.code {
-                KeyCode::Char('h') | KeyCode::Char('H') => {
-                    app.current_page = Page::Help;
+        _ => {
+            // Handle browser inputs first
+            if app.show_file_browser {
+                pages::handle_file_browser_input(app, key).await?;
+            } else if app.show_directory_browser {
+                pages::handle_directory_browser_input(app, key).await?;
+            } else {
+                match app.current_page {
+                    Page::Main => match key.code {
+                        KeyCode::Char('h') | KeyCode::Char('H') => {
+                            app.current_page = Page::Help;
+                        }
+                        _ => handle_main_page_input(app, key).await?,
+                    },
+                    Page::Send => handle_send_page_input(app, key).await?,
+                    Page::Receive => {
+                        handle_receive_page_input(app, key).await?
+                    }
+                    Page::Config => handle_config_page_input(app, key).await?,
+                    _ => {}
                 }
-                _ => handle_main_page_input(app, key).await?,
-            },
-            Page::Send => handle_send_page_input(app, key).await?,
-            Page::Receive => handle_receive_page_input(app, key).await?,
-            Page::Config => handle_config_page_input(app, key).await?,
-            _ => {}
-        },
+            }
+        }
     }
 
     Ok(false)

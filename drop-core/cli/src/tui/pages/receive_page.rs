@@ -1,20 +1,32 @@
-use crate::tui::app::App;
+use crate::tui::{
+    app::App,
+    components::file_browser::{BrowserMode, open_system_file_browser},
+};
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
+    backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use std::{env};
 
-pub fn render_receive_page(
+pub fn render_receive_page<B: Backend>(
     f: &mut Frame,
     app: &mut App,
     area: ratatui::layout::Rect,
 ) {
+    // If directory browser is open, render it as overlay
+    if app.show_directory_browser {
+        if let Some(ref mut browser) = app.directory_browser {
+            browser.render::<B>(f, area);
+        }
+        return;
+    }
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .margin(1)
@@ -222,6 +234,12 @@ pub fn render_receive_page(
             ),
         ]),
         Line::from(""),
+        Line::from(vec![
+            Span::styled("Enter", Style::default().fg(Color::Cyan).bold()),
+            Span::styled(" browse • ", Style::default().fg(Color::Gray)),
+            Span::styled("Ctrl+O", Style::default().fg(Color::Green).bold()),
+            Span::styled(" system dialog", Style::default().fg(Color::Gray)),
+        ]),
     ];
 
     let output_block = Block::default()
@@ -479,33 +497,62 @@ pub async fn handle_receive_page_input(
                 app.receive_focused_field - 1
             };
         }
-        KeyCode::Enter => {
-            if app.receive_focused_field == 5 {
+        KeyCode::Enter => match app.receive_focused_field {
+            2 => {
+                // Browse for output directory
+                app.open_directory_browser();
+            }
+            5 => {
                 // Receive files
                 app.start_receive_operation();
             }
+            _ => {}
         }
-        KeyCode::Char(c) => match app.receive_focused_field {
-            0 => {
-                app.receive_ticket.push(c);
-            }
-            1 => {
-                app.receive_confirmation.push(c);
-            }
-            2 => {
-                app.receive_output_dir.push(c);
-            }
-            3 => {
-                app.receive_name.push(c);
-            }
-            4 => {
-                if app.receive_avatar_path.is_none() {
-                    app.receive_avatar_path = Some(String::new());
+        KeyCode::Char(c) => match key.modifiers {
+            KeyModifiers::NONE => match app.receive_focused_field {
+                0 => {
+                    app.receive_ticket.push(c);
                 }
-                if let Some(ref mut avatar_path) = app.receive_avatar_path {
-                    avatar_path.push(c);
+                1 => {
+                    app.receive_confirmation.push(c);
                 }
-            }
+                2 => {
+                    app.receive_output_dir.push(c);
+                }
+                3 => {
+                    app.receive_name.push(c);
+                }
+                4 => {
+                    if app.receive_avatar_path.is_none() {
+                        app.receive_avatar_path = Some(String::new());
+                    }
+                    if let Some(ref mut avatar_path) = app.receive_avatar_path {
+                        avatar_path.push(c);
+                    }
+                }
+                _ => {}
+            },
+            KeyModifiers::CONTROL => match c {
+                'o' => {
+                    if app.receive_focused_field == 2 {
+                        match open_system_file_browser(
+                            BrowserMode::SelectDirectory,
+                            env::current_dir().ok(),
+                        ) {
+                            Ok(mut dirs) => {
+                                if let Some(dir) = dirs.pop() {
+                                    app.receive_output_dir = dir.to_string_lossy().to_string();
+                                }
+                            }
+                            Err(_) => {
+                                // Fall back to TUI directory browser
+                                app.open_directory_browser();
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            },
             _ => {}
         },
         KeyCode::Backspace => match app.receive_focused_field {
@@ -533,6 +580,43 @@ pub async fn handle_receive_page_input(
             _ => {}
         },
         _ => {}
+    }
+    Ok(())
+}
+
+pub async fn handle_directory_browser_input(
+    app: &mut App,
+    key: KeyEvent,
+) -> Result<()> {
+    if let Some(ref mut browser) = app.directory_browser {
+        match key.code {
+            KeyCode::Esc => {
+                app.close_directory_browser();
+            }
+            KeyCode::Up => {
+                browser.navigate_up();
+            }
+            KeyCode::Down => {
+                browser.navigate_down();
+            }
+            KeyCode::Enter => {
+                browser.enter_selected();
+                // For directories, always navigate into them
+            }
+            KeyCode::Tab => {
+                // Select current directory and close
+                let selected_dir = browser.select_current_directory();
+                app.receive_output_dir = selected_dir.to_string_lossy().to_string();
+                app.close_directory_browser();
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                browser.toggle_hidden();
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                browser.cycle_sort_mode();
+            }
+            _ => {}
+        }
     }
     Ok(())
 }

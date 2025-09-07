@@ -1,8 +1,6 @@
 use crate::tui::{
     app::App,
-    components::file_browser::{
-        BrowserMode, FileBrowser, open_system_file_browser,
-    },
+    components::file_browser::{BrowserMode, open_system_file_browser},
 };
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -13,7 +11,7 @@ use ratatui::{
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 use std::{env, path::PathBuf};
 
@@ -22,9 +20,11 @@ pub fn render_send_page<B: Backend>(
     app: &mut App,
     area: ratatui::layout::Rect,
 ) {
-    // If file browser is open, render it as modal
+    // If file browser is open, render it as overlay
     if app.show_file_browser {
-        render_file_browser_modal::<B>(f, app, area);
+        if let Some(ref mut browser) = app.file_browser {
+            browser.render::<B>(f, area);
+        }
         return;
     }
     let main_chunks = Layout::default()
@@ -548,24 +548,49 @@ pub async fn handle_send_page_input(
     Ok(())
 }
 
-fn render_file_browser_modal<B: Backend>(
-    f: &mut Frame,
-    app: &mut App,
-    area: ratatui::layout::Rect,
-) {
-    let mut b = FileBrowser::new(PathBuf::new(), BrowserMode::SelectFiles);
-    b.render::<B>(f, area);
-}
-
 pub async fn handle_file_browser_input(
     app: &mut App,
     key: KeyEvent,
 ) -> Result<()> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            app.close_file_browser();
+    if let Some(ref mut browser) = app.file_browser {
+        match key.code {
+            KeyCode::Esc => {
+                // Add selected files to the app and close browser
+                let selected = browser.get_selected_files();
+                for file in selected {
+                    app.add_file(file);
+                }
+                app.close_file_browser();
+            }
+            KeyCode::Up => {
+                browser.navigate_up();
+            }
+            KeyCode::Down => {
+                browser.navigate_down();
+            }
+            KeyCode::Enter => {
+                if let Some(path) = browser.enter_selected() {
+                    // File selected, add it
+                    app.add_file(path);
+                }
+                // If directory was entered, browser handles navigation
+                // internally
+            }
+            KeyCode::Char(' ') => {
+                browser.toggle_selected();
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                browser.toggle_hidden();
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                browser.cycle_sort_mode();
+            }
+            KeyCode::Tab => {
+                // Select current directory and close
+                app.close_file_browser();
+            }
+            _ => {}
         }
-        _ => {}
     }
     Ok(())
 }
