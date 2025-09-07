@@ -104,20 +104,22 @@ impl SendFilesBubble {
     /// finished sending. If finished, it ensures the router is shut down.
     pub fn is_finished(&self) -> bool {
         let router = self.router.clone();
-        let router_shutdown = router.is_shutdown();
-        let handler_finished = self.handler.is_finished();
-        let is_finished = router_shutdown || handler_finished;
+        let is_router_shutdown = router.is_shutdown();
+        let is_handler_finished = self.handler.is_finished();
+        let is_finished = is_router_shutdown || is_handler_finished;
 
-        self.handler.log(format!("is_finished: Router shutdown: {router_shutdown}, Handler finished: {handler_finished}, Overall finished: {is_finished}"));
+        self.handler.log(format!("is_finished: Router shutdown: {is_router_shutdown}, Handler finished: {is_handler_finished}, Overall finished: {is_finished}"));
 
-        self.handler.log(
-            "is_finished: Transfer is finished, ensuring router shutdown"
-                .to_string(),
-        );
+        if is_finished {
+            self.handler.log(
+                "is_finished: Transfer is finished, ensuring router shutdown"
+                    .to_string(),
+            );
 
-        tokio::spawn(async move {
-            let _ = router.shutdown().await;
-        });
+            tokio::spawn(async move {
+                let _ = router.shutdown().await;
+            });
+        }
 
         is_finished
     }
