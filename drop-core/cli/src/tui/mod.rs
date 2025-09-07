@@ -2,7 +2,7 @@ use anyhow::Result;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode,
-        KeyEvent, KeyEventKind,
+        KeyEvent, KeyEventKind, KeyModifiers,
     },
     execute,
     terminal::{
@@ -142,9 +142,11 @@ fn ui(f: &mut Frame, app: &mut App) {
 }
 
 async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
-    match key.code {
-        KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true), // Quit
-        KeyCode::Esc => {
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('q') | KeyCode::Char('Q'), KeyModifiers::CONTROL) => {
+            return Ok(true);
+        }
+        (KeyCode::Esc, _) => {
             if app.show_error_modal || app.show_success_modal {
                 app.show_error_modal = false;
                 app.show_success_modal = false;
@@ -152,13 +154,16 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
                 app.go_back();
             }
         }
-        KeyCode::Char('h') | KeyCode::Char('H') => {
-            if matches!(app.current_page, Page::Main) {
-                app.current_page = Page::Help;
-            }
+        (KeyCode::Char('h') | KeyCode::Char('H'), KeyModifiers::CONTROL) => {
+            app.current_page = Page::Help;
         }
         _ => match app.current_page {
-            Page::Main => handle_main_page_input(app, key).await?,
+            Page::Main => match key.code {
+                KeyCode::Char('h') | KeyCode::Char('H') => {
+                    app.current_page = Page::Help;
+                }
+                _ => handle_main_page_input(app, key).await?,
+            },
             Page::Send => handle_send_page_input(app, key).await?,
             Page::Receive => handle_receive_page_input(app, key).await?,
             Page::Config => handle_config_page_input(app, key).await?,
