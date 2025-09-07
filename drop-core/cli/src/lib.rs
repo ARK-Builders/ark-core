@@ -485,7 +485,7 @@ async fn wait_for_send_completion(bubble: &arkdropx_sender::SendFilesBubble) {
         if bubble.is_finished() {
             break;
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     }
 }
 
