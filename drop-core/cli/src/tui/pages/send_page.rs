@@ -3,9 +3,9 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
-    backend::Backend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Style, Stylize},
+    symbols::border,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -16,174 +16,393 @@ pub fn render_send_page(
     app: &mut App,
     area: ratatui::layout::Rect,
 ) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
+    let main_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .margin(1)
         .constraints([
-            Constraint::Length(3), // Title
-            Constraint::Length(8), // File selection
-            Constraint::Length(5), // Name field
-            Constraint::Length(5), // Avatar field
-            Constraint::Min(0),    // Files list
-            Constraint::Length(3), // Instructions
+            Constraint::Percentage(60), // Left side - form
+            Constraint::Percentage(40), // Right side - files list & actions
         ])
         .split(area);
 
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Length(6), // File selection
+            Constraint::Length(5), // Name field
+            Constraint::Length(5), // Avatar field
+            Constraint::Min(0),    // Instructions
+        ])
+        .split(main_chunks[0]);
+
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),    // Files list
+            Constraint::Length(5), // Send button
+        ])
+        .split(main_chunks[1]);
+
     // Title
-    let title = Paragraph::new("📤 Send Files")
-        .style(
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        )
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(title, chunks[0]);
+    let title_content = vec![Line::from(vec![
+        Span::styled("📤 ", Style::default().fg(Color::Green).bold()),
+        Span::styled("Send Files", Style::default().fg(Color::White).bold()),
+    ])];
+
+    let title_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Green))
+        .title(" Outgoing Transfer ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let title = Paragraph::new(title_content)
+        .block(title_block)
+        .alignment(Alignment::Center);
+    f.render_widget(title, left_chunks[0]);
 
     // File input field
-    let file_input_style = if app.send_focused_field == 0 {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
+    let file_input_focused = app.send_focused_field == 0;
+    let file_input_style = if file_input_focused {
+        Style::default().fg(Color::Yellow)
     } else {
-        Style::default()
+        Style::default().fg(Color::Gray)
     };
 
-    let file_input = Paragraph::new(vec![
-        Line::from("Enter file path (or 'browse' to select):"),
-        Line::from(""),
-        Line::from(Span::styled(
-            if app.send_file_input.is_empty() {
-                "/path/to/file.txt"
-            } else {
-                &app.send_file_input
-            },
-            if app.send_file_input.is_empty() {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default().fg(Color::White)
-            },
-        )),
+    let file_input_content = vec![
+        Line::from(vec![
+            Span::styled("📁 ", Style::default().fg(Color::Blue)),
+            Span::styled("File Path:", Style::default().fg(Color::White)),
+        ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Press ", Style::default()),
             Span::styled(
-                "Enter",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                "▶ ",
+                if file_input_focused {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                },
             ),
-            Span::styled(" to add file, ", Style::default()),
             Span::styled(
-                "Ctrl+C",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                if app.send_file_input.is_empty() {
+                    "/path/to/your/file.txt"
+                } else {
+                    &app.send_file_input
+                },
+                if app.send_file_input.is_empty() {
+                    Style::default().fg(Color::DarkGray).italic()
+                } else {
+                    Style::default().fg(Color::White)
+                },
             ),
-            Span::styled(" to clear", Style::default()),
         ]),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Add Files")
-            .border_style(file_input_style),
-    );
-    f.render_widget(file_input, chunks[1]);
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Enter", Style::default().fg(Color::Cyan).bold()),
+            Span::styled(" add • ", Style::default().fg(Color::Gray)),
+            Span::styled("Ctrl+C", Style::default().fg(Color::Red).bold()),
+            Span::styled(" clear", Style::default().fg(Color::Gray)),
+        ]),
+    ];
+
+    let file_input_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(file_input_style)
+        .title(" Add Files ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let file_input = Paragraph::new(file_input_content)
+        .block(file_input_block)
+        .alignment(Alignment::Left);
+    f.render_widget(file_input, left_chunks[1]);
 
     // Name field
-    let name_style = if app.send_focused_field == 1 {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
+    let name_focused = app.send_focused_field == 1;
+    let name_style = if name_focused {
+        Style::default().fg(Color::Yellow)
     } else {
-        Style::default()
+        Style::default().fg(Color::Gray)
     };
 
-    let name_field = Paragraph::new(vec![
-        Line::from("Your display name:"),
+    let name_content = vec![
+        Line::from(vec![
+            Span::styled("👤 ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                if name_focused {
+                    "▶ "
+                } else {
+                    "  "
+                },
+                if name_focused {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                },
+            ),
+            Span::styled(
+                &app.send_name,
+                Style::default().fg(Color::White).bold(),
+            ),
+        ]),
         Line::from(""),
-        Line::from(Span::styled(
-            &app.send_name,
-            Style::default().fg(Color::White),
-        )),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Sender Name")
-            .border_style(name_style),
-    );
-    f.render_widget(name_field, chunks[2]);
+    ];
+
+    let name_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(name_style)
+        .title(" Your Name ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let name_field = Paragraph::new(name_content)
+        .block(name_block)
+        .alignment(Alignment::Left);
+    f.render_widget(name_field, left_chunks[2]);
 
     // Avatar field
-    let avatar_style = if app.send_focused_field == 2 {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
+    let avatar_focused = app.send_focused_field == 2;
+    let avatar_style = if avatar_focused {
+        Style::default().fg(Color::Yellow)
     } else {
-        Style::default()
+        Style::default().fg(Color::Gray)
     };
 
-    let avatar_text = app.send_avatar_path.as_deref().unwrap_or("None");
-    let avatar_field = Paragraph::new(vec![
-        Line::from("Avatar image (optional):"),
+    let avatar_text = app
+        .send_avatar_path
+        .as_deref()
+        .unwrap_or("No avatar selected");
+    let avatar_content = vec![
+        Line::from(vec![
+            Span::styled("🖼️ ", Style::default().fg(Color::Magenta)),
+            Span::styled(
+                if avatar_focused {
+                    "▶ "
+                } else {
+                    "  "
+                },
+                if avatar_focused {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                },
+            ),
+            Span::styled(
+                avatar_text,
+                if app.send_avatar_path.is_some() {
+                    Style::default().fg(Color::White)
+                } else {
+                    Style::default().fg(Color::DarkGray).italic()
+                },
+            ),
+        ]),
         Line::from(""),
-        Line::from(Span::styled(
-            avatar_text,
-            Style::default().fg(Color::White),
-        )),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Avatar")
-            .border_style(avatar_style),
-    );
-    f.render_widget(avatar_field, chunks[3]);
+    ];
+
+    let avatar_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(avatar_style)
+        .title(" Avatar (Optional) ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let avatar_field = Paragraph::new(avatar_content)
+        .block(avatar_block)
+        .alignment(Alignment::Left);
+    f.render_widget(avatar_field, left_chunks[3]);
 
     // Files list
-    let file_items: Vec<ListItem> = app
-        .send_files
-        .iter()
-        .enumerate()
-        .map(|(i, file)| {
-            ListItem::new(format!("{}. 📄 {}", i + 1, file.display()))
-                .style(Style::default().fg(Color::Cyan))
-        })
-        .collect();
-
-    let files_list = List::new(file_items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!("Selected Files ({})", app.send_files.len())),
-    );
-    f.render_widget(files_list, chunks[4]);
-
-    // Instructions
-    let instructions = if app.send_files.is_empty() {
-        "Add at least one file to proceed"
+    let file_items: Vec<ListItem> = if app.send_files.is_empty() {
+        vec![ListItem::new(vec![
+            Line::from(vec![
+                Span::styled("📁 ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "No files selected yet",
+                    Style::default().fg(Color::DarkGray).italic(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "   Add files using the input field above",
+                Style::default().fg(Color::Gray),
+            )]),
+        ])]
     } else {
-        "Press Enter when focused on Send button to start transfer"
+        app.send_files
+            .iter()
+            .enumerate()
+            .map(|(i, file)| {
+                let file_name = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown");
+                let file_path = file
+                    .parent()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("/");
+
+                ListItem::new(vec![
+                    Line::from(vec![
+                        Span::styled(
+                            format!("{}. ", i + 1),
+                            Style::default().fg(Color::Yellow).bold(),
+                        ),
+                        Span::styled("📄 ", Style::default().fg(Color::Blue)),
+                        Span::styled(
+                            file_name,
+                            Style::default().fg(Color::White).bold(),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("   ", Style::default()),
+                        Span::styled(
+                            file_path,
+                            Style::default().fg(Color::Gray).italic(),
+                        ),
+                    ]),
+                ])
+            })
+            .collect()
     };
 
-    let send_button_style = if app.send_focused_field == 3 {
+    let files_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(if app.send_files.is_empty() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Blue)
+        })
+        .title(format!(" Selected Files ({}) ", app.send_files.len()))
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let files_list = List::new(file_items).block(files_block);
+    f.render_widget(files_list, right_chunks[0]);
+
+    // Instructions in left panel
+    let instructions_content = if app.send_files.is_empty() {
+        vec![
+            Line::from(vec![
+                Span::styled("⚠️ ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "Add at least one file to proceed",
+                    Style::default().fg(Color::Yellow),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    "💡 Tip: ",
+                    Style::default().fg(Color::Cyan).bold(),
+                ),
+                Span::styled(
+                    "Enter full file paths or 'browse' command",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+        ]
+    } else {
+        vec![
+            Line::from(vec![
+                Span::styled("✅ ", Style::default().fg(Color::Green)),
+                Span::styled(
+                    "Ready to send! ",
+                    Style::default().fg(Color::Green),
+                ),
+                Span::styled(
+                    format!("{} file(s) selected", app.send_files.len()),
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("🚀 ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "Click Send button to start transfer",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+        ]
+    };
+
+    let instructions_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Gray))
+        .title(" Instructions ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let instructions = Paragraph::new(instructions_content)
+        .block(instructions_block)
+        .alignment(Alignment::Left);
+    f.render_widget(instructions, left_chunks[4]);
+
+    // Send button
+    let send_button_focused = app.send_focused_field == 3;
+    let can_send = !app.send_files.is_empty();
+
+    let send_button_style = if send_button_focused && can_send {
         Style::default()
             .fg(Color::Black)
             .bg(Color::Green)
-            .add_modifier(Modifier::BOLD)
-    } else {
+            .bold()
+    } else if send_button_focused {
+        Style::default()
+            .fg(Color::DarkGray)
+            .bg(Color::Black)
+            .bold()
+    } else if can_send {
         Style::default().fg(Color::Green)
+    } else {
+        Style::default().fg(Color::DarkGray)
     };
 
-    let footer = Paragraph::new(vec![
-        Line::from(instructions),
+    let button_content = vec![
+        Line::from(""),
         Line::from(vec![
-            Span::styled("[ ", Style::default()),
-            Span::styled("Send Files", send_button_style),
-            Span::styled(" ]", Style::default()),
+            Span::styled(
+                if send_button_focused {
+                    "▶ "
+                } else {
+                    "  "
+                },
+                if send_button_focused {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                },
+            ),
+            Span::styled(
+                if can_send {
+                    "🚀 Send Files"
+                } else {
+                    "❌ Cannot Send"
+                },
+                send_button_style,
+            ),
         ]),
-    ])
-    .block(Block::default().borders(Borders::ALL));
-    f.render_widget(footer, chunks[5]);
+        Line::from(""),
+    ];
+
+    let send_button_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(if send_button_focused {
+            Style::default().fg(Color::Yellow)
+        } else if can_send {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        })
+        .title(" Action ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let send_button = Paragraph::new(button_content)
+        .block(send_button_block)
+        .alignment(Alignment::Center);
+    f.render_widget(send_button, right_chunks[1]);
 }
 
 pub async fn handle_send_page_input(

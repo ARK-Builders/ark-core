@@ -38,7 +38,7 @@ fn build_cli() -> Command {
     Command::new("arkdrop")
         .about("A ARK Drop tool for sending and receiving files")
         .version("1.0.0")
-        .author("oluiscabral@ark-builders.dev")
+        .author("ARK Builders")
         .arg_required_else_help(false) // Allow running without args to start TUI
         .arg(
             Arg::new("verbose")

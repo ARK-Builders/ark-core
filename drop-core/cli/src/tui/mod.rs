@@ -13,9 +13,11 @@ use crossterm::{
 use ratatui::{
     Frame, Terminal,
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    layout::{Alignment, Constraint, Direction, Layout, Margin},
+    style::{Color, Style, Stylize},
+    symbols::border,
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, Gauge, Paragraph, Wrap},
 };
 use std::io;
 use tokio::time::Duration;
@@ -81,55 +83,104 @@ async fn run_app<B: Backend>(
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
-    let chunks = Layout::default()
+    let main_chunks = Layout::default()
         .direction(Direction::Vertical)
+        .margin(1)
         .constraints([
-            Constraint::Length(3), // Title
+            Constraint::Length(5), // Title
             Constraint::Min(0),    // Main content
-            Constraint::Length(3), // Footer/Help
+            Constraint::Length(4), // Footer/Help
         ])
         .split(f.area());
 
     // Title
-    let title = Paragraph::new("🚀 ARK Drop - File Transfer Tool")
-        .style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(title, chunks[0]);
+    let title_text = vec![
+        Line::from(vec![
+            Span::styled("  🚀 ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled("ARK ", Style::default().fg(Color::Cyan).bold()),
+            Span::styled("Drop", Style::default().fg(Color::Blue).bold()),
+            Span::styled(
+                " - File Transfer Tool",
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "  Fast • Secure • Peer-to-Peer",
+            Style::default().fg(Color::Gray).italic(),
+        )]),
+    ];
+
+    let title_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Welcome ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let title = Paragraph::new(title_text)
+        .block(title_block)
+        .alignment(Alignment::Left);
+    f.render_widget(title, main_chunks[0]);
 
     // Main content based on current page
     match app.current_page {
-        Page::Main => render_main_page(f, app, chunks[1]),
-        Page::Send => render_send_page(f, app, chunks[1]),
-        Page::Receive => render_receive_page(f, app, chunks[1]),
-        Page::Config => render_config_page(f, app, chunks[1]),
-        Page::Help => render_help_page(f, app, chunks[1]),
-        Page::SendProgress => render_send_progress_page(f, app, chunks[1]),
+        Page::Main => render_main_page(f, app, main_chunks[1]),
+        Page::Send => render_send_page(f, app, main_chunks[1]),
+        Page::Receive => render_receive_page(f, app, main_chunks[1]),
+        Page::Config => render_config_page(f, app, main_chunks[1]),
+        Page::Help => render_help_page(f, app, main_chunks[1]),
+        Page::SendProgress => render_send_progress_page(f, app, main_chunks[1]),
         Page::ReceiveProgress => {
-            render_receive_progress_page(f, app, chunks[1])
+            render_receive_progress_page(f, app, main_chunks[1])
         }
     }
 
     // Footer with navigation help
-    let help_text = match app.current_page {
-        Page::Main => "↑/↓: Navigate • Enter: Select • Q: Quit • H: Help",
-        Page::Send => "Tab: Next field • Enter: Send • Esc: Back • Q: Quit",
-        Page::Receive => {
-            "Tab: Next field • Enter: Receive • Esc: Back • Q: Quit"
+    let (help_text, status_color) = match app.current_page {
+        Page::Main => {
+            ("↑/↓ Navigate • Enter Select • H Help • Q Quit", Color::Cyan)
         }
-        Page::Config => "↑/↓: Navigate • Enter: Select • Esc: Back • Q: Quit",
-        Page::Help => "Esc: Back • Q: Quit",
-        Page::SendProgress => "Q: Quit",
-        Page::ReceiveProgress => "Q: Quit",
+        Page::Send => (
+            "Tab Next Field • Enter Send • Esc Back • Q Quit",
+            Color::Green,
+        ),
+        Page::Receive => (
+            "Tab Next Field • Enter Receive • Esc Back • Q Quit",
+            Color::Blue,
+        ),
+        Page::Config => (
+            "↑/↓ Navigate • Enter Select • Esc Back • Q Quit",
+            Color::Yellow,
+        ),
+        Page::Help => ("Esc Back • Q Quit", Color::Magenta),
+        Page::SendProgress => {
+            ("Transfer in progress... • Q Quit", Color::Green)
+        }
+        Page::ReceiveProgress => {
+            ("Transfer in progress... • Q Quit", Color::Blue)
+        }
     };
 
-    let footer = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(footer, chunks[2]);
+    let footer_content = vec![
+        Line::from(vec![
+            Span::styled("💡 ", Style::default().fg(Color::Yellow)),
+            Span::styled(help_text, Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+    ];
+
+    let footer_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(status_color))
+        .title(" Controls ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let footer = Paragraph::new(footer_content)
+        .block(footer_block)
+        .alignment(Alignment::Center);
+    f.render_widget(footer, main_chunks[2]);
 
     // Render modals/dialogs if any
     if app.show_error_modal {
@@ -175,43 +226,92 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
 }
 
 fn render_error_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(60, 20, f.area());
+    let area = centered_rect(70, 30, f.area());
     f.render_widget(Clear, area);
 
     let error_text = app
         .error_message
         .as_deref()
-        .unwrap_or("An error occurred");
-    let block = Paragraph::new(error_text)
+        .unwrap_or("An unexpected error occurred");
+
+    let content = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ⚠️  ", Style::default().fg(Color::Red).bold()),
+            Span::styled(
+                "Something went wrong:",
+                Style::default().fg(Color::White).bold(),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(error_text, Style::default().fg(Color::LightRed)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Press ", Style::default().fg(Color::Gray)),
+            Span::styled("ESC", Style::default().fg(Color::White).bold()),
+            Span::styled(" to dismiss", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+    ];
+
+    let block = Paragraph::new(content)
         .wrap(Wrap { trim: true })
-        .style(Style::default().fg(Color::Red))
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("❌ Error")
-                .style(Style::default().fg(Color::Red)),
-        );
+                .border_set(border::THICK)
+                .border_style(Style::default().fg(Color::Red))
+                .title(" ❌ Error ")
+                .title_style(Style::default().fg(Color::Red).bold()),
+        )
+        .alignment(Alignment::Left);
 
     f.render_widget(block, area);
 }
 
 fn render_success_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(60, 20, f.area());
+    let area = centered_rect(70, 30, f.area());
     f.render_widget(Clear, area);
 
     let success_text = app
         .success_message
         .as_deref()
-        .unwrap_or("Operation completed successfully");
-    let block = Paragraph::new(success_text)
+        .unwrap_or("Operation completed successfully!");
+
+    let content = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  🎉  ", Style::default().fg(Color::Green).bold()),
+            Span::styled("Success!", Style::default().fg(Color::White).bold()),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(success_text, Style::default().fg(Color::LightGreen)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Press ", Style::default().fg(Color::Gray)),
+            Span::styled("ESC", Style::default().fg(Color::White).bold()),
+            Span::styled(" to continue", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+    ];
+
+    let block = Paragraph::new(content)
         .wrap(Wrap { trim: true })
-        .style(Style::default().fg(Color::Green))
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("✅ Success")
-                .style(Style::default().fg(Color::Green)),
-        );
+                .border_set(border::THICK)
+                .border_style(Style::default().fg(Color::Green))
+                .title(" ✅ Success ")
+                .title_style(Style::default().fg(Color::Green).bold()),
+        )
+        .alignment(Alignment::Left);
 
     f.render_widget(block, area);
 }
