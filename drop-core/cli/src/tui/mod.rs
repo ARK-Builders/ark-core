@@ -62,7 +62,7 @@ async fn run_app<B: Backend>(
     app: &mut App,
 ) -> Result<()> {
     loop {
-        terminal.draw(|f| ui(f, app))?;
+        terminal.draw(|f| ui::<B>(f, app))?;
 
         // Handle events
         if event::poll(Duration::from_millis(100))? {
@@ -82,7 +82,7 @@ async fn run_app<B: Backend>(
     Ok(())
 }
 
-fn ui(f: &mut Frame, app: &mut App) {
+fn ui<B: Backend>(f: &mut Frame, app: &mut App) {
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -126,7 +126,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     // Main content based on current page
     match app.current_page {
         Page::Main => render_main_page(f, app, main_chunks[1]),
-        Page::Send => render_send_page(f, app, main_chunks[1]),
+        Page::Send => render_send_page::<B>(f, app, main_chunks[1]),
         Page::Receive => render_receive_page(f, app, main_chunks[1]),
         Page::Config => render_config_page(f, app, main_chunks[1]),
         Page::Help => render_help_page(f, app, main_chunks[1]),

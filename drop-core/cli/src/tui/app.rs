@@ -35,6 +35,7 @@ pub struct App {
     pub send_avatar_path: Option<String>,
     pub send_focused_field: usize,
     pub send_file_input: String,
+    pub show_file_browser: bool,
 
     // Receive page fields
     pub receive_ticket: String,
@@ -43,6 +44,7 @@ pub struct App {
     pub receive_name: String,
     pub receive_avatar_path: Option<String>,
     pub receive_focused_field: usize,
+    pub show_directory_browser: bool,
 
     // Progress tracking
     pub progress_message: String,
@@ -85,6 +87,7 @@ impl App {
             send_avatar_path: None,
             send_focused_field: 0,
             send_file_input: String::new(),
+            show_file_browser: false,
 
             receive_ticket: String::new(),
             receive_confirmation: String::new(),
@@ -92,6 +95,7 @@ impl App {
             receive_name: "arkdrop-receiver".to_string(),
             receive_avatar_path: None,
             receive_focused_field: 0,
+            show_directory_browser: false,
 
             progress_message: String::new(),
             progress_percentage: 0.0,
@@ -237,5 +241,21 @@ impl App {
 
     pub fn clear_files(&mut self) {
         self.send_files.clear();
+    }
+    
+    pub fn open_file_browser(&mut self) {
+        self.show_file_browser = true;
+    }
+    
+    pub fn close_file_browser(&mut self) {
+        self.show_file_browser = false;
+    }
+    
+    pub fn open_directory_browser(&mut self) {
+        self.show_directory_browser = true;
+    }
+    
+    pub fn close_directory_browser(&mut self) {
+        self.show_directory_browser = false;
     }
 }

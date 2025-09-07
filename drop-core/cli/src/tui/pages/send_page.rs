@@ -1,21 +1,32 @@
-use crate::tui::app::App;
+use crate::tui::{
+    app::App,
+    components::file_browser::{
+        BrowserMode, FileBrowser, open_system_file_browser,
+    },
+};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout},
+    prelude::Backend,
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
-pub fn render_send_page(
+pub fn render_send_page<B: Backend>(
     f: &mut Frame,
     app: &mut App,
     area: ratatui::layout::Rect,
 ) {
+    // If file browser is open, render it as modal
+    if app.show_file_browser {
+        render_file_browser_modal::<B>(f, app, area);
+        return;
+    }
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .margin(1)
@@ -102,6 +113,8 @@ pub fn render_send_page(
         Line::from(vec![
             Span::styled("Enter", Style::default().fg(Color::Cyan).bold()),
             Span::styled(" add • ", Style::default().fg(Color::Gray)),
+            Span::styled("Ctrl+O", Style::default().fg(Color::Green).bold()),
+            Span::styled(" browse • ", Style::default().fg(Color::Gray)),
             Span::styled("Ctrl+C", Style::default().fg(Color::Red).bold()),
             Span::styled(" clear", Style::default().fg(Color::Gray)),
         ]),
@@ -426,9 +439,19 @@ pub async fn handle_send_page_input(
                     // Add file
                     if !app.send_file_input.is_empty() {
                         if app.send_file_input == "browse" {
-                            // In a real implementation, you'd open a file
-                            // browser
-                            app.show_error("File browser not implemented in TUI mode. Please enter full path.".to_string());
+                            match open_system_file_browser(
+                                BrowserMode::SelectFiles,
+                                env::current_dir().ok(),
+                            ) {
+                                Ok(files) => {
+                                    for file in files {
+                                        app.add_file(file);
+                                    }
+                                }
+                                Err(_) => {
+                                    app.open_file_browser();
+                                }
+                            };
                         } else {
                             let path = PathBuf::from(&app.send_file_input);
                             if path.exists() {
@@ -474,6 +497,24 @@ pub async fn handle_send_page_input(
                     }
                     _ => {}
                 },
+                'o' => {
+                    if app.send_focused_field == 0 {
+                        match open_system_file_browser(
+                            BrowserMode::SelectFiles,
+                            env::current_dir().ok(),
+                        ) {
+                            Ok(files) => {
+                                for file in files {
+                                    app.add_file(file);
+                                }
+                            }
+                            Err(_) => {
+                                // Fall back to TUI file browser
+                                app.open_file_browser();
+                            }
+                        }
+                    }
+                }
                 _ => {}
             },
             _ => {}
@@ -501,6 +542,28 @@ pub async fn handle_send_page_input(
                 // Remove last added file
                 app.send_files.pop();
             }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn render_file_browser_modal<B: Backend>(
+    f: &mut Frame,
+    app: &mut App,
+    area: ratatui::layout::Rect,
+) {
+    let mut b = FileBrowser::new(PathBuf::new(), BrowserMode::SelectFiles);
+    b.render::<B>(f, area);
+}
+
+pub async fn handle_file_browser_input(
+    app: &mut App,
+    key: KeyEvent,
+) -> Result<()> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+            app.close_file_browser();
         }
         _ => {}
     }
