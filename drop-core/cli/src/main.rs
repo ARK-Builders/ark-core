@@ -7,9 +7,17 @@ use arkdrop::{
 use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
 
+mod tui;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = build_cli().get_matches();
+
+    // Check if no arguments provided or --tui flag is present
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 1 || matches.get_flag("tui") {
+        return tui::run_tui().await;
+    }
 
     match matches.subcommand() {
         Some(("send", sub_matches)) => handle_send_command(sub_matches).await,
@@ -31,12 +39,20 @@ fn build_cli() -> Command {
         .about("A ARK Drop tool for sending and receiving files")
         .version("1.0.0")
         .author("oluiscabral@ark-builders.dev")
-        .arg_required_else_help(true)
+        .arg_required_else_help(false) // Allow running without args to start TUI
         .arg(
             Arg::new("verbose")
                 .long("verbose")
                 .short('v')
                 .help("Enable verbose logging")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+        )
+        .arg(
+            Arg::new("tui")
+                .long("tui")
+                .short('t')
+                .help("Launch Terminal User Interface")
                 .action(clap::ArgAction::SetTrue)
                 .global(true)
         )
