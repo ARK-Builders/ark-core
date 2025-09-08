@@ -200,6 +200,24 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
         (KeyCode::Char('h') | KeyCode::Char('H'), KeyModifiers::CONTROL) => {
             app.navigate_to(Page::Help);
         }
+        (KeyCode::Esc, _) => match app.current_page {
+            Page::Main => {
+                return Ok(true);
+            }
+            _ => {
+                app.go_back();
+            }
+        },
+        (KeyCode::Char('c') | KeyCode::Char('C'), KeyModifiers::CONTROL) => {
+            match app.current_page {
+                Page::Main => {
+                    return Ok(true);
+                }
+                _ => {
+                    app.go_back();
+                }
+            }
+        }
         _ => {
             // Handle browser inputs first
             if app.show_file_browser {
