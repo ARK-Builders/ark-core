@@ -572,9 +572,9 @@ pub async fn handle_file_browser_input(
                 if let Some(path) = browser.enter_selected() {
                     // File selected, add it
                     app.add_file(path);
+                } else {
+                    browser.toggle_selected();
                 }
-                // If directory was entered, browser handles navigation
-                // internally
             }
             KeyCode::Char(' ') => {
                 browser.toggle_selected();
