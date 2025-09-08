@@ -350,12 +350,3 @@ pub fn render_help_page(
         .alignment(Alignment::Left);
     f.render_widget(right_panel, content_chunks[1]);
 }
-
-pub async fn handle_help_page_input(
-    _app: &mut App,
-    _key: KeyCode,
-) -> Result<()> {
-    // Help page doesn't need special input handling
-    // Navigation is handled by the main event handler
-    Ok(())
-}

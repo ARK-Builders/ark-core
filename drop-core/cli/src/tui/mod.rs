@@ -194,49 +194,52 @@ fn ui<B: Backend>(f: &mut Frame, app: &mut App) {
 }
 
 async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('q') | KeyCode::Char('Q'), KeyModifiers::CONTROL) => {
-            return Ok(true);
-        }
-        (KeyCode::Char('h') | KeyCode::Char('H'), KeyModifiers::CONTROL) => {
-            app.navigate_to(Page::Help);
-        }
-        (KeyCode::Esc, _) => match app.current_page {
-            Page::Main => {
+    if app.show_file_browser {
+        pages::handle_file_browser_input(app, key).await?;
+    } else if app.show_directory_browser {
+        pages::handle_directory_browser_input(app, key).await?;
+    } else {
+        match (key.code, key.modifiers) {
+            (
+                KeyCode::Char('q') | KeyCode::Char('Q'),
+                KeyModifiers::CONTROL,
+            ) => {
                 return Ok(true);
             }
-            _ => {
-                app.go_back();
+            (
+                KeyCode::Char('h') | KeyCode::Char('H'),
+                KeyModifiers::CONTROL,
+            ) => {
+                app.navigate_to(Page::Help);
             }
-        },
-        (KeyCode::Char('c') | KeyCode::Char('C'), KeyModifiers::CONTROL) => {
-            match app.current_page {
+            (KeyCode::Esc, _) => match app.current_page {
                 Page::Main => {
                     return Ok(true);
                 }
                 _ => {
                     app.go_back();
                 }
-            }
-        }
-        _ => {
-            // Handle browser inputs first
-            if app.show_file_browser {
-                pages::handle_file_browser_input(app, key).await?;
-            } else if app.show_directory_browser {
-                pages::handle_directory_browser_input(app, key).await?;
-            } else {
-                match app.current_page {
-                    Page::Main => handle_main_page_input(app, key).await?,
-
-                    Page::Send => handle_send_page_input(app, key).await?,
-                    Page::Receive => {
-                        handle_receive_page_input(app, key).await?
-                    }
-                    Page::Config => handle_config_page_input(app, key).await?,
-                    _ => {}
+            },
+            (
+                KeyCode::Char('c') | KeyCode::Char('C'),
+                KeyModifiers::CONTROL,
+            ) => match app.current_page {
+                Page::Main => {
+                    return Ok(true);
                 }
-            }
+                _ => {
+                    app.go_back();
+                }
+            },
+            _ => match app.current_page {
+                Page::Main => handle_main_page_input(app, key).await?,
+                Page::Send => handle_send_page_input(app, key).await?,
+                Page::Receive => handle_receive_page_input(app, key).await?,
+                Page::Config => handle_config_page_input(app, key).await?,
+                Page::Help => {}
+                Page::SendProgress => {}
+                Page::ReceiveProgress => {}
+            },
         }
     }
 
