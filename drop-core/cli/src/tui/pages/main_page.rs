@@ -253,5 +253,6 @@ pub async fn handle_main_page_input(
         },
         _ => {}
     }
+
     Ok(())
 }

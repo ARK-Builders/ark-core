@@ -197,16 +197,8 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
         (KeyCode::Char('q') | KeyCode::Char('Q'), KeyModifiers::CONTROL) => {
             return Ok(true);
         }
-        (KeyCode::Esc, _) => {
-            if app.show_error_modal || app.show_success_modal {
-                app.show_error_modal = false;
-                app.show_success_modal = false;
-            } else {
-                app.go_back();
-            }
-        }
         (KeyCode::Char('h') | KeyCode::Char('H'), KeyModifiers::CONTROL) => {
-            app.current_page = Page::Help;
+            app.navigate_to(Page::Help);
         }
         _ => {
             // Handle browser inputs first
@@ -216,12 +208,8 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
                 pages::handle_directory_browser_input(app, key).await?;
             } else {
                 match app.current_page {
-                    Page::Main => match key.code {
-                        KeyCode::Char('h') | KeyCode::Char('H') => {
-                            app.current_page = Page::Help;
-                        }
-                        _ => handle_main_page_input(app, key).await?,
-                    },
+                    Page::Main => handle_main_page_input(app, key).await?,
+
                     Page::Send => handle_send_page_input(app, key).await?,
                     Page::Receive => {
                         handle_receive_page_input(app, key).await?
