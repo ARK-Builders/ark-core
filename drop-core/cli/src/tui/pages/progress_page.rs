@@ -1,4 +1,7 @@
-use crate::tui::app::{App, AppState};
+use crate::tui::{
+    app::{App, AppState},
+    components::qr_code::render_qr_code_widget,
+};
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use ratatui::{
@@ -39,7 +42,7 @@ fn render_progress_page(
         .constraints([
             Constraint::Length(3),  // Title
             Constraint::Length(12), // Progress section
-            Constraint::Min(0),     // Details/logs
+            Constraint::Min(0),     // Details/logs or QR code
             Constraint::Length(4),  // Footer
         ])
         .split(area);
@@ -222,153 +225,285 @@ fn render_progress_page(
         .alignment(Alignment::Left);
     f.render_widget(stats, right_chunks[1]);
 
-    // Transfer details
-    let details_content = match app.state {
-        AppState::Sending => vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("📤 ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "Sending Files",
-                    Style::default().fg(Color::White).bold(),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "Connection established with receiver",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "Files are encrypted during transfer",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "Transfer will complete automatically",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("💡 ", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    "Tip: ",
-                    Style::default().fg(Color::Yellow).bold(),
-                ),
-                Span::styled(
-                    "Keep this application running until transfer completes",
-                    Style::default().fg(Color::Gray),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("⚠️ ", Style::default().fg(Color::Red)),
-                Span::styled(
-                    "Do not close this window during transfer",
-                    Style::default().fg(Color::LightRed),
-                ),
-            ]),
-        ],
-        AppState::Receiving => vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("📥 ", Style::default().fg(Color::Blue)),
-                Span::styled(
-                    "Receiving Files",
-                    Style::default().fg(Color::White).bold(),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "Connected to sender",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "Files are being decrypted and saved",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    "Transfer will complete automatically",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("💾 ", Style::default().fg(Color::Cyan)),
-                Span::styled(
-                    "Files will be saved to: ",
-                    Style::default().fg(Color::Gray),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("   ", Style::default()),
-                Span::styled(
-                    if app.receive_output_dir.is_empty() {
-                        app.default_receive_dir
-                            .as_deref()
-                            .unwrap_or("~/Downloads/ARK-Drop")
-                    } else {
-                        &app.receive_output_dir
-                    },
-                    Style::default().fg(Color::Cyan).italic(),
-                ),
-            ]),
-        ],
-        _ => vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("⏳ ", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    "Processing transfer...",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-        ],
-    };
+    // Transfer details or QR Code for sender
+    match app.state {
+        AppState::Sending => {
+            // Check if we have a ticket and confirmation to display QR code
+            if let (Some(ticket), Some(confirmation)) =
+                (&app.send_ticket, &app.send_confirmation)
+            {
+                let qr_data = format!("{} {}", ticket, confirmation);
 
-    let details_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::White))
-        .title(" Transfer Details ")
-        .title_style(Style::default().fg(Color::White).bold());
+                // Split the area for QR code and details
+                let qr_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(50), // Details
+                        Constraint::Percentage(50), // QR Code
+                    ])
+                    .split(main_chunks[2]);
 
-    let details = Paragraph::new(details_content)
-        .block(details_block)
-        .wrap(Wrap { trim: true })
-        .alignment(Alignment::Left);
-    f.render_widget(details, main_chunks[2]);
+                // Details on the left
+                let details_content = vec![
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("📤 ", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            "Sending Files",
+                            Style::default().fg(Color::White).bold(),
+                        ),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("✓ ", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            "Connection established with receiver",
+                            Style::default().fg(Color::White),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("🔑 ", Style::default().fg(Color::Blue)),
+                        Span::styled(
+                            "Transfer Ticket: ",
+                            Style::default().fg(Color::White),
+                        ),
+                        Span::styled(ticket, Style::default().fg(Color::Cyan)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("🔒 ", Style::default().fg(Color::Blue)),
+                        Span::styled(
+                            "Confirmation Code: ",
+                            Style::default().fg(Color::White),
+                        ),
+                        Span::styled(
+                            confirmation,
+                            Style::default().fg(Color::Cyan),
+                        ),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("💡 ", Style::default().fg(Color::Yellow)),
+                        Span::styled(
+                            "Share QR Code or ticket with receiver",
+                            Style::default().fg(Color::Gray),
+                        ),
+                    ]),
+                ];
+
+                let details_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_set(border::ROUNDED)
+                    .border_style(Style::default().fg(Color::White))
+                    .title(" Transfer Details ")
+                    .title_style(Style::default().fg(Color::White).bold());
+
+                let details = Paragraph::new(details_content)
+                    .block(details_block)
+                    .wrap(Wrap { trim: true })
+                    .alignment(Alignment::Left);
+                f.render_widget(details, qr_chunks[0]);
+
+                // QR Code on the right
+                render_qr_code_widget(
+                    f,
+                    &qr_data,
+                    qr_chunks[1],
+                    " Transfer QR Code ",
+                    Color::Green,
+                )
+                .ok();
+            } else {
+                // Fallback to regular details if no ticket/confirmation
+                let details_content = vec![
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("📤 ", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            "Sending Files",
+                            Style::default().fg(Color::White).bold(),
+                        ),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("✓ ", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            "Connection established with receiver",
+                            Style::default().fg(Color::White),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("✓ ", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            "Files are encrypted during transfer",
+                            Style::default().fg(Color::White),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("✓ ", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            "Transfer will complete automatically",
+                            Style::default().fg(Color::White),
+                        ),
+                    ]),
+                ];
+
+                let details_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_set(border::ROUNDED)
+                    .border_style(Style::default().fg(Color::White))
+                    .title(" Transfer Details ")
+                    .title_style(Style::default().fg(Color::White).bold());
+
+                let details = Paragraph::new(details_content)
+                    .block(details_block)
+                    .wrap(Wrap { trim: true })
+                    .alignment(Alignment::Left);
+                f.render_widget(details, main_chunks[2]);
+            }
+        }
+        AppState::Receiving => {
+            let details_content = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("📥 ", Style::default().fg(Color::Blue)),
+                    Span::styled(
+                        "Receiving Files",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("✓ ", Style::default().fg(Color::Green)),
+                    Span::styled(
+                        "Connected to sender",
+                        Style::default().fg(Color::White),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("✓ ", Style::default().fg(Color::Green)),
+                    Span::styled(
+                        "Files are being decrypted and saved",
+                        Style::default().fg(Color::White),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("💾 ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        "Files will be saved to: ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("   ", Style::default()),
+                    Span::styled(
+                        if app.receive_output_dir.is_empty() {
+                            app.default_receive_dir
+                                .as_deref()
+                                .unwrap_or("~/Downloads/ARK-Drop")
+                        } else {
+                            &app.receive_output_dir
+                        },
+                        Style::default().fg(Color::Cyan).italic(),
+                    ),
+                ]),
+            ];
+
+            let details_block = Block::default()
+                .borders(Borders::ALL)
+                .border_set(border::ROUNDED)
+                .border_style(Style::default().fg(Color::White))
+                .title(" Transfer Details ")
+                .title_style(Style::default().fg(Color::White).bold());
+
+            let details = Paragraph::new(details_content)
+                .block(details_block)
+                .wrap(Wrap { trim: true })
+                .alignment(Alignment::Left);
+            f.render_widget(details, main_chunks[2]);
+        }
+        _ => {
+            let details_content = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("⏳ ", Style::default().fg(Color::Yellow)),
+                    Span::styled(
+                        "Processing transfer...",
+                        Style::default().fg(Color::White),
+                    ),
+                ]),
+            ];
+
+            let details_block = Block::default()
+                .borders(Borders::ALL)
+                .border_set(border::ROUNDED)
+                .border_style(Style::default().fg(Color::White))
+                .title(" Transfer Details ")
+                .title_style(Style::default().fg(Color::White).bold());
+
+            let details = Paragraph::new(details_content)
+                .block(details_block)
+                .wrap(Wrap { trim: true })
+                .alignment(Alignment::Left);
+            f.render_widget(details, main_chunks[2]);
+        }
+    }
 
     // Footer
-    let (footer_text, footer_color, footer_icon) =
-        if app.progress_percentage >= 100.0 {
-            (
-                "Transfer completed! Press ESC to continue...",
-                Color::Green,
-                "✅",
-            )
-        } else {
-            (
-                "Transfer in progress... Press Q to cancel",
-                Color::Yellow,
-                "⏳",
-            )
-        };
+    let (footer_text, footer_color, footer_icon) = match app.state {
+        AppState::Sending => {
+            if let (Some(ticket), Some(confirmation)) =
+                (&app.send_ticket, &app.send_confirmation)
+            {
+                if app.progress_percentage >= 100.0 {
+                    (
+                        "Transfer completed! Press ESC to continue..."
+                            .to_string(),
+                        Color::Green,
+                        "✅",
+                    )
+                } else {
+                    (
+                        format!(
+                            "Ticket + Confirmation: {} {}",
+                            ticket.clone(),
+                            confirmation.clone()
+                        )
+                        .to_string(),
+                        Color::Blue,
+                        "🔑",
+                    )
+                }
+            } else if app.progress_percentage >= 100.0 {
+                (
+                    "Transfer completed! Press ESC to continue...".to_string(),
+                    Color::Green,
+                    "✅",
+                )
+            } else {
+                (
+                    "Transfer in progress... Press Q to cancel".to_string(),
+                    Color::Yellow,
+                    "⏳",
+                )
+            }
+        }
+        AppState::Receiving => {
+            if app.progress_percentage >= 100.0 {
+                (
+                    "Transfer completed! Press ESC to continue...".to_string(),
+                    Color::Green,
+                    "✅",
+                )
+            } else {
+                (
+                    "Transfer in progress... Press Q to cancel".to_string(),
+                    Color::Blue,
+                    "⏳",
+                )
+            }
+        }
+        _ => ("Processing...".to_string(), Color::Gray, "⏳"),
+    };
 
     let footer_content = vec![
         Line::from(""),

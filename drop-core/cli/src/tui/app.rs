@@ -1,9 +1,9 @@
+use crate::tui::components::file_browser::{BrowserMode, FileBrowser};
 use anyhow::Result;
 use arkdrop::Profile;
 use ratatui::widgets::ListState;
 use std::path::PathBuf;
 use tokio::time::Instant;
-use crate::tui::components::file_browser::{BrowserMode, FileBrowser};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Page {
@@ -37,6 +37,8 @@ pub struct App {
     pub send_focused_field: usize,
     pub send_file_input: String,
     pub show_file_browser: bool,
+    pub send_ticket: Option<String>,
+    pub send_confirmation: Option<String>,
 
     // Receive page fields
     pub receive_ticket: String,
@@ -60,7 +62,7 @@ pub struct App {
 
     // Configuration
     pub default_receive_dir: Option<String>,
-    
+
     // Browsers
     pub file_browser: Option<FileBrowser>,
     pub directory_browser: Option<FileBrowser>,
@@ -93,6 +95,8 @@ impl App {
             send_focused_field: 0,
             send_file_input: String::new(),
             show_file_browser: false,
+            send_ticket: None,
+            send_confirmation: None,
 
             receive_ticket: String::new(),
             receive_confirmation: String::new(),
@@ -112,7 +116,7 @@ impl App {
             success_message: None,
 
             default_receive_dir: None,
-            
+
             file_browser: None,
             directory_browser: None,
         }
@@ -250,31 +254,38 @@ impl App {
     pub fn clear_files(&mut self) {
         self.send_files.clear();
     }
-    
+
     pub fn open_file_browser(&mut self) {
         self.show_file_browser = true;
         if self.file_browser.is_none() {
-            let start_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-            self.file_browser = Some(FileBrowser::new(start_path, BrowserMode::SelectFiles));
+            let start_path =
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+            self.file_browser =
+                Some(FileBrowser::new(start_path, BrowserMode::SelectFiles));
         }
     }
-    
+
     pub fn close_file_browser(&mut self) {
         self.show_file_browser = false;
     }
-    
+
     pub fn open_directory_browser(&mut self) {
         self.show_directory_browser = true;
         if self.directory_browser.is_none() {
-            let start_path = if let Some(ref default_dir) = self.default_receive_dir {
+            let start_path = if let Some(ref default_dir) =
+                self.default_receive_dir
+            {
                 PathBuf::from(default_dir)
             } else {
                 std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
             };
-            self.directory_browser = Some(FileBrowser::new(start_path, BrowserMode::SelectDirectory));
+            self.directory_browser = Some(FileBrowser::new(
+                start_path,
+                BrowserMode::SelectDirectory,
+            ));
         }
     }
-    
+
     pub fn close_directory_browser(&mut self) {
         self.show_directory_browser = false;
     }

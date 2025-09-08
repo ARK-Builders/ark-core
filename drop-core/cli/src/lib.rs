@@ -75,6 +75,7 @@ use arkdropx_sender::{
 };
 use base64::{Engine, engine::general_purpose};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use qrcode::QrCode;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -320,10 +321,15 @@ impl FileSender {
         let subscriber = FileSendSubscriber::new(verbose);
         bubble.subscribe(Arc::new(subscriber));
 
+        let ticket = bubble.get_ticket();
+        let confirmation = bubble.get_confirmation();
+
         println!("📦 Ready to send files!");
-        println!("🎫 Ticket: \"{}\"", bubble.get_ticket());
-        println!("🔑 Confirmation: \"{}\"", bubble.get_confirmation());
+        println!("🎫 Ticket + Confirmation: {ticket} {confirmation}",);
         println!("⏳ Waiting for receiver... (Press Ctrl+C to cancel)");
+
+        let qr_data = format!("{} {}", ticket, confirmation);
+        print_qr_to_console(&qr_data)?;
 
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
@@ -1113,4 +1119,25 @@ pub fn clear_default_receive_dir() -> Result<()> {
     let mut config = CliConfig::load()?;
     config.default_receive_dir = None;
     config.save()
+}
+
+pub fn print_qr_to_console(data: &str) -> Result<()> {
+    let code = QrCode::new(data)?;
+    let image = code
+        .render::<char>()
+        .quiet_zone(true)
+        .module_dimensions(2, 1)
+        .light_color(' ')
+        .dark_color('█')
+        .build();
+
+    println!("\n{}", "═".repeat(50));
+    println!("QR Code for Transfer:");
+    println!("{}", "═".repeat(50));
+    println!("{}", image);
+    println!("{}", "═".repeat(50));
+    println!("Transfer Code: {}", data);
+    println!("{}", "═".repeat(50));
+
+    Ok(())
 }
