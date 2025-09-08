@@ -13,7 +13,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
-use std::{env};
+use std::env;
 
 pub fn render_receive_page<B: Backend>(
     f: &mut Frame,
@@ -507,7 +507,7 @@ pub async fn handle_receive_page_input(
                 app.start_receive_operation();
             }
             _ => {}
-        }
+        },
         KeyCode::Char(c) => match key.modifiers {
             KeyModifiers::NONE => match app.receive_focused_field {
                 0 => {
@@ -541,7 +541,8 @@ pub async fn handle_receive_page_input(
                         ) {
                             Ok(mut dirs) => {
                                 if let Some(dir) = dirs.pop() {
-                                    app.receive_output_dir = dir.to_string_lossy().to_string();
+                                    app.receive_output_dir =
+                                        dir.to_string_lossy().to_string();
                                 }
                             }
                             Err(_) => {
@@ -606,7 +607,8 @@ pub async fn handle_directory_browser_input(
             KeyCode::Tab => {
                 // Select current directory and close
                 let selected_dir = browser.select_current_directory();
-                app.receive_output_dir = selected_dir.to_string_lossy().to_string();
+                app.receive_output_dir =
+                    selected_dir.to_string_lossy().to_string();
                 app.close_directory_browser();
             }
             KeyCode::Char('h') | KeyCode::Char('H') => {

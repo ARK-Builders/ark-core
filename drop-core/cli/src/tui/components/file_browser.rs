@@ -730,7 +730,9 @@ return POSIX path of theFolder"#,
         for (manager, args) in &file_managers {
             if let Ok(output) = Command::new(manager).args(args).output() {
                 if output.status.success() {
-                    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    let result = String::from_utf8_lossy(&output.stdout)
+                        .trim()
+                        .to_string();
                     if !result.is_empty() {
                         return Ok(result
                             .split('|')
