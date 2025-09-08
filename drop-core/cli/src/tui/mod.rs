@@ -138,27 +138,28 @@ fn ui<B: Backend>(f: &mut Frame, app: &mut App) {
 
     // Footer with navigation help
     let (help_text, status_color) = match app.current_page {
-        Page::Main => {
-            ("↑/↓ Navigate • Enter Select • H Help • Q Quit", Color::Cyan)
-        }
+        Page::Main => (
+            "↑/↓ Navigate • Enter Select • H Help • CTRL-Q Quit",
+            Color::Cyan,
+        ),
         Page::Send => (
-            "Tab Next Field • Enter Send • Esc Back • Q Quit",
+            "Tab Next Field • Enter Send • Esc Back • CTRL-Q Quit",
             Color::Green,
         ),
         Page::Receive => (
-            "Tab Next Field • Enter Receive • Esc Back • Q Quit",
+            "Tab Next Field • Enter Receive • Esc Back • CTRL-Q Quit",
             Color::Blue,
         ),
         Page::Config => (
-            "↑/↓ Navigate • Enter Select • Esc Back • Q Quit",
+            "↑/↓ Navigate • Enter Select • Esc Back • CTRL-Q Quit",
             Color::Yellow,
         ),
-        Page::Help => ("Esc Back • Q Quit", Color::Magenta),
+        Page::Help => ("Esc Back • CTRL-Q Quit", Color::Magenta),
         Page::SendProgress => {
-            ("Transfer in progress... • Q Quit", Color::Green)
+            ("Transfer in progress... • CTRL-Q Quit", Color::Green)
         }
         Page::ReceiveProgress => {
-            ("Transfer in progress... • Q Quit", Color::Blue)
+            ("Transfer in progress... • CTRL-Q Quit", Color::Blue)
         }
     };
 

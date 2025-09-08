@@ -84,7 +84,7 @@ pub fn render_help_page(
         ]),
         Line::from(vec![
             Span::styled("• ", Style::default().fg(Color::Cyan)),
-            Span::styled("Q", Style::default().fg(Color::White).bold()),
+            Span::styled("CTRL-Q", Style::default().fg(Color::White).bold()),
             Span::styled(
                 ": Quit application",
                 Style::default().fg(Color::Gray),
