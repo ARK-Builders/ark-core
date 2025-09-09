@@ -201,11 +201,11 @@ jobs:
           ./target/release/arkdrop config show
 
           # Test setting receive directory
-          mkdir -p /tmp/test-receive-dir
-          ./target/release/arkdrop config set-receive-dir /tmp/test-receive-dir
+          mkdir -p /tmp/test-out-dir
+          ./target/release/arkdrop config set-out-dir /tmp/test-out-dir
 
           # Verify it was set
-          if ./target/release/arkdrop config show | grep -q "/tmp/test-receive-dir"; then
+          if ./target/release/arkdrop config show | grep -q "/tmp/test-out-dir"; then
             echo "✅ Directory configuration working"
           else
             echo "❌ Directory configuration not working"
@@ -213,10 +213,10 @@ jobs:
           fi
 
           # Clear the directory
-          ./target/release/arkdrop config clear-receive-dir
+          ./target/release/arkdrop config clear-out-dir
 
           # Cleanup
-          rm -rf /tmp/test-receive-dir
+          rm -rf /tmp/test-out-dir
 
       - name: Test ARK Drop signal handling
         timeout-minutes: 2
