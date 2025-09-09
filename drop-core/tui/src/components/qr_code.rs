@@ -19,10 +19,9 @@ pub fn render_qr_code_widget(
         Ok(code) => {
             let code_image = code
                 .render::<char>()
+                .dark_color('■')
+                .light_color('·')
                 .quiet_zone(false)
-                .module_dimensions(1, 1)
-                .light_color(' ')
-                .dark_color('#')
                 .build();
             let code_image_lines: Vec<Line> = code_image
                 .lines()

@@ -176,10 +176,9 @@ fn print_qr_to_console(data: &str) -> Result<()> {
     let code = QrCode::new(data)?;
     let image = code
         .render::<char>()
-        .quiet_zone(true)
-        .module_dimensions(1, 1)
-        .light_color(' ')
-        .dark_color('#')
+        .dark_color('■')
+        .light_color('·')
+        .quiet_zone(false)
         .build();
 
     println!("QR Code for Transfer:");
