@@ -102,7 +102,7 @@ pub struct App {
     pub show_error_modal: RwLock<bool>,
     pub show_file_browser: RwLock<bool>,
     pub show_success_modal: RwLock<bool>,
-    pub show_directory_browser: RwLock<bool>,
+    pub show_dir_browser: RwLock<bool>,
 
     // Progress tracking
     pub progress_message: RwLock<String>,
@@ -163,7 +163,7 @@ impl App {
             show_error_modal: RwLock::new(false),
             show_file_browser: RwLock::new(false),
             show_success_modal: RwLock::new(false),
-            show_directory_browser: RwLock::new(false),
+            show_dir_browser: RwLock::new(false),
 
             progress_message: RwLock::new(String::new()),
             progress_percentage: RwLock::new(0.0),
@@ -363,7 +363,7 @@ impl App {
     }
 
     pub fn open_directory_browser(&self) {
-        *self.show_directory_browser.write().unwrap() = true;
+        *self.show_dir_browser.write().unwrap() = true;
         if self.directory_browser.read().unwrap().is_none() {
             let start_path = get_default_out_dir();
             *self.directory_browser.write().unwrap() = Some(FileBrowser::new(
@@ -374,7 +374,7 @@ impl App {
     }
 
     pub fn close_directory_browser(&self) {
-        *self.show_directory_browser.write().unwrap() = false;
+        *self.show_dir_browser.write().unwrap() = false;
     }
 }
 
@@ -654,10 +654,23 @@ fn ui<B: Backend>(f: &mut Frame, app: &mut App) {
 }
 
 async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
-    if app.show_file_browser.read().unwrap().clone() {
+    let show_file_browser = app.show_file_browser.read().unwrap().clone();
+    let show_dir_browser = app.show_dir_browser.read().unwrap().clone();
+    let show_success_modal = app.show_success_modal.read().unwrap().clone();
+    let show_error_modal = app.show_error_modal.read().unwrap().clone();
+
+    if show_file_browser {
         pages::handle_file_browser_input(app, key).await?;
-    } else if app.show_directory_browser.read().unwrap().clone() {
-        pages::handle_directory_browser_input(app, key).await?;
+    } else if show_dir_browser {
+        pages::handle_dir_browser_input(app, key).await?;
+    } else if show_success_modal || show_error_modal {
+        match key.code {
+            KeyCode::Esc => {
+                *app.show_error_modal.write().unwrap() = false;
+                *app.show_success_modal.write().unwrap() = false;
+            }
+            _ => {}
+        }
     } else {
         match (key.code, key.modifiers) {
             (

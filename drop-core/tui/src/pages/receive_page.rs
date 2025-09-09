@@ -23,7 +23,7 @@ pub fn render_receive_page<B: Backend>(
     area: ratatui::layout::Rect,
 ) {
     // If directory browser is open, render it as overlay
-    if app.show_directory_browser.read().unwrap().clone() {
+    if app.show_dir_browser.read().unwrap().clone() {
         if let Some(ref mut browser) =
             app.directory_browser.read().unwrap().clone()
         {
@@ -594,7 +594,7 @@ pub async fn handle_receive_page_input(
     Ok(())
 }
 
-pub async fn handle_directory_browser_input(
+pub async fn handle_dir_browser_input(
     app: &mut App,
     key: KeyEvent,
 ) -> Result<()> {
