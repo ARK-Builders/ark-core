@@ -63,7 +63,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use arkdrop_common::{AppConfig, Profile, create_sender_files};
+use arkdrop_common::{
+    AppConfig, Profile, clear_default_out_dir, create_sender_files,
+    get_default_out_dir, set_default_out_dir,
+};
 use arkdropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
     ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
@@ -74,6 +77,7 @@ use arkdropx_sender::{
     SendFilesSubscriber, SenderConfig, SenderFileData, SenderProfile,
     send_files,
 };
+use clap::{Arg, ArgMatches, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use qrcode::QrCode;
 use uuid::Uuid;
@@ -84,13 +88,13 @@ use uuid::Uuid;
 /// - Validation for input paths.
 /// - Subscription to transfer events with progress bars.
 /// - Clean cancellation via Ctrl+C.
-pub struct FileSender {
+struct FileSender {
     profile: Profile,
 }
 
 impl FileSender {
     /// Create a new FileSender with the given profile.
-    pub fn new(profile: Profile) -> Self {
+    fn new(profile: Profile) -> Self {
         Self { profile }
     }
 
@@ -105,7 +109,7 @@ impl FileSender {
     /// Errors:
     /// - If any provided path is missing or not a regular file.
     /// - If the underlying sender fails to initialize or run.
-    pub async fn send_files(
+    async fn send_files(
         &self,
         file_paths: Vec<PathBuf>,
         verbose: bool,
@@ -168,7 +172,7 @@ impl FileSender {
     }
 }
 
-pub fn print_qr_to_console(data: &str) -> Result<()> {
+fn print_qr_to_console(data: &str) -> Result<()> {
     let code = QrCode::new(data)?;
     let image = code
         .render::<char>()
@@ -204,13 +208,13 @@ async fn wait_for_send_completion(bubble: &arkdropx_sender::SendFilesBubble) {
 /// - Output directory management (unique subdir per transfer).
 /// - Subscription to events with per-file progress bars.
 /// - Clean cancellation via Ctrl+C.
-pub struct FileReceiver {
+struct FileReceiver {
     profile: Profile,
 }
 
 impl FileReceiver {
     /// Create a new FileReceiver with the given profile.
-    pub fn new(profile: Profile) -> Self {
+    fn new(profile: Profile) -> Self {
         Self { profile }
     }
 
@@ -231,7 +235,7 @@ impl FileReceiver {
     /// Errors:
     /// - If directories cannot be created or written.
     /// - If the underlying receiver fails to initialize or run.
-    pub async fn receive_files(
+    async fn receive_files(
         &self,
         out_dir: PathBuf,
         ticket: String,
@@ -852,4 +856,313 @@ pub async fn run_receive_files(
     receiver
         .receive_files(out_dir, ticket, confirmation_code, verbose)
         .await
+}
+
+pub fn build_profile(matches: &ArgMatches) -> Result<Profile> {
+    let name = match matches.get_one::<String>("name") {
+        Some(name) => name.clone(),
+        None => String::from("Unknown"),
+    };
+    let mut profile = Profile::new(name, None);
+
+    // Handle avatar from file
+    if let Some(avatar_path) = matches.get_one::<PathBuf>("avatar") {
+        if !avatar_path.exists() {
+            return Err(anyhow!(
+                "Avatar file does not exist: {}",
+                avatar_path.display()
+            ));
+        }
+        profile = profile
+            .with_avatar_file(&avatar_path.to_string_lossy())
+            .with_context(|| "Failed to load avatar file")?;
+    }
+
+    // Handle avatar from base64 string
+    if let Some(avatar_b64) = matches.get_one::<String>("avatar-b64") {
+        profile = profile.with_avatar_b64(avatar_b64.clone());
+    }
+
+    Ok(profile)
+}
+
+pub async fn run_cli() -> Result<()> {
+    let cli = build_cli();
+    let matches = cli.get_matches();
+    run_cli_subcommand(matches).await
+}
+
+async fn run_cli_subcommand(
+    matches: ArgMatches,
+) -> std::result::Result<(), anyhow::Error> {
+    match matches.subcommand() {
+        Some(("send", sub_matches)) => handle_send_command(sub_matches).await,
+        Some(("receive", sub_matches)) => {
+            handle_receive_command(sub_matches).await
+        }
+        Some(("config", sub_matches)) => {
+            handle_config_command(sub_matches).await
+        }
+        _ => {
+            eprintln!("❌ Invalid command. Use --help for usage information.");
+            std::process::exit(1);
+        }
+    }
+}
+
+pub fn build_cli() -> Command {
+    Command::new("arkdrop")
+        .about("ARK Drop tool for sending and receiving files")
+        .version("1.0.0")
+        .author("ARK Builders")
+        .arg(
+            Arg::new("verbose")
+                .long("verbose")
+                .short('v')
+                .help("Enable verbose logging")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+        )
+        .subcommand(
+            Command::new("send")
+                .about("Send files to another user")
+                .arg(
+                    Arg::new("files")
+                        .help("Files to send")
+                        .required(true)
+                        .num_args(1..)
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .short('n')
+                        .help("Your display name")
+                        .default_value("arkdrop-sender")
+                )
+                .arg(
+                    Arg::new("avatar")
+                        .long("avatar")
+                        .short('a')
+                        .help("Path to avatar image file")
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("avatar-b64")
+                        .long("avatar-b64")
+                        .help("Base64 encoded avatar image (alternative to --avatar)")
+                        .conflicts_with("avatar")
+                )
+        )
+        .subcommand(
+            Command::new("receive")
+                .about("Receive files from another user")
+                .arg(
+                    Arg::new("ticket")
+                        .help("Transfer ticket")
+                        .required(true)
+                        .index(1)
+                )
+                .arg(
+                    Arg::new("confirmation")
+                        .help("Confirmation code")
+                        .required(true)
+                        .index(2)
+                )
+                .arg(
+                    Arg::new("output")
+                        .help("Output directory for received files (optional if default is set)")
+                        .long("output")
+                        .short('o')
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("save-output")
+                        .long("save-output")
+                        .short('u')
+                        .help("Save the specified output directory as default for future use")
+                        .action(clap::ArgAction::SetTrue)
+                        .requires("output")
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .short('n')
+                        .help("Your display name")
+                        .default_value("arkdrop-receiver")
+                )
+                .arg(
+                    Arg::new("avatar")
+                        .long("avatar")
+                        .short('a')
+                        .help("Path to avatar image file")
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("avatar-b64")
+                        .long("avatar-b64")
+                        .short('b')
+                        .help("Base64 encoded avatar image (alternative to --avatar)")
+                        .conflicts_with("avatar")
+                )
+        )
+        .subcommand(
+            Command::new("config")
+                .about("Manage ARK Drop CLI configuration")
+                .subcommand(
+                    Command::new("show")
+                        .about("Show current configuration")
+                )
+                .subcommand(
+                    Command::new("set-output")
+                        .about("Set default receive output directory")
+                        .arg(
+                            Arg::new("output")
+                                .help("Output directory path to set as default")
+                                .required(true)
+                                .value_parser(clap::value_parser!(PathBuf))
+                        )
+                )
+                .subcommand(
+                    Command::new("clear-output")
+                        .about("Clear default receive directory")
+                )
+        )
+}
+
+async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
+    let files: Vec<PathBuf> = matches
+        .get_many::<PathBuf>("files")
+        .unwrap()
+        .cloned()
+        .collect();
+
+    let verbose: bool = matches.get_flag("verbose");
+
+    let profile = build_profile(matches)?;
+
+    println!("📤 Preparing to send {} file(s)...", files.len());
+    for file in &files {
+        println!("   📄 {}", file.display());
+    }
+
+    println!("👤 Sender name: {}", profile.name);
+
+    if profile.avatar_b64.is_some() {
+        println!("🖼️  Avatar: Set");
+    }
+
+    let file_strings: Vec<String> = files
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    run_send_files(file_strings, profile, verbose).await
+}
+
+async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
+    let out_dir = matches
+        .get_one::<String>("output")
+        .map(|p| PathBuf::from(p));
+    let ticket = matches.get_one::<String>("ticket").unwrap();
+    let confirmation = matches.get_one::<String>("confirmation").unwrap();
+    let verbose = matches.get_flag("verbose");
+    let save_output = matches.get_flag("save-output");
+
+    let profile = build_profile(matches)?;
+
+    println!("📥 Preparing to receive files...");
+
+    let out_dir = match out_dir {
+        Some(o) => o,
+        None => get_default_out_dir(),
+    };
+
+    println!("👤 Receiver name: {}", profile.name);
+
+    if profile.avatar_b64.is_some() {
+        println!("🖼️  Avatar: Set");
+    }
+
+    run_receive_files(
+        out_dir,
+        ticket.clone(),
+        confirmation.clone(),
+        profile,
+        verbose,
+        save_output,
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
+    match matches.subcommand() {
+        Some(("show", _)) => {
+            let out_dir = get_default_out_dir();
+            println!(
+                "📁 Default receive output directory: {}",
+                out_dir.display()
+            );
+        }
+
+        Some(("set-output", sub_matches)) => {
+            let out_dir = sub_matches.get_one::<PathBuf>("output").unwrap();
+            let out_dir_str = out_dir.display();
+
+            // Validate output exists or can be created
+            if !out_dir.exists() {
+                match std::fs::create_dir_all(out_dir) {
+                    Ok(_) => {
+                        println!("📁 Created output directory: {out_dir_str}")
+                    }
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "Failed to create output directory '{}': {}",
+                            out_dir_str,
+                            e
+                        ));
+                    }
+                }
+            }
+
+            set_default_out_dir(out_dir.clone())?;
+            println!(
+                "✅ Set default receive output directory to: {out_dir_str}"
+            );
+        }
+
+        Some(("clear-output", _)) => {
+            clear_default_out_dir()?;
+            println!("✅ Cleared default receive output directory");
+        }
+        _ => {
+            eprintln!(
+                "❌ Invalid config command. Use --help for usage information."
+            );
+            std::process::exit(1);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_profile_creation() {
+        let profile = Profile::new("test-user".to_string(), None);
+        assert_eq!(profile.name, "test-user");
+        assert!(profile.avatar_b64.is_none());
+    }
+
+    #[test]
+    fn test_profile_with_avatar() {
+        let profile = Profile::new("test-user".to_string(), None)
+            .with_avatar_b64("dGVzdA==".to_string());
+        assert_eq!(profile.name, "test-user");
+        assert_eq!(profile.avatar_b64, Some("dGVzdA==".to_string()));
+    }
 }

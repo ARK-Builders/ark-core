@@ -10,9 +10,17 @@ use arkdropx_sender::{
 };
 use ratatui::{
     Frame, Terminal,
-    backend::Backend,
-    crossterm::event::{
-        self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+    backend::{Backend, CrosstermBackend},
+    crossterm::{
+        event::{
+            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode,
+            KeyEvent, KeyEventKind, KeyModifiers,
+        },
+        execute,
+        terminal::{
+            EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+            enable_raw_mode,
+        },
     },
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style, Stylize},
@@ -21,7 +29,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, ListState, Paragraph, Wrap},
 };
 use std::{
-    collections::HashMap, fs, io::Write, path::PathBuf, sync::RwLock,
+    collections::HashMap, fs, io, io::Write, path::PathBuf, sync::RwLock,
     time::Duration,
 };
 use tokio::time::Instant;
@@ -480,7 +488,34 @@ impl ReceiveFilesSubscriber for App {
     }
 }
 
-pub async fn run_app<B: Backend>(
+pub async fn run_tui() -> Result<()> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Create app
+    let mut app = App::new();
+    let res = run_tui_loop(&mut terminal, &mut app).await;
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{err:?}");
+    }
+
+    Ok(())
+}
+
+async fn run_tui_loop<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> Result<()> {
