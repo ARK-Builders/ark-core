@@ -41,6 +41,8 @@ dictionary SenderFile {
 interface SenderFileData {
     /// Total length in bytes.
     u64 len();
+    /// Checks if the data is empty (length is 0).
+    boolean is_empty();
     /// Read the next byte, or null if EOF.
     u8? read();
     /// Read up to size bytes, returning fewer at EOF.

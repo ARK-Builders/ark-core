@@ -7,8 +7,8 @@
 //! progress updates.
 
 use anyhow::Result;
-use drop_entities::{File, Profile};
-use dropx_common::{
+use arkdrop_entities::{File, Profile};
+use arkdropx_common::{
     handshake::{
         HandshakeConfig, HandshakeFile, HandshakeProfile, NegotiatedConfig,
         ReceiverHandshake, SenderHandshake,
@@ -111,14 +111,14 @@ impl SendFilesHandler {
         files: Vec<File>,
         config: SenderConfig,
     ) -> Self {
-        return Self {
+        Self {
             is_consumed: AtomicBool::new(false),
             is_finished: Arc::new(AtomicBool::new(false)),
             profile,
             files: files.clone(),
             config,
             subscribers: Arc::new(RwLock::new(HashMap::new())),
-        };
+        }
     }
 
     /// Returns true if a connection has already been accepted.
@@ -128,7 +128,7 @@ impl SendFilesHandler {
         let consumed = self
             .is_consumed
             .load(std::sync::atomic::Ordering::Relaxed);
-        self.log(format!("is_consumed check: {}", consumed));
+        self.log(format!("is_consumed check: {consumed}"));
         consumed
     }
 
@@ -138,7 +138,7 @@ impl SendFilesHandler {
         let finished = self
             .is_finished
             .load(std::sync::atomic::Ordering::Relaxed);
-        self.log(format!("is_finished check: {}", finished));
+        self.log(format!("is_finished check: {finished}"));
         finished
     }
 
@@ -148,8 +148,8 @@ impl SendFilesHandler {
             .read()
             .unwrap()
             .iter()
-            .for_each(|(id, subscriber)| {
-                subscriber.log(format!("[{}] {}", id, message));
+            .for_each(|(_, subscriber)| {
+                subscriber.log(message.clone());
             });
     }
 
@@ -157,8 +157,7 @@ impl SendFilesHandler {
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.log(format!(
-            "Subscribing new subscriber with ID: {}",
-            subscriber_id
+            "Subscribing new subscriber with ID: {subscriber_id}"
         ));
 
         self.subscribers
@@ -176,10 +175,7 @@ impl SendFilesHandler {
     /// Unregisters a subscriber by its ID.
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
-        self.log(format!(
-            "Unsubscribing subscriber with ID: {}",
-            subscriber_id
-        ));
+        self.log(format!("Unsubscribing subscriber with ID: {subscriber_id}"));
 
         let removed = self
             .subscribers
@@ -188,11 +184,10 @@ impl SendFilesHandler {
             .remove(&subscriber_id);
 
         if removed.is_some() {
-            self.log(format!("Subscriber {} successfully unsubscribed. Remaining subscribers: {}", subscriber_id, self.subscribers.read().unwrap().len()));
+            self.log(format!("Subscriber {subscriber_id} successfully unsubscribed. Remaining subscribers: {}", self.subscribers.read().unwrap().len()));
         } else {
             self.log(format!(
-                "Subscriber {} was not found during unsubscribe operation",
-                subscriber_id
+                "Subscriber {subscriber_id} was not found during unsubscribe operation"
             ));
         }
     }
@@ -255,11 +250,11 @@ impl ProtocolHandler for SendFilesHandler {
 
         async move {
             let mut carrier = carrier;
-            if let Err(_) = carrier.greet().await {
+            if (carrier.greet().await).is_err() {
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
-            if let Err(_) = carrier.send_files().await {
+            if (carrier.send_files().await).is_err() {
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
@@ -411,26 +406,25 @@ impl Carrier {
             });
 
             // Limit concurrent streams to negotiated number
-            if join_set.len() >= parallel_streams as usize {
-                if let Some(result) = join_set.join_next().await {
-                    if let Err(err) = result? {
-                        self.log(format!("send_files: Stream failed: {}", err));
-                        return Err(err);
-                    }
-                }
+            if join_set.len() >= parallel_streams as usize
+                && let Some(result) = join_set.join_next().await
+                && let Err(err) = result?
+            {
+                self.log(format!("send_files: Stream failed: {err}"));
+                return Err(err);
             }
         }
 
         // Wait for all remaining streams to complete and update final progress
         while let Some(result) = join_set.join_next().await {
             if let Err(err) = result? {
-                self.log(format!("send_single_file: Stream failed: {}", err));
+                self.log(format!("send_single_file: Stream failed: {err}"));
                 return Err(err);
             }
         }
 
         self.log("send_files: All files transferred successfully".to_string());
-        return Ok(());
+        Ok(())
     }
 
     /// Streams a single file in JSON-framed chunks:
@@ -442,7 +436,7 @@ impl Carrier {
         connection: Connection,
         subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
     ) -> Result<()> {
-        let total_len = file.data.len() as u64;
+        let total_len = file.data.len();
         let mut sent = 0u64;
         let mut remaining = total_len;
         let mut chunk_buffer =
@@ -486,7 +480,7 @@ impl Carrier {
         uni.finish()?;
         uni.stopped().await?;
 
-        return Ok(());
+        Ok(())
     }
 
     /// Marks the handler as finished and closes the connection with a code and
@@ -507,13 +501,11 @@ impl Carrier {
 
     /// Internal logger that prefixes subscriber IDs.
     fn log(&self, message: String) {
-        self.subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(id, subscriber)| {
-                subscriber.log(format!("[{}] {}", id, message));
-            });
+        self.subscribers.read().unwrap().iter().for_each(
+            |(_id, subscriber)| {
+                subscriber.log(message.clone());
+            },
+        );
     }
 
     /// Notifies all subscribers about the current per-file progress.

@@ -1,40 +1,34 @@
 [package]
-name = "arkdrop-cli"
+name = "arkdrop-tui"
 version = "1.0.0"
 edition = "2024"
-description = "A CLI tool for sending and receiving files"
+description = "A TUI tool for sending and receiving files"
 authors = ["ARK Builders"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/Ark-Builders/ark-core"
 categories = ["command-line-utilities"]
-keywords = ["cli", "file-transfer", "data-transfer", "p2p"]
+keywords = ["tui", "file-transfer", "data-transfer", "p2p"]
 
 [lib]
 bench = false
-name = "arkdrop_cli"
+name = "arkdrop_tui"
 
 [[bin]]
 bench = false
-name = "arkdrop-cli"
+name = "arkdrop-tui"
 path = "src/main.rs"
 
 [dependencies]
-arkdrop-common = { path = "../common" }  
+arkdrop-common = { path = "../common" }
 arkdropx-sender = { path = "../exchanges/sender" }
 arkdropx-receiver = { path = "../exchanges/receiver" }  
 
-toml = "0.8"
-anyhow = "1.0"
-base64 = "0.21"
-clap = "4.5.47"
-uuid = "1.18.1"
+toml = "0.9.5"
 tokio = "1.47.1"
+anyhow = "1.0.99"
+ratatui = "0.29.0"
+base64 = "0.22.1"
 qrcode = "0.14.1"
 serde = "1.0.219"
-indicatif = "0.18.0"
-
-
-[dev-dependencies]
-tempfile = "3.0"
-tokio-test = "0.4"
+uuid = "1.18.1"

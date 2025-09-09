@@ -1,10 +1,9 @@
 use anyhow::{Context, Result, anyhow};
-use clap::{Arg, ArgMatches, Command};
-use drop_cli::{
-    Profile, clear_default_receive_dir, get_default_receive_dir,
-    run_receive_files, run_send_files, set_default_receive_dir,
-    suggested_default_receive_dir,
+use arkdrop_cli::{run_receive_files, run_send_files};
+use arkdrop_common::{
+    Profile, clear_default_out_dir, get_default_out_dir, set_default_out_dir,
 };
+use clap::{Arg, ArgMatches, Command};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -27,11 +26,10 @@ async fn main() -> Result<()> {
 }
 
 fn build_cli() -> Command {
-    Command::new("drop-cli")
-        .about("A Drop CLI tool for sending and receiving files")
+    Command::new("arkdrop-cli")
+        .about("ARK Drop CLI tool for sending and receiving files")
         .version("1.0.0")
-        .author("oluiscabral@ark-builders.dev")
-        .arg_required_else_help(true)
+        .author("ARK Builders")
         .arg(
             Arg::new("verbose")
                 .long("verbose")
@@ -55,7 +53,7 @@ fn build_cli() -> Command {
                         .long("name")
                         .short('n')
                         .help("Your display name")
-                        .default_value("drop-cli-sender")
+                        .default_value("arkdrop-sender")
                 )
                 .arg(
                     Arg::new("avatar")
@@ -94,8 +92,9 @@ fn build_cli() -> Command {
                         .value_parser(clap::value_parser!(PathBuf))
                 )
                 .arg(
-                    Arg::new("save-dir")
-                        .long("save-dir")
+                    Arg::new("save-output")
+                        .long("save-output")
+                        .short('u')
                         .help("Save the specified output directory as default for future use")
                         .action(clap::ArgAction::SetTrue)
                         .requires("output")
@@ -105,7 +104,7 @@ fn build_cli() -> Command {
                         .long("name")
                         .short('n')
                         .help("Your display name")
-                        .default_value("drop-cli-receiver")
+                        .default_value("arkdrop-receiver")
                 )
                 .arg(
                     Arg::new("avatar")
@@ -117,29 +116,30 @@ fn build_cli() -> Command {
                 .arg(
                     Arg::new("avatar-b64")
                         .long("avatar-b64")
+                        .short('b')
                         .help("Base64 encoded avatar image (alternative to --avatar)")
                         .conflicts_with("avatar")
                 )
         )
         .subcommand(
             Command::new("config")
-                .about("Manage CLI configuration")
+                .about("Manage ARK Drop CLI configuration")
                 .subcommand(
                     Command::new("show")
                         .about("Show current configuration")
                 )
                 .subcommand(
-                    Command::new("set-receive-dir")
-                        .about("Set default receive directory")
+                    Command::new("set-output")
+                        .about("Set default receive output directory")
                         .arg(
-                            Arg::new("directory")
-                                .help("Directory path to set as default")
+                            Arg::new("output")
+                                .help("Output directory path to set as default")
                                 .required(true)
                                 .value_parser(clap::value_parser!(PathBuf))
                         )
                 )
                 .subcommand(
-                    Command::new("clear-receive-dir")
+                    Command::new("clear-output")
                         .about("Clear default receive directory")
                 )
         )
@@ -161,11 +161,7 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
         println!("   📄 {}", file.display());
     }
 
-    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
-        println!("👤 Sender name: {}", name);
-    } else {
-        println!("👤 Sender name: {}", profile.name);
-    }
+    println!("👤 Sender name: {}", profile.name);
 
     if profile.avatar_b64.is_some() {
         println!("🖼️  Avatar: Set");
@@ -180,87 +176,81 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
 }
 
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
-    let output_dir = matches
-        .get_one::<PathBuf>("output")
-        .map(|p| p.to_string_lossy().to_string());
+    let out_dir = matches
+        .get_one::<String>("output")
+        .map(|p| PathBuf::from(p));
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
     let verbose = matches.get_flag("verbose");
-    let save_dir = matches.get_flag("save-dir");
+    let save_output = matches.get_flag("save-output");
 
     let profile = build_profile(matches)?;
 
     println!("📥 Preparing to receive files...");
 
-    if let Some(ref dir) = output_dir {
-        println!("📁 Output directory: {}", dir);
-    } else if let Some(default_dir) = get_default_receive_dir()? {
-        println!("📁 Using default directory: {}", default_dir);
-    } else {
-        let fallback = suggested_default_receive_dir();
-        println!("📁 Using default directory: {}", fallback.display());
-    }
+    let out_dir = match out_dir {
+        Some(o) => o,
+        None => get_default_out_dir(),
+    };
 
-    println!("🎫 Ticket: {}", ticket);
-    println!("🔑 Confirmation: {}", confirmation);
-
-    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
-        println!("👤 Receiver name: {}", name);
-    } else {
-        println!("👤 Receiver name: {}", profile.name);
-    }
+    println!("👤 Receiver name: {}", profile.name);
 
     if profile.avatar_b64.is_some() {
         println!("🖼️  Avatar: Set");
     }
 
     run_receive_files(
-        output_dir,
+        out_dir,
         ticket.clone(),
         confirmation.clone(),
         profile,
         verbose,
-        save_dir,
+        save_output,
     )
-    .await
+    .await?;
+
+    Ok(())
 }
 
 async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
     match matches.subcommand() {
-        Some(("show", _)) => match get_default_receive_dir()? {
-            Some(dir) => {
-                println!("📁 Default receive directory: {}", dir);
-            }
-            None => {
-                println!("📁 No default receive directory set");
-            }
-        },
-        Some(("set-receive-dir", sub_matches)) => {
-            let directory = sub_matches
-                .get_one::<PathBuf>("directory")
-                .unwrap();
-            let dir_str = directory.to_string_lossy().to_string();
+        Some(("show", _)) => {
+            let out_dir = get_default_out_dir();
+            println!(
+                "📁 Default receive output directory: {}",
+                out_dir.display()
+            );
+        }
 
-            // Validate directory exists or can be created
-            if !directory.exists() {
-                match std::fs::create_dir_all(directory) {
-                    Ok(_) => println!("📁 Created directory: {}", dir_str),
+        Some(("set-output", sub_matches)) => {
+            let out_dir = sub_matches.get_one::<PathBuf>("output").unwrap();
+            let out_dir_str = out_dir.display();
+
+            // Validate output exists or can be created
+            if !out_dir.exists() {
+                match std::fs::create_dir_all(out_dir) {
+                    Ok(_) => {
+                        println!("📁 Created output directory: {out_dir_str}")
+                    }
                     Err(e) => {
                         return Err(anyhow!(
-                            "Failed to create directory '{}': {}",
-                            dir_str,
+                            "Failed to create output directory '{}': {}",
+                            out_dir_str,
                             e
                         ));
                     }
                 }
             }
 
-            set_default_receive_dir(dir_str.clone())?;
-            println!("✅ Set default receive directory to: {}", dir_str);
+            set_default_out_dir(out_dir.clone())?;
+            println!(
+                "✅ Set default receive output directory to: {out_dir_str}"
+            );
         }
-        Some(("clear-receive-dir", _)) => {
-            clear_default_receive_dir()?;
-            println!("✅ Cleared default receive directory");
+
+        Some(("clear-output", _)) => {
+            clear_default_out_dir()?;
+            println!("✅ Cleared default receive output directory");
         }
         _ => {
             eprintln!(
