@@ -672,26 +672,11 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
             ) => {
                 app.navigate_to(Page::Help);
             }
-            (KeyCode::Esc, _) => match app.current_page.read().unwrap().clone()
-            {
-                Page::Main => {
-                    return Ok(true);
-                }
-                _ => {
+            (KeyCode::Esc, _) => {
+                if app.previous_pages.read().unwrap().len() > 0 {
                     app.go_back();
                 }
-            },
-            (
-                KeyCode::Char('c') | KeyCode::Char('C'),
-                KeyModifiers::CONTROL,
-            ) => match app.current_page.read().unwrap().clone() {
-                Page::Main => {
-                    return Ok(true);
-                }
-                _ => {
-                    app.go_back();
-                }
-            },
+            }
             _ => {
                 let page = app.current_page.read().unwrap().clone();
                 match &page {
