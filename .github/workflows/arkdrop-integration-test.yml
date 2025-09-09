@@ -9,13 +9,6 @@ on:
       - "drop-core/tui/**"
       - "drop-core/main/**"
       - ".github/workflows/arkdrop-integration-test.yml"
-  pull_request:
-    paths:
-      - "drop-core/entities/**"
-      - "drop-core/exchanges/**"
-      - "drop-core/cli/**"
-      - "drop-core/tui/**"
-      - "drop-core/main/**"
   workflow_dispatch:
 
 jobs:
