@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 ///   $HOME/.config/arkdrop_common/config.toml
 /// - macOS: $HOME/Library/Application Support/arkdrop_common/config.toml
 /// - Windows: %APPDATA%\arkdrop_common\config.toml
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     pub default_out_dir: Option<PathBuf>,
 }

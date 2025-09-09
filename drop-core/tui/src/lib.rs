@@ -29,7 +29,11 @@ use ratatui::{
     widgets::{Block, Borders, Clear, ListState, Paragraph, Wrap},
 };
 use std::{
-    collections::HashMap, fs, io, io::Write, path::PathBuf, sync::RwLock,
+    collections::HashMap,
+    fs,
+    io::{self, Write},
+    path::PathBuf,
+    sync::RwLock,
     time::Duration,
 };
 use tokio::time::Instant;
@@ -49,7 +53,7 @@ use crate::{
 mod components;
 mod pages;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Page {
     Main,
     Send,
@@ -60,7 +64,7 @@ pub enum Page {
     ReceiveProgress,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AppState {
     Idle,
     Sending,

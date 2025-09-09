@@ -143,7 +143,9 @@ impl FileSender {
 
         let ticket = bubble.get_ticket();
         let confirmation = bubble.get_confirmation();
-        let qr_data = format!("{} {}", ticket, confirmation);
+        let qr_data = format!(
+            "drop://receive?ticket={ticket}&confirmation={confirmation}"
+        );
 
         println!("📦 Ready to send files!");
         print_qr_to_console(&qr_data)?;
@@ -177,7 +179,8 @@ fn print_qr_to_console(data: &str) -> Result<()> {
     let image = code
         .render::<char>()
         .dark_color('■')
-        .light_color('·')
+        .light_color(' ')
+        .module_dimensions(2, 1)
         .quiet_zone(false)
         .build();
 

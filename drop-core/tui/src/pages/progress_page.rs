@@ -90,6 +90,7 @@ fn render_progress_page(
     let title_widget = Paragraph::new(title_content)
         .block(title_block)
         .alignment(Alignment::Center);
+
     f.render_widget(title_widget, main_chunks[0]);
 
     // Status information
@@ -237,7 +238,7 @@ fn render_progress_page(
             if let Some(bubble) = app.send_files_bubble.read().unwrap().as_ref()
             {
                 let qr_data = format!(
-                    "{} {}",
+                    "drop://receive?ticket={}&confirmation={}",
                     bubble.get_ticket(),
                     bubble.get_confirmation()
                 );

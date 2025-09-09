@@ -20,7 +20,8 @@ pub fn render_qr_code_widget(
             let code_image = code
                 .render::<char>()
                 .dark_color('■')
-                .light_color('·')
+                .light_color(' ')
+                .module_dimensions(2, 1)
                 .quiet_zone(false)
                 .build();
             let code_image_lines: Vec<Line> = code_image
