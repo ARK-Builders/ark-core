@@ -21,8 +21,6 @@ pub fn render_qr_code_widget(
                 .render::<char>()
                 .quiet_zone(false)
                 .module_dimensions(1, 1)
-                .min_dimensions(area.width.into(), area.height.into())
-                .max_dimensions(area.width.into(), area.height.into())
                 .light_color(' ')
                 .dark_color('█')
                 .build();
