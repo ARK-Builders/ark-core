@@ -291,6 +291,13 @@ impl App {
         *self.receive_files_bubble.write().unwrap() =
             Some(receive_files(request).await?);
 
+        self.receive_files_bubble
+            .read()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .start()?;
+
         *self.current_page.write().unwrap() = Page::ReceiveProgress;
 
         Ok(())
