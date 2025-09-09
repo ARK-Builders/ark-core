@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ratatui::{
     Frame,
-    crossterm::event::{KeyCode, KeyEvent},
+    crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style, Stylize},
     symbols::border,
@@ -228,8 +228,8 @@ pub async fn handle_main_page_input(
     app: &mut App,
     key: KeyEvent,
 ) -> Result<()> {
-    match key.code {
-        KeyCode::Up => {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up, _) => {
             let selected = app.main_menu_state.selected().unwrap_or(0);
             if selected > 0 {
                 app.main_menu_state.select(Some(selected - 1));
@@ -237,7 +237,7 @@ pub async fn handle_main_page_input(
                 app.main_menu_state.select(Some(3)); // Wrap to bottom
             }
         }
-        KeyCode::Down => {
+        (KeyCode::Down, _) => {
             let selected = app.main_menu_state.selected().unwrap_or(0);
             if selected < 3 {
                 app.main_menu_state.select(Some(selected + 1));
@@ -245,13 +245,16 @@ pub async fn handle_main_page_input(
                 app.main_menu_state.select(Some(0)); // Wrap to top
             }
         }
-        KeyCode::Enter => match app.main_menu_state.selected() {
+        (KeyCode::Enter, _) => match app.main_menu_state.selected() {
             Some(0) => app.navigate_to(Page::Send),
             Some(1) => app.navigate_to(Page::Receive),
             Some(2) => app.navigate_to(Page::Config),
             Some(3) => app.navigate_to(Page::Help),
             _ => {}
         },
+        (KeyCode::Char('h') | KeyCode::Char('H'), KeyModifiers::CONTROL) => {
+            app.navigate_to(Page::Help);
+        }
         _ => {}
     }
 

@@ -599,7 +599,7 @@ fn ui<B: Backend>(f: &mut Frame, app: &mut App) {
     let (help_text, status_color) =
         match app.current_page.read().unwrap().clone() {
             Page::Main => (
-                "↑/↓ Navigate • Enter Select • H Help • CTRL-Q Quit",
+                "↑/↓ Navigate • Enter Select • CTRL-H Help • CTRL-Q Quit",
                 Color::Cyan,
             ),
             Page::Send => (
@@ -678,12 +678,6 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<bool> {
                 KeyModifiers::CONTROL,
             ) => {
                 return Ok(true);
-            }
-            (
-                KeyCode::Char('h') | KeyCode::Char('H'),
-                KeyModifiers::CONTROL,
-            ) => {
-                app.navigate_to(Page::Help);
             }
             (KeyCode::Esc, _) => {
                 if app.previous_pages.read().unwrap().len() > 0 {
