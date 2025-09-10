@@ -17,7 +17,7 @@ use std::{env, path::PathBuf};
 
 pub fn render_send_page<B: Backend>(
     f: &mut Frame,
-    app: &mut App,
+    app: &App,
     area: ratatui::layout::Rect,
 ) {
     // If file browser is open, render it as overlay
@@ -98,12 +98,12 @@ pub fn render_send_page<B: Backend>(
                 },
             ),
             Span::styled(
-                if app.sender_file_in.is_empty() {
+                if app.sender_file_path_in.is_empty() {
                     "/path/to/your/file.txt"
                 } else {
-                    &app.sender_file_in
+                    &app.sender_file_path_in
                 },
-                if app.sender_file_in.is_empty() {
+                if app.sender_file_path_in.is_empty() {
                     Style::default().fg(Color::DarkGray).italic()
                 } else {
                     Style::default().fg(Color::White)
@@ -157,7 +157,7 @@ pub fn render_send_page<B: Backend>(
                 },
             ),
             Span::styled(
-                &app.sender_name,
+                &app.sender_name_in,
                 Style::default().fg(Color::White).bold(),
             ),
         ]),
@@ -185,7 +185,7 @@ pub fn render_send_page<B: Backend>(
     };
 
     let avatar_text = app
-        .sender_avatar_path
+        .sender_avatar_path_in
         .read()
         .unwrap()
         .clone()
@@ -208,7 +208,7 @@ pub fn render_send_page<B: Backend>(
             ),
             Span::styled(
                 avatar_text,
-                if app.sender_avatar_path.read().unwrap().is_some() {
+                if app.sender_avatar_path_in.read().unwrap().is_some() {
                     Style::default().fg(Color::White)
                 } else {
                     Style::default().fg(Color::DarkGray).italic()
@@ -231,7 +231,7 @@ pub fn render_send_page<B: Backend>(
     f.render_widget(avatar_field, left_chunks[3]);
 
     let mut file_items: Vec<ListItem> = Vec::new();
-    let sender_files = app.sender_files.read().unwrap().clone();
+    let sender_files = app.sender_files_in.read().unwrap().clone();
 
     // Files list
     if sender_files.is_empty() {
@@ -293,7 +293,7 @@ pub fn render_send_page<B: Backend>(
         .border_set(border::ROUNDED)
         .border_style(
             if app
-                .sender_files
+                .sender_files_in
                 .read()
                 .unwrap()
                 .clone()
@@ -306,7 +306,7 @@ pub fn render_send_page<B: Backend>(
         )
         .title(format!(
             " Selected Files ({}) ",
-            app.sender_files.read().unwrap().clone().len()
+            app.sender_files_in.read().unwrap().clone().len()
         ))
         .title_style(Style::default().fg(Color::White).bold());
 
@@ -315,7 +315,7 @@ pub fn render_send_page<B: Backend>(
 
     // Instructions in left panel
     let instructions_content = if app
-        .sender_files
+        .sender_files_in
         .read()
         .unwrap()
         .clone()
@@ -352,7 +352,7 @@ pub fn render_send_page<B: Backend>(
                 Span::styled(
                     format!(
                         "{} file(s) selected",
-                        app.sender_files.read().unwrap().clone().len()
+                        app.sender_files_in.read().unwrap().clone().len()
                     ),
                     Style::default().fg(Color::White),
                 ),
@@ -383,7 +383,7 @@ pub fn render_send_page<B: Backend>(
     // Send button
     let send_button_focused = app.sender_focused_field == 3;
     let can_send = !app
-        .sender_files
+        .sender_files_in
         .read()
         .unwrap()
         .clone()
@@ -452,7 +452,7 @@ pub fn render_send_page<B: Backend>(
 }
 
 pub async fn handle_send_page_input(
-    app: &mut App,
+    app: &App,
     key: KeyEvent,
 ) -> Result<()> {
     match (key.code, key.modifiers) {
@@ -470,8 +470,8 @@ pub async fn handle_send_page_input(
             match app.sender_focused_field {
                 0 => {
                     // Add file
-                    if !app.sender_file_in.is_empty() {
-                        if app.sender_file_in == "browse" {
+                    if !app.sender_file_path_in.is_empty() {
+                        if app.sender_file_path_in == "browse" {
                             match open_system_file_browser(
                                 BrowserMode::SelectFiles,
                                 env::current_dir().ok(),
@@ -486,10 +486,10 @@ pub async fn handle_send_page_input(
                                 }
                             };
                         } else {
-                            let path = PathBuf::from(&app.sender_file_in);
+                            let path = PathBuf::from(&app.sender_file_path_in);
                             if path.exists() {
                                 app.add_file(path);
-                                app.sender_file_in.clear();
+                                app.sender_file_path_in.clear();
                             } else {
                                 app.show_error(
                                     "File does not exist".to_string(),
@@ -499,7 +499,7 @@ pub async fn handle_send_page_input(
                     }
                 }
                 3 => {
-                    app.start_send_operation().await?;
+                    app.start_send_files().await?;
                 }
                 _ => {}
             }
@@ -507,18 +507,18 @@ pub async fn handle_send_page_input(
         (KeyCode::Char(c), modifiers) => match modifiers {
             KeyModifiers::NONE => match app.sender_focused_field {
                 0 => {
-                    app.sender_file_in.push(c);
+                    app.sender_file_path_in.push(c);
                 }
                 1 => {
-                    app.sender_name.push(c);
+                    app.sender_name_in.push(c);
                 }
                 2 => {
-                    if app.sender_avatar_path.read().unwrap().is_none() {
-                        *app.sender_avatar_path.write().unwrap() =
+                    if app.sender_avatar_path_in.read().unwrap().is_none() {
+                        *app.sender_avatar_path_in.write().unwrap() =
                             Some(String::new());
                     }
                     if let Some(avatar_path) =
-                        app.sender_avatar_path.write().unwrap().as_mut()
+                        app.sender_avatar_path_in.write().unwrap().as_mut()
                     {
                         avatar_path.push(c);
                     }
@@ -528,13 +528,13 @@ pub async fn handle_send_page_input(
             KeyModifiers::CONTROL => match c {
                 'c' => match app.sender_focused_field {
                     0 => {
-                        app.sender_file_in.clear();
+                        app.sender_file_path_in.clear();
                     }
                     1 => {
-                        app.sender_name.clear();
+                        app.sender_name_in.clear();
                     }
                     2 => {
-                        *app.sender_avatar_path.write().unwrap() = None;
+                        *app.sender_avatar_path_in.write().unwrap() = None;
                     }
                     _ => {}
                 },
@@ -562,17 +562,17 @@ pub async fn handle_send_page_input(
         },
         (KeyCode::Backspace, _) => match app.sender_focused_field {
             0 => {
-                app.sender_file_in.pop();
+                app.sender_file_path_in.pop();
             }
             1 => {
-                app.sender_name.pop();
+                app.sender_name_in.pop();
             }
             2 => {
                 if let Some(avatar_path) =
-                    app.sender_avatar_path.write().unwrap().as_mut()
+                    app.sender_avatar_path_in.write().unwrap().as_mut()
                 {
                     if avatar_path.is_empty() {
-                        *app.sender_avatar_path.write().unwrap() = None;
+                        *app.sender_avatar_path_in.write().unwrap() = None;
                     } else {
                         avatar_path.pop();
                     }
@@ -583,14 +583,14 @@ pub async fn handle_send_page_input(
         (KeyCode::Delete, _) => {
             if app.sender_focused_field == 0
                 && !app
-                    .sender_files
+                    .sender_files_in
                     .read()
                     .unwrap()
                     .clone()
                     .is_empty()
             {
                 // Remove last added file
-                app.sender_files.read().unwrap().clone().pop();
+                app.sender_files_in.read().unwrap().clone().pop();
             }
         }
         _ => {}
@@ -599,7 +599,7 @@ pub async fn handle_send_page_input(
 }
 
 pub async fn handle_file_browser_input(
-    app: &mut App,
+    app: &App,
     key: KeyEvent,
 ) -> Result<()> {
     if let Some(browser) = app.file_browser.write().unwrap().as_mut() {

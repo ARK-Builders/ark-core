@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use anyhow::Result;
 use arkdrop_common::{clear_default_out_dir, get_default_out_dir};
 use ratatui::{
@@ -14,7 +16,7 @@ use crate::App;
 
 pub fn render_config_page(
     f: &mut Frame,
-    app: &mut App,
+    app: &App,
     area: ratatui::layout::Rect,
 ) {
     let main_chunks = Layout::default()
@@ -54,8 +56,6 @@ pub fn render_config_page(
     f.render_widget(title, left_chunks[0]);
 
     // Current settings
-    let default_dir = get_default_out_dir();
-
     let settings_content = vec![
         Line::from(""),
         Line::from(vec![
@@ -69,7 +69,9 @@ pub fn render_config_page(
         Line::from(vec![
             Span::styled("   ", Style::default()),
             Span::styled(
-                default_dir.to_string_lossy().to_string(),
+                get_default_out_dir()
+                    .to_string_lossy()
+                    .to_string(),
                 Style::default().fg(Color::Cyan),
             ),
         ]),
@@ -234,44 +236,70 @@ pub fn render_config_page(
         )
         .highlight_symbol("▶ ");
 
-    f.render_stateful_widget(menu, main_chunks[1], &mut app.config_menu_state);
+    f.render_stateful_widget(
+        menu,
+        main_chunks[1],
+        &mut app.write().unwrap().config_menu_nav,
+    );
 }
 
 pub async fn handle_config_page_input(
-    app: &mut App,
+    app: &App,
     key: KeyEvent,
 ) -> Result<()> {
     match key.code {
         KeyCode::Up => {
-            let selected = app.config_menu_state.selected().unwrap_or(0);
+            let selected = app
+                .read()
+                .unwrap()
+                .config_menu_nav
+                .selected()
+                .unwrap_or(0);
             if selected > 0 {
-                app.config_menu_state.select(Some(selected - 1));
+                app.write()
+                    .unwrap()
+                    .config_menu_nav
+                    .select(Some(selected - 1));
             } else {
-                app.config_menu_state.select(Some(3)); // Wrap to bottom
+                app.write()
+                    .unwrap()
+                    .config_menu_nav
+                    .select(Some(3)); // Wrap to bottom
             }
         }
         KeyCode::Down => {
-            let selected = app.config_menu_state.selected().unwrap_or(0);
+            let selected = app
+                .read()
+                .unwrap()
+                .config_menu_nav
+                .selected()
+                .unwrap_or(0);
             if selected < 3 {
-                app.config_menu_state.select(Some(selected + 1));
+                app.write()
+                    .unwrap()
+                    .config_menu_nav
+                    .select(Some(selected + 1));
             } else {
-                app.config_menu_state.select(Some(0)); // Wrap to top
+                app.write()
+                    .unwrap()
+                    .config_menu_nav
+                    .select(Some(0)); // Wrap to top
             }
         }
         KeyCode::Enter => {
-            match app.config_menu_state.selected() {
+            match app.read().unwrap().config_menu_nav.selected() {
                 Some(0) => {
-                    app.open_directory_browser();
+                    app.write().unwrap().open_directory_browser();
                 }
                 Some(1) => {
                     // Clear default receive directory
                     if let Err(e) = clear_default_out_dir() {
-                        app.show_error(format!(
+                        app.write().unwrap().show_error(format!(
                             "❌ Failed to clear default directory:\n\n{}",
                             e
                         ));
                     } else {
-                        app.show_success(
+                        app.write().unwrap().show_success(
                             "✅ Default receive directory cleared successfully!\n\nFiles will now be saved to the system default location."
                                 .to_string(),
                         );
@@ -285,7 +313,7 @@ pub async fn handle_config_page_input(
                             .to_string_lossy()
                             .to_string()
                     );
-                    app.show_success(settings_info);
+                    app.write().unwrap().show_success(settings_info);
                 }
                 Some(3) => {
                     // TODO: RESET FUNCTIONALITY

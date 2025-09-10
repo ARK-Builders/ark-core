@@ -1,5 +1,4 @@
 use anyhow::Result;
-use arkdrop_common::get_default_out_dir;
 use ratatui::{
     Frame,
     backend::Backend,
@@ -19,14 +18,12 @@ use crate::{
 
 pub fn render_receive_page<B: Backend>(
     f: &mut Frame,
-    app: &mut App,
+    app: &App,
     area: ratatui::layout::Rect,
 ) {
     // If directory browser is open, render it as overlay
-    if app.show_dir_browser.read().unwrap().clone() {
-        if let Some(ref mut browser) =
-            app.directory_browser.read().unwrap().clone()
-        {
+    if app.show_dir_browser {
+        if let Some(browser) = app.dir_browser.as_mut() {
             browser.render::<B>(f, area);
         }
         return;
@@ -199,13 +196,7 @@ pub fn render_receive_page<B: Backend>(
         Style::default().fg(Color::Gray)
     };
 
-    let output_text = if app.receiver_out_dir_in.is_empty() {
-        get_default_out_dir()
-            .to_string_lossy()
-            .to_string()
-    } else {
-        app.receiver_out_dir_in.clone()
-    };
+    let output_text = app.get_out_dir().to_string_lossy().to_string();
 
     let output_content = vec![
         Line::from(vec![
@@ -280,7 +271,7 @@ pub fn render_receive_page<B: Backend>(
                 },
             ),
             Span::styled(
-                &app.receiver_name,
+                &app.receiver_name_in,
                 Style::default().fg(Color::White).bold(),
             ),
         ]),
@@ -307,12 +298,11 @@ pub fn render_receive_page<B: Backend>(
         Style::default().fg(Color::Gray)
     };
 
-    let avatar_text = app
-        .receiver_avatar_path
-        .read()
-        .unwrap()
-        .clone()
-        .unwrap_or("No avatar selected".to_string());
+    let avatar_text = if app.receiver_avatar_path_in.is_empty() {
+        "No avatar selected"
+    } else {
+        app.receiver_avatar_path_in.as_str()
+    };
 
     let avatar_content = vec![
         Line::from(vec![
@@ -331,10 +321,10 @@ pub fn render_receive_page<B: Backend>(
             ),
             Span::styled(
                 avatar_text,
-                if app.receiver_avatar_path.read().unwrap().is_some() {
-                    Style::default().fg(Color::White)
-                } else {
+                if app.receiver_avatar_path_in.is_empty() {
                     Style::default().fg(Color::DarkGray).italic()
+                } else {
+                    Style::default().fg(Color::White)
                 },
             ),
         ]),
@@ -457,13 +447,9 @@ pub fn render_receive_page<B: Backend>(
             Style::default().fg(Color::Gray),
         )]),
         Line::from(vec![Span::styled(
-            if app.receiver_out_dir_in.is_empty() {
-                get_default_out_dir()
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                app.receiver_out_dir_in.clone()
-            },
+            app.get_transfer_out_dir()
+                .to_string_lossy()
+                .to_string(),
             Style::default().fg(Color::Cyan).italic(),
         )]),
     ];
@@ -488,7 +474,7 @@ pub fn render_receive_page<B: Backend>(
 }
 
 pub async fn handle_receive_page_input(
-    app: &mut App,
+    app: &App,
     key: KeyEvent,
 ) -> Result<()> {
     match key.code {
@@ -508,7 +494,7 @@ pub async fn handle_receive_page_input(
                 app.open_directory_browser();
             }
             5 => {
-                app.start_receive_operation().await?;
+                app.start_receive_files().await?;
             }
             _ => {}
         },
@@ -524,18 +510,10 @@ pub async fn handle_receive_page_input(
                     app.receiver_out_dir_in.push(c);
                 }
                 3 => {
-                    app.receiver_name.push(c);
+                    app.receiver_name_in.push(c);
                 }
                 4 => {
-                    if app.receiver_avatar_path.read().unwrap().is_none() {
-                        *app.receiver_avatar_path.write().unwrap() =
-                            Some(String::new());
-                    }
-                    if let Some(avatar_path) =
-                        app.receiver_avatar_path.write().unwrap().as_mut()
-                    {
-                        avatar_path.push(c);
-                    }
+                    app.receiver_avatar_path_in.push(c);
                 }
                 _ => {}
             },
@@ -574,17 +552,11 @@ pub async fn handle_receive_page_input(
                 app.receiver_out_dir_in.pop();
             }
             3 => {
-                app.receiver_name.pop();
+                app.receiver_name_in.pop();
             }
             4 => {
-                if let Some(avatar_path) =
-                    app.receiver_avatar_path.write().unwrap().as_mut()
-                {
-                    if avatar_path.is_empty() {
-                        *app.receiver_avatar_path.write().unwrap() = None;
-                    } else {
-                        avatar_path.pop();
-                    }
+                if !app.receiver_avatar_path_in.is_empty() {
+                    app.receiver_avatar_path_in.pop();
                 }
             }
             _ => {}
@@ -595,10 +567,10 @@ pub async fn handle_receive_page_input(
 }
 
 pub async fn handle_dir_browser_input(
-    app: &mut App,
+    app: &App,
     key: KeyEvent,
 ) -> Result<()> {
-    if let Some(browser) = app.directory_browser.write().unwrap().as_mut() {
+    if let Some(browser) = app.dir_browser.as_mut() {
         match key.code {
             KeyCode::Esc => {
                 app.close_directory_browser();
