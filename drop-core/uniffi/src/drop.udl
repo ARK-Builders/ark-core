@@ -104,6 +104,7 @@ interface SendFilesSubscriber {
 
 /// Progress information for the current file.
 dictionary SendFilesSendingEvent  {
+    string id;
     /// File name being sent.
     string name;
     /// Bytes already sent.

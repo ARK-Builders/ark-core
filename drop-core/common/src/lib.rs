@@ -4,11 +4,11 @@
 use std::{
     env, fs,
     path::PathBuf,
-    sync::{Arc, RwLock, atomic::AtomicBool},
+    sync::{RwLock, atomic::AtomicBool},
 };
 
 use anyhow::{Context, Result, anyhow};
-use arkdropx_sender::{SenderFile, SenderFileData};
+use arkdropx_sender::SenderFileData;
 use base64::{Engine, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 
@@ -453,23 +453,33 @@ pub fn clear_default_out_dir() -> Result<()> {
     config.save()
 }
 
-/// Converts file paths into SenderFile entries backed by FileData.
-pub fn create_sender_files(paths: Vec<PathBuf>) -> Result<Vec<SenderFile>> {
-    let mut files = Vec::new();
-
-    for path in paths {
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| anyhow!("Invalid file name: {}", path.display()))?
-            .to_string();
-
-        let data = FileData::new(path)?;
-        files.push(SenderFile {
+#[derive(Clone)]
+pub struct TransferFile {
+    pub id: String,
+    pub name: String,
+    pub path: PathBuf,
+    pub len: u64,
+    pub expected_len: u64,
+}
+impl TransferFile {
+    pub fn new(
+        id: String,
+        name: String,
+        path: PathBuf,
+        expected_len: u64,
+    ) -> Self {
+        Self {
+            id,
             name,
-            data: Arc::new(data),
-        });
+            path,
+            len: 0,
+            expected_len,
+        }
     }
 
-    Ok(files)
+    pub fn get_pct(&self) -> f64 {
+        let raw_pct = self.len / self.expected_len;
+        let pct: u32 = raw_pct.try_into().unwrap_or(0);
+        pct.try_into().unwrap_or(0.0)
+    }
 }

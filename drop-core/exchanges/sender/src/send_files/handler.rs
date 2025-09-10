@@ -56,6 +56,7 @@ pub trait SendFilesSubscriber: Send + Sync {
 /// - `remaining`: bytes left until completion for this file.
 #[derive(Clone)]
 pub struct SendFilesSendingEvent {
+    pub id: String,
     pub name: String,
     pub sent: u64,
     pub remaining: u64,
@@ -444,7 +445,7 @@ impl Carrier {
 
         let mut uni = connection.open_uni().await?;
 
-        Self::notify_progress(&file.name, sent, remaining, subscribers.clone());
+        Self::notify_progress(&file, sent, remaining, subscribers.clone());
 
         loop {
             chunk_buffer.clear();
@@ -469,12 +470,7 @@ impl Carrier {
             sent += data_len;
             remaining = remaining.saturating_sub(data_len);
 
-            Self::notify_progress(
-                &file.name,
-                sent,
-                remaining,
-                subscribers.clone(),
-            );
+            Self::notify_progress(&file, sent, remaining, subscribers.clone());
         }
 
         uni.finish()?;
@@ -510,13 +506,14 @@ impl Carrier {
 
     /// Notifies all subscribers about the current per-file progress.
     fn notify_progress(
-        name: &str,
+        file: &File,
         sent: u64,
         remaining: u64,
         subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
     ) {
         let event = SendFilesSendingEvent {
-            name: name.to_string(),
+            id: file.id.clone(),
+            name: file.name.clone(),
             sent,
             remaining,
         };

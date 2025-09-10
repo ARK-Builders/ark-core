@@ -64,8 +64,8 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use arkdrop_common::{
-    AppConfig, Profile, clear_default_out_dir, create_sender_files,
-    get_default_out_dir, set_default_out_dir,
+    AppConfig, Profile, clear_default_out_dir, get_default_out_dir,
+    set_default_out_dir,
 };
 use arkdropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
@@ -74,8 +74,8 @@ use arkdropx_receiver::{
 };
 use arkdropx_sender::{
     SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
-    SendFilesSubscriber, SenderConfig, SenderFileData, SenderProfile,
-    send_files,
+    SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
+    SenderProfile, send_files,
 };
 use clap::{Arg, ArgMatches, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -129,8 +129,8 @@ impl FileSender {
         }
 
         let request = SendFilesRequest {
-            files: create_sender_files(file_paths)?,
-            profile: self.get_sender_profile(),
+            files: self.create_sender_files(file_paths)?,
+            profile: self.create_sender_profile(),
             config: SenderConfig::default(),
         };
 
@@ -165,8 +165,25 @@ impl FileSender {
         Ok(())
     }
 
+    fn create_sender_files(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> Result<Vec<SenderFile>> {
+        let mut sender_files = Vec::new();
+
+        for path in paths {
+            let data = FileData::new(path.clone())?;
+            sender_files.push(SenderFile {
+                name: path.to_string_lossy().to_string(),
+                data: Arc::new(data),
+            });
+        }
+
+        Ok(sender_files)
+    }
+
     /// Returns a SenderProfile derived from this FileSender's Profile.
-    fn get_sender_profile(&self) -> SenderProfile {
+    fn create_sender_profile(&self) -> SenderProfile {
         SenderProfile {
             name: self.profile.name.clone(),
             avatar_b64: self.profile.avatar_b64.clone(),
@@ -180,7 +197,7 @@ fn print_qr_to_console(data: &str) -> Result<()> {
         .render::<char>()
         .dark_color('■')
         .light_color(' ')
-        .module_dimensions(2, 1)
+        .module_dimensions(1, 1)
         .quiet_zone(false)
         .build();
 

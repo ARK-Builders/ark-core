@@ -97,6 +97,7 @@ pub trait SendFilesSubscriber: Send + Sync {
 
 /// Progress information for a single file being sent.
 pub struct SendFilesSendingEvent {
+    pub id: String,
     pub name: String,
     pub sent: u64,
     pub remaining: u64,
@@ -130,6 +131,7 @@ impl arkdropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
 
     fn notify_sending(&self, event: arkdropx_sender::SendFilesSendingEvent) {
         return self.inner.notify_sending(SendFilesSendingEvent {
+            id: event.id,
             name: event.name,
             sent: event.sent,
             remaining: event.remaining,
