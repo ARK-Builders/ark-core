@@ -24,23 +24,27 @@ use serde::{Deserialize, Serialize};
 /// - Windows: %APPDATA%\arkdrop_common\config.toml
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct AppConfig {
-    pub default_out_dir: Option<PathBuf>,
+    pub out_dir: Option<PathBuf>,
+    pub avatar_name: Option<String>,
+    pub avatar_file: Option<PathBuf>,
 }
 
 impl AppConfig {
     /// Returns the configuration directory path, creating a path under the
     /// user's platform-appropriate config directory.
-    pub fn config_dir() -> Result<PathBuf> {
+    fn config_dir() -> Result<PathBuf> {
+        let default_path = "ARK-Drop";
+
         #[cfg(target_os = "windows")]
         {
             if let Ok(appdata) = env::var("APPDATA") {
-                return Ok(PathBuf::from(appdata).join("arkdrop"));
+                return Ok(PathBuf::from(appdata).join(default_path));
             }
             // Fallback if APPDATA isn't set (rare)
             if let Ok(userprofile) = env::var("USERPROFILE") {
                 return Ok(PathBuf::from(userprofile)
                     .join(".config")
-                    .join("arkdrop"));
+                    .join("ARK-Drop"));
             }
             return Err(anyhow!(
                 "Unable to determine config directory (missing APPDATA/USERPROFILE)"
@@ -53,7 +57,7 @@ impl AppConfig {
                 return Ok(PathBuf::from(home)
                     .join("Library")
                     .join("Application Support")
-                    .join("arkdrop"));
+                    .join(default_path));
             }
             return Err(anyhow!(
                 "Unable to determine config directory (missing HOME)"
@@ -73,12 +77,12 @@ impl AppConfig {
                     "Unable to determine config directory (missing XDG_CONFIG_HOME/HOME)"
                 ));
             };
-            Ok(config_dir.join("arkdrop"))
+            Ok(config_dir.join(default_path))
         }
     }
 
     /// Returns the full config file path.
-    pub fn config_file() -> Result<PathBuf> {
+    fn config_file() -> Result<PathBuf> {
         Ok(Self::config_dir()?.join("config.toml"))
     }
 
@@ -128,14 +132,14 @@ impl AppConfig {
     }
 
     /// Updates and persists the default receive directory.
-    pub fn set_default_out_dir(&mut self, dir: PathBuf) -> Result<()> {
-        self.default_out_dir = Some(dir);
+    pub fn set_out_dir(&mut self, dir: PathBuf) -> Result<()> {
+        self.out_dir = Some(dir);
         self.save()
     }
 
     /// Returns the saved default receive directory, if any.
-    pub fn get_default_out_dir(&self) -> PathBuf {
-        match self.default_out_dir.clone() {
+    pub fn get_out_dir(&self) -> PathBuf {
+        match self.out_dir.clone() {
             Some(dir) => dir.clone(),
             None => suggested_default_out_dir(),
         }
@@ -399,7 +403,7 @@ impl SenderFileData for FileData {
 /// - If the configuration file cannot be read or parsed.
 pub fn get_default_out_dir() -> PathBuf {
     if let Ok(config) = AppConfig::load() {
-        return config.get_default_out_dir();
+        return config.get_out_dir();
     }
     suggested_default_out_dir()
 }
@@ -440,7 +444,7 @@ fn default_out_dir_fallback() -> PathBuf {
 /// - If the configuration cannot be written to the user's config directory.
 pub fn set_default_out_dir(dir: PathBuf) -> Result<()> {
     let mut config = AppConfig::load()?;
-    config.set_default_out_dir(dir)
+    config.set_out_dir(dir)
 }
 
 /// Clears the saved default receive directory.
@@ -449,7 +453,7 @@ pub fn set_default_out_dir(dir: PathBuf) -> Result<()> {
 /// - If the configuration cannot be written to the user's config directory.
 pub fn clear_default_out_dir() -> Result<()> {
     let mut config = AppConfig::load()?;
-    config.default_out_dir = None;
+    config.out_dir = None;
     config.save()
 }
 

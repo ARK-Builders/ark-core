@@ -857,7 +857,7 @@ pub async fn run_receive_files(
     if save_out {
         let mut config = AppConfig::load()?;
         config
-            .set_default_out_dir(out_dir.clone())
+            .set_out_dir(out_dir.clone())
             .with_context(
                 || "Failed to save default output receive directory",
             )?;

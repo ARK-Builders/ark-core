@@ -8,7 +8,7 @@ async fn main() -> Result<()> {
     let matches = cli.get_matches();
 
     if !matches.args_present() && matches.subcommand().is_none() {
-        return run_tui().await;
+        return run_tui();
     }
 
     return run_cli().await;

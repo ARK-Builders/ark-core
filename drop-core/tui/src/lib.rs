@@ -1,46 +1,175 @@
-mod app;
+mod backend;
+mod layout;
+mod pages;
 
-use std::sync::{Arc, RwLock};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
+use arkdrop_common::AppConfig;
 use ratatui::{
-    Terminal,
+    Frame, Terminal,
     backend::CrosstermBackend,
     crossterm::{
-        event::{DisableMouseCapture, EnableMouseCapture},
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, poll},
         execute,
         terminal::{
             EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
             enable_raw_mode,
         },
     },
+    layout::Rect,
 };
 
-use crate::app::App;
+use crate::{
+    backend::MainAppBackend,
+    layout::{LayoutApp, LayoutChild},
+    pages::{
+        file_browser::FileBrowserApp, home::HomeApp, send_files::SendFilesApp,
+    },
+};
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Page {
+    Home,
+    Help,
+    Config,
+    SendFiles,
+    FileBrowser,
+    ReceiveFiles,
+    SendFilesProgress,
+    ReceiveFilesProgress,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BrowserMode {
+    SelectFile,
+    SelectDirectory,
+    SelectMultipleFiles,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SortMode {
+    Name,
+    Type,
+    Size,
+    Modified,
+}
+
+pub struct OpenFileBrowserRequest {
+    pub from: Page,
+
+    pub mode: BrowserMode,
+    pub sort: SortMode,
+}
+
+pub trait App {
+    fn draw(&self, f: &mut Frame, a: Rect);
+    fn handle_control(&self, ev: &Event);
+}
+
+pub trait AppNavigation {
+    fn navigate_to(&self, page: Page);
+    fn replace_with(&self, page: Page);
+    fn navigate_fresh_to(&self, page: Page);
+    fn go_back(&self);
+}
+
+pub trait AppFileBrowserSaveEvent {
+    fn get_selected_files(&self) -> Vec<PathBuf>;
+}
+
+pub trait AppFileBrowserSubscriber {
+    fn on_cancel(&self);
+    fn on_save(&self, ev: Arc<dyn AppFileBrowserSaveEvent>);
+}
+
+pub trait AppBackend {
+    fn open_file_browser(&self, request: OpenFileBrowserRequest);
+
+    fn get_config(&self) -> AppConfig;
+    fn get_navigation(&self) -> Arc<dyn AppNavigation>;
+}
+
+pub trait AppFileBrowser {
+    fn get_selected_files(&self) -> Vec<PathBuf>;
+
+    fn select_file(&self, file: PathBuf);
+    fn deselect_file(&self, file: PathBuf);
+
+    fn set_subscriber(&self, sub: Arc<dyn AppFileBrowserSubscriber>);
+    fn pop_subscriber(&self);
+
+    fn set_mode(&self, mode: BrowserMode);
+    fn set_sort(&self, sort: SortMode);
+}
 
 pub fn run_tui() -> Result<()> {
     enable_raw_mode()?;
+
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
-    let terminal = Arc::new(RwLock::new(Terminal::new(backend)?));
+    let mut terminal = Terminal::new(backend)?;
 
-    let app = App::new(terminal.clone());
-    let res = app.run();
+    let b = Arc::new(MainAppBackend::new());
+    let layout = Arc::new(LayoutApp::new());
 
-    // Restore terminal
+    let home = Arc::new(HomeApp::new(b.clone()));
+
+    let send_files = Arc::new(SendFilesApp::new(b.clone()));
+    let file_browser = Arc::new(FileBrowserApp::new(b.clone()));
+
+    b.set_navigation(layout.clone());
+    b.set_file_browser(file_browser.clone());
+    b.file_browser_subscribe(Page::SendFiles, send_files.clone());
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::Home),
+        app: home,
+        is_active: true,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::SendFiles),
+        app: send_files,
+        is_active: true,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::FileBrowser),
+        app: file_browser,
+        is_active: true,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    loop {
+        terminal.draw(|f| {
+            let area = f.area();
+            layout.draw(f, area)
+        })?;
+
+        if poll(Duration::from_millis(100))? {
+            let ev = event::read()?;
+            layout.handle_control(&ev);
+        }
+
+        if layout.is_finished() {
+            break;
+        }
+    }
+
+    // Cleanup
     disable_raw_mode()?;
-    let mut terminal = terminal.write().unwrap();
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
     )?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        println!("{err:?}");
-    }
 
     Ok(())
 }

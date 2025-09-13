@@ -1,0 +1,489 @@
+use ratatui::{
+    Frame, crossterm::event::Event, layout::Rect, widgets::ListState,
+};
+use std::{
+    env,
+    fs::{self, DirEntry},
+    ops::Deref,
+    path::PathBuf,
+    sync::{Arc, RwLock, atomic::AtomicBool},
+    time::SystemTime,
+};
+
+use crate::{
+    App, AppBackend, AppFileBrowser, AppFileBrowserSubscriber, BrowserMode,
+    SortMode,
+};
+
+#[derive(Clone, Debug)]
+struct FileItem {
+    name: String,
+    path: PathBuf,
+    size: Option<u64>,
+    modified: Option<SystemTime>,
+    is_hidden: bool,
+    is_selected: bool,
+    is_directory: bool,
+}
+
+pub struct FileBrowserApp {
+    b: Arc<dyn AppBackend>,
+
+    menu: RwLock<ListState>,
+
+    current_path: RwLock<PathBuf>,
+    items: RwLock<Vec<FileItem>>,
+    sort: RwLock<SortMode>,
+
+    mode: RwLock<BrowserMode>,
+    selected_files_in: RwLock<Vec<PathBuf>>,
+
+    has_hidden_items: AtomicBool,
+    enforced_extensions: RwLock<Vec<String>>,
+
+    filter_in: RwLock<String>,
+
+    sub: RwLock<Option<Arc<dyn AppFileBrowserSubscriber>>>,
+}
+
+impl FileBrowserApp {
+    pub fn new(b: Arc<dyn AppBackend>) -> Self {
+        let default_start_path =
+            env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+
+        Self {
+            b,
+
+            menu: RwLock::new(ListState::default()),
+
+            current_path: RwLock::new(default_start_path),
+            items: RwLock::new(Vec::new()),
+            sort: RwLock::new(SortMode::Name),
+
+            mode: RwLock::new(BrowserMode::SelectMultipleFiles),
+            selected_files_in: RwLock::new(Vec::new()),
+
+            has_hidden_items: AtomicBool::new(false),
+            enforced_extensions: RwLock::new(Vec::new()),
+
+            filter_in: RwLock::new(String::new()),
+
+            sub: RwLock::new(None),
+        }
+    }
+
+    pub fn set_mode(&self, mode: BrowserMode) {
+        *self.mode.write().unwrap() = mode;
+    }
+
+    pub fn set_enforced_extensions(&self, v: &mut Vec<String>) {
+        let mut enforced_extensions = self.enforced_extensions.write().unwrap();
+
+        enforced_extensions.clear();
+        enforced_extensions.append(v);
+    }
+
+    pub fn refresh(&self) {
+        self.refresh_items();
+        self.refresh_menu();
+    }
+
+    fn refresh_menu(&self) {
+        let items = self.items.read().unwrap();
+        let mut menu = self.menu.write().unwrap();
+
+        if items.is_empty() {
+            menu.select(None);
+        } else if menu.selected().is_none() {
+            menu.select(Some(0));
+        }
+    }
+
+    fn sort_items(&self, items: &mut Vec<FileItem>) {
+        items.sort_by(|a, b| {
+            // Always put directories first
+            match (a.is_directory, b.is_directory) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => {
+                    // Then sort by the selected criteria
+                    match self.sort.read().unwrap().deref() {
+                        SortMode::Name => {
+                            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+                        }
+                        SortMode::Size => {
+                            let a_size = a.size.unwrap_or(0);
+                            let b_size = b.size.unwrap_or(0);
+                            b_size.cmp(&a_size) // Descending order
+                        }
+                        SortMode::Modified => match (a.modified, b.modified) {
+                            (Some(a_time), Some(b_time)) => b_time.cmp(&a_time),
+                            (Some(_), None) => std::cmp::Ordering::Less,
+                            (None, Some(_)) => std::cmp::Ordering::Greater,
+                            (None, None) => a.name.cmp(&b.name),
+                        },
+                        SortMode::Type => {
+                            let a_ext = a.path.extension().unwrap_or_default();
+                            let b_ext = b.path.extension().unwrap_or_default();
+                            a_ext.cmp(&b_ext)
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    fn go_up(&self) {
+        let items = self.items.read().unwrap();
+
+        if items.is_empty() {
+            return;
+        }
+
+        let mut menu = self.menu.write().unwrap();
+        let selected = menu.selected().unwrap_or(0);
+        let last_index = items.len() - 1;
+
+        if selected > 0 {
+            menu.select(Some(selected - 1));
+        } else {
+            menu.select(Some(last_index));
+        }
+    }
+
+    fn go_down(&self) {
+        let items = self.items.read().unwrap();
+
+        if items.is_empty() {
+            return;
+        }
+
+        let mut menu = self.menu.write().unwrap();
+        let selected = menu.selected().unwrap_or(0);
+        let last_index = items.len() - 1;
+
+        if selected < last_index {
+            menu.select(Some(selected + 1));
+        } else {
+            menu.select(Some(0));
+        }
+    }
+
+    fn toggle_hidden(&self) {
+        let current = self
+            .has_hidden_items
+            .load(std::sync::atomic::Ordering::Relaxed);
+        self.has_hidden_items
+            .store(!current, std::sync::atomic::Ordering::Relaxed);
+
+        self.refresh();
+    }
+
+    fn cycle_sort_mode(&self) {
+        let mut sort_by = self.sort.write().unwrap();
+
+        *sort_by = match sort_by.deref() {
+            SortMode::Name => SortMode::Size,
+            SortMode::Size => SortMode::Modified,
+            SortMode::Modified => SortMode::Type,
+            SortMode::Type => SortMode::Name,
+        };
+
+        self.refresh();
+    }
+
+    fn go_to_current_menu_item(&self) {
+        let items = self.items.read().unwrap();
+        let menu = self.menu.read().unwrap();
+
+        if let Some(current_index) = menu.selected() {
+            if let Some(item) = items.get(current_index) {
+                if item.is_directory {
+                    self.go_to_item_path(item);
+                }
+            }
+        }
+    }
+
+    fn go_to_item_path(&self, item: &FileItem) {
+        *self.current_path.write().unwrap() = item.path.clone();
+
+        self.refresh();
+
+        self.menu.write().unwrap().select(Some(0));
+    }
+
+    fn select_current_menu_item(&self) {
+        let menu = self.menu.read().unwrap();
+        let mut items = self.items.write().unwrap();
+        let mut selected_files_in = self.selected_files_in.write().unwrap();
+
+        if let Some(selected_idx) = menu.selected() {
+            if let Some(item) = items.get_mut(selected_idx) {
+                match *self.mode.read().unwrap() {
+                    BrowserMode::SelectFile => {
+                        if item.is_directory {
+                            self.go_to_item_path(item);
+                        } else {
+                            self.select_item(item);
+                        }
+                    }
+                    BrowserMode::SelectDirectory => {
+                        if item.is_directory {
+                            self.select_item(item);
+                        } else {
+                            self.go_to_item_path(item);
+                        }
+                    }
+                    BrowserMode::SelectMultipleFiles => {
+                        if item.is_directory {
+                            self.go_to_item_path(item);
+                        } else {
+                            self.select_item(item);
+                        }
+                    }
+                }
+                // Only allow file selection in SelectFiles mode
+                if matches!(
+                    *self.mode.read().unwrap(),
+                    BrowserMode::SelectMultipleFiles
+                ) && !item.is_directory
+                {
+                    if item.is_selected {
+                        // Remove from selection
+                        selected_files_in.retain(|p| p != &item.path);
+                        item.is_selected = false;
+                    } else {
+                        // Add to selection
+                        if !selected_files_in.contains(&item.path) {
+                            selected_files_in.push(item.path.clone());
+                        }
+                        item.is_selected = true;
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_selected_files(&self) -> Vec<PathBuf> {
+        self.selected_files_in.read().unwrap().clone()
+    }
+
+    fn clear_selection(&self) {
+        self.selected_files_in.write().unwrap().clear();
+        for item in self.items.write().unwrap().iter_mut() {
+            item.is_selected = false;
+        }
+    }
+
+    fn get_current_path(&self) -> PathBuf {
+        self.current_path.read().unwrap().clone()
+    }
+
+    fn get_selected_item(&self) -> Option<FileItem> {
+        if let Some(selected) = self.menu.read().unwrap().selected() {
+            self.items.read().unwrap().get(selected).cloned()
+        } else {
+            None
+        }
+    }
+
+    fn go_to_home(&self) {
+        let mut current_path = self.current_path.write().unwrap();
+
+        if let Ok(home) = env::var("HOME") {
+            *current_path = PathBuf::from(home);
+        } else if let Ok(userprofile) = env::var("USERPROFILE") {
+            *current_path = PathBuf::from(userprofile);
+        } else {
+            *current_path = PathBuf::from("/");
+        }
+
+        self.refresh();
+
+        self.menu.write().unwrap().select(Some(0));
+    }
+
+    pub fn go_to_root(&mut self) {
+        *self.current_path.write().unwrap() = PathBuf::from("/");
+
+        self.refresh();
+
+        self.menu.write().unwrap().select(Some(0));
+    }
+
+    fn is_extension_valid(&self, name: &String) -> bool {
+        let enforced_extensions = self.enforced_extensions.read().unwrap();
+        if enforced_extensions.is_empty() {
+            return true;
+        }
+        return enforced_extensions
+            .iter()
+            .any(|ee| name.ends_with(&format!(".{ee}")));
+    }
+
+    fn is_hidden_valid(&self, is_hidden: bool) -> bool {
+        self.has_hidden_items
+            .load(std::sync::atomic::Ordering::Relaxed)
+            && is_hidden
+    }
+
+    fn refresh_items(&self) {
+        let mut items = self.items.write().unwrap();
+        let current_path = self.current_path.read().unwrap();
+
+        items.clear();
+
+        // Add parent directory entry if not at root
+        if let Some(parent) = current_path.parent() {
+            items.push(FileItem {
+                name: "..".to_string(),
+                path: parent.to_path_buf(),
+                is_directory: true,
+                is_hidden: false,
+                size: None,
+                modified: None,
+                is_selected: false,
+            });
+        }
+
+        // Add directory contents
+        if let Ok(entries) = fs::read_dir(current_path.deref()) {
+            let mut dir_items: Vec<FileItem> = entries
+                .filter_map(|entry| {
+                    match entry {
+                        Ok(entry) => {
+                            return self.transform_to_item(entry);
+                        }
+                        Err(_) => {
+                            // TODO: log
+                            return None;
+                        }
+                    }
+                })
+                .collect();
+
+            // Sort based on current sort mode
+            self.sort_items(&mut dir_items);
+            items.extend(dir_items);
+        }
+    }
+
+    fn transform_to_item(&self, entry: DirEntry) -> Option<FileItem> {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_directory = path.is_dir();
+        let is_hidden = name.starts_with('.');
+        let is_hidden_valid = self.is_hidden_valid(is_hidden);
+        let is_extension_valid = self.is_extension_valid(&name);
+        let is_valid = is_hidden_valid && is_extension_valid;
+
+        if is_valid {
+            return None;
+        }
+
+        let (size, modified) = if let Ok(metadata) = entry.metadata() {
+            let size = if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            };
+            let modified = metadata.modified().ok();
+            (size, modified)
+        } else {
+            (None, None)
+        };
+
+        let is_selected = self
+            .selected_files_in
+            .read()
+            .unwrap()
+            .contains(&path);
+
+        Some(FileItem {
+            name,
+            path,
+            is_directory,
+            is_hidden,
+            size,
+            modified,
+            is_selected,
+        })
+    }
+
+    fn select_item(&self, item: &FileItem) {
+        todo!()
+    }
+}
+
+impl App for FileBrowserApp {
+    fn draw(&self, f: &mut Frame, a: Rect) {
+        todo!()
+    }
+
+    fn handle_control(&self, ev: &Event) {
+        todo!()
+    }
+}
+
+impl AppFileBrowser for FileBrowserApp {
+    fn set_subscriber(&self, sub: Arc<dyn AppFileBrowserSubscriber>) {
+        self.sub.write().unwrap().replace(sub);
+    }
+
+    fn pop_subscriber(&self) {
+        self.sub.write().unwrap().take();
+    }
+
+    fn get_selected_files(&self) -> Vec<PathBuf> {
+        self.selected_files_in.read().unwrap().clone()
+    }
+
+    fn select_file(&self, path: PathBuf) {
+        self.selected_files_in.write().unwrap().push(path);
+    }
+
+    fn deselect_file(&self, file: PathBuf) {
+        let mut selected_files = self.selected_files_in.write().unwrap();
+        let selected_file_index =
+            selected_files.iter().position(|f| *f == file);
+
+        if let Some(selected_file_index) = selected_file_index {
+            selected_files.remove(selected_file_index);
+        }
+    }
+
+    fn set_mode(&self, mode: BrowserMode) {
+        *self.mode.write().unwrap() = mode;
+    }
+
+    fn set_sort(&self, sort: SortMode) {
+        *self.sort.write().unwrap() = sort;
+    }
+}
+
+fn sanitize_start_path(path: PathBuf) -> PathBuf {
+    let start_path = if path.exists() {
+        path
+    } else {
+        env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
+    };
+    start_path
+}
+
+fn format_file_size(size: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size_f = size as f64;
+    let mut unit_idx = 0;
+
+    while size_f >= 1024.0 && unit_idx < UNITS.len() - 1 {
+        size_f /= 1024.0;
+        unit_idx += 1;
+    }
+
+    if unit_idx == 0 {
+        format!("{} {}", size, UNITS[unit_idx])
+    } else {
+        format!("{:.1} {}", size_f, UNITS[unit_idx])
+    }
+}
