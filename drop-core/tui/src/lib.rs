@@ -68,34 +68,41 @@ pub struct OpenFileBrowserRequest {
     pub sort: SortMode,
 }
 
-pub trait App {
+pub trait App: Send + Sync {
     fn draw(&self, f: &mut Frame, area: Rect);
     fn handle_control(&self, ev: &Event);
 }
 
-pub trait AppNavigation {
+pub trait AppNavigation: Send + Sync {
     fn navigate_to(&self, page: Page);
     fn replace_with(&self, page: Page);
     fn navigate_fresh_to(&self, page: Page);
     fn go_back(&self);
 }
 
-pub trait AppBackend {
+pub trait AppSendFilesManager: Send + Sync {
     fn send_files(&self, req: SendFilesRequest);
     fn get_send_files_bubble(&self) -> Option<Arc<SendFilesBubble>>;
+}
 
+pub trait AppFileBrowserManager: Send + Sync {
     fn open_file_browser(&self, req: OpenFileBrowserRequest);
+}
+
+pub trait AppBackend: Send + Sync {
+    fn get_send_files_manager(&self) -> Arc<dyn AppSendFilesManager>;
+    fn get_file_browser_manager(&self) -> Arc<dyn AppFileBrowserManager>;
 
     fn get_config(&self) -> AppConfig;
     fn get_navigation(&self) -> Arc<dyn AppNavigation>;
 }
 
-pub trait AppFileBrowserSubscriber {
+pub trait AppFileBrowserSubscriber: Send + Sync {
     fn on_cancel(&self);
     fn on_save(&self, ev: AppFileBrowserSaveEvent);
 }
 
-pub trait AppFileBrowser {
+pub trait AppFileBrowser: Send + Sync {
     fn get_selected_files(&self) -> Vec<PathBuf>;
 
     fn select_file(&self, file: PathBuf);
@@ -131,8 +138,10 @@ pub fn run_tui() -> Result<()> {
 
     b.set_navigation(layout.clone());
     b.set_file_browser(file_browser.clone());
-    // b.set_send_files_subscriber(send_files.clone()); // set send files progress
     b.file_browser_subscribe(Page::SendFiles, send_files.clone());
+
+    // TODO: low | b.set_send_files_manager
+    // TODO: low | b.set_file_browser_manager
 
     layout.add_child(LayoutChild {
         page: Some(Page::Home),

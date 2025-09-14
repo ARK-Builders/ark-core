@@ -30,84 +30,23 @@ pub struct LayoutApp {
     is_finished: AtomicBool,
 }
 
-impl LayoutApp {
-    pub fn new() -> Self {
-        Self {
-            children: RwLock::new(Vec::new()),
-
-            current_page: RwLock::new(Page::Home),
-            previous_pages: RwLock::new(Vec::new()),
-
-            is_finished: AtomicBool::new(false),
-        }
-    }
-
-    pub fn add_child(&self, c: LayoutChild) {
-        self.children.write().unwrap().push(c);
-    }
-
-    fn get_active_children(&self) -> Vec<LayoutChild> {
-        self.children
-            .read()
-            .unwrap()
-            .clone()
-            .into_iter()
-            .filter_map(|c| {
-                if c.is_active {
-                    return Some(c);
-                }
-                return None;
-            })
-            .collect()
-    }
-
-    fn get_active_children_sort_by_z_index(&self) -> Vec<LayoutChild> {
-        let mut children = self.get_active_children();
-        children.sort_by(|a, b| a.z_index.cmp(&b.z_index));
-        return children;
-    }
-
-    fn get_active_children_sort_by_control_index(&self) -> Vec<LayoutChild> {
-        let mut children = self.get_active_children();
-        children.sort_by(|a, b| a.control_index.cmp(&b.z_index));
-        return children;
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.is_finished
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn handle_global_event(&self, ev: &Event) {
-        match ev {
-            Event::Key(key) => match key.code {
-                KeyCode::Char(c) => {
-                    let pressed_quit = c == 'q'
-                        || c == 'Q' && key.modifiers == KeyModifiers::CONTROL;
-                    if pressed_quit {
-                        self.finish();
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
-    fn finish(&self) {
-        self.is_finished
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
 impl App for LayoutApp {
     fn draw(&self, f: &mut Frame, area: Rect) {
-        let layout = create_layout(area);
+        let blocks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(5), // Title
+                Constraint::Min(0),    // Main content
+                Constraint::Length(4), // Footer/Help
+            ])
+            .split(area);
+
         let children = self.get_active_children_sort_by_z_index();
 
-        draw_title(f, layout[0]);
-        draw_content(f, layout[1], children);
-        draw_footer(f, layout[2]);
+        draw_title(f, blocks[0]);
+        draw_content(f, blocks[1], children);
+        self.draw_footer(f, blocks[2]);
     }
 
     fn handle_control(&self, ev: &Event) {
@@ -119,77 +58,6 @@ impl App for LayoutApp {
             .iter()
             .for_each(|c| c.app.handle_control(ev));
     }
-}
-
-fn create_layout(area: Rect) -> std::rc::Rc<[Rect]> {
-    return Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(5), // Title
-            Constraint::Min(0),    // Main content
-            Constraint::Length(4), // Footer/Help
-        ])
-        .split(area);
-}
-
-fn draw_title(f: &mut Frame, area: Rect) {
-    let title_text = vec![
-        Line::from(vec![
-            Span::styled("  🚀 ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled("ARK ", Style::default().fg(Color::Cyan).bold()),
-            Span::styled("Drop", Style::default().fg(Color::Blue).bold()),
-            Span::styled(
-                " - File Transfer Tool",
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(vec![Span::styled(
-            "  Fast • Secure • Peer-to-Peer",
-            Style::default().fg(Color::Gray).italic(),
-        )]),
-    ];
-
-    let title_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(" Welcome ")
-        .title_style(Style::default().fg(Color::White).bold());
-
-    let title = Paragraph::new(title_text)
-        .block(title_block)
-        .alignment(Alignment::Left);
-
-    f.render_widget(title, area);
-}
-
-fn draw_content(f: &mut Frame, area: Rect, children: Vec<LayoutChild>) {
-    children.iter().for_each(|c| c.app.draw(f, area));
-}
-
-fn draw_footer(f: &mut Frame, area: Rect) {
-    let footer_content = vec![
-        Line::from(vec![
-            Span::styled("💡 ", Style::default().fg(Color::Yellow)),
-            Span::styled("TODO: ", Style::default().fg(Color::White)),
-        ]),
-        Line::from(""),
-    ];
-
-    let footer_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan)) // TODO
-        .title(" Controls ")
-        .title_style(Style::default().fg(Color::White).bold());
-
-    let footer = Paragraph::new(footer_content)
-        .block(footer_block)
-        .alignment(Alignment::Center);
-
-    f.render_widget(footer, area);
 }
 
 impl AppNavigation for LayoutApp {
@@ -299,4 +167,167 @@ impl AppNavigation for LayoutApp {
             None => {}
         }
     }
+}
+
+impl LayoutApp {
+    pub fn new() -> Self {
+        Self {
+            children: RwLock::new(Vec::new()),
+
+            current_page: RwLock::new(Page::Home),
+            previous_pages: RwLock::new(Vec::new()),
+
+            is_finished: AtomicBool::new(false),
+        }
+    }
+
+    pub fn add_child(&self, c: LayoutChild) {
+        self.children.write().unwrap().push(c);
+    }
+
+    fn get_active_children(&self) -> Vec<LayoutChild> {
+        self.children
+            .read()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .filter_map(|c| {
+                if c.is_active {
+                    return Some(c);
+                }
+                return None;
+            })
+            .collect()
+    }
+
+    fn get_active_children_sort_by_z_index(&self) -> Vec<LayoutChild> {
+        let mut children = self.get_active_children();
+        children.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        return children;
+    }
+
+    fn get_active_children_sort_by_control_index(&self) -> Vec<LayoutChild> {
+        let mut children = self.get_active_children();
+        children.sort_by(|a, b| a.control_index.cmp(&b.z_index));
+        return children;
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.is_finished
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn handle_global_event(&self, ev: &Event) {
+        match ev {
+            Event::Key(key) => match key.code {
+                KeyCode::Char(c) => {
+                    let pressed_quit = c == 'q'
+                        || c == 'Q' && key.modifiers == KeyModifiers::CONTROL;
+                    if pressed_quit {
+                        self.finish();
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn finish(&self) {
+        self.is_finished
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn draw_footer(&self, f: &mut Frame, area: Rect) {
+        let current_page = self.current_page.read().unwrap().clone();
+
+        let (help_text, status_color) = match current_page {
+            Page::Home => (
+                "↑/↓ Navigate • Enter/Space Select • CTRL-S Send • CTRL-R Receive • CTRL-H Help • CTRL-Q Quit",
+                Color::Cyan,
+            ),
+            Page::SendFiles => (
+                "Tab Next Field • Enter Send • Esc Back • CTRL-Q Quit",
+                Color::Green,
+            ),
+            Page::ReceiveFiles => (
+                "↑/↓ Navigate • Tab Next Field • CTRL-Enter Receive • Esc Back • CTRL-Q Quit",
+                Color::Blue,
+            ),
+            Page::Config => (
+                "↑/↓ Navigate • Enter/Space Select • Esc Back • CTRL-Q Quit",
+                Color::Yellow,
+            ),
+            Page::Help => ("Esc Back • CTRL-Q Quit", Color::Magenta),
+            Page::SendFilesProgress => {
+                // TODO: info
+                ("Transfer in progress... • CTRL-Q Quit", Color::Green)
+            }
+            Page::ReceiveFilesProgress => {
+                // TODO: info
+                ("Transfer in progress... • CTRL-Q Quit", Color::Blue)
+            }
+            Page::FileBrowser => (
+                "↑/↓ Navigate • Enter Navigate Into • Space Select • ESC|CTRL-S Save • CTRL-C Cancel • CTRL-Q Quit",
+                Color::Blue,
+            ),
+        };
+
+        let footer_content = vec![
+            Line::from(vec![
+                Span::styled("💡 ", Style::default().fg(Color::Yellow)),
+                Span::styled(help_text, Style::default().fg(Color::White)),
+            ]),
+            Line::from(""),
+        ];
+
+        let footer_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(status_color))
+            .title(" Controls ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        let footer = Paragraph::new(footer_content)
+            .block(footer_block)
+            .alignment(Alignment::Center);
+
+        f.render_widget(footer, area);
+    }
+}
+
+fn draw_title(f: &mut Frame, area: Rect) {
+    let title_text = vec![
+        Line::from(vec![
+            Span::styled("  🚀 ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled("ARK ", Style::default().fg(Color::Cyan).bold()),
+            Span::styled("Drop", Style::default().fg(Color::Blue).bold()),
+            Span::styled(
+                " - File Transfer Tool",
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "  Fast • Secure • Peer-to-Peer",
+            Style::default().fg(Color::Gray).italic(),
+        )]),
+    ];
+
+    let title_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Welcome ")
+        .title_style(Style::default().fg(Color::White).bold());
+
+    let title = Paragraph::new(title_text)
+        .block(title_block)
+        .alignment(Alignment::Left);
+
+    f.render_widget(title, area);
+}
+
+fn draw_content(f: &mut Frame, area: Rect, children: Vec<LayoutChild>) {
+    children.iter().for_each(|c| c.app.draw(f, area));
 }

@@ -352,7 +352,7 @@ impl FileBrowserApp {
                             return self.transform_to_item(entry);
                         }
                         Err(_) => {
-                            // TODO: log
+                            // TODO: info
                             return None;
                         }
                     }
@@ -727,7 +727,7 @@ impl AppFileBrowser for FileBrowserApp {
         if path.exists() {
             *self.current_path.write().unwrap() = path;
         } else {
-            // TODO: error
+            // TODO: info
         }
     }
 

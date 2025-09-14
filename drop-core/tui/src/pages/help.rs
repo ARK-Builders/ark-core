@@ -49,7 +49,6 @@ impl App for HelpApp {
                 _ => {}
             }
         }
-        todo!()
     }
 }
 

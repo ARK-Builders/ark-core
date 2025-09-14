@@ -3,7 +3,9 @@ use crate::{
     BrowserMode, OpenFileBrowserRequest, Page, SortMode,
 };
 use arkdrop_common::FileData;
-use arkdropx_sender::{SendFilesRequest, SendFilesSubscriber, SenderFile};
+use arkdropx_sender::{
+    SendFilesRequest, SenderConfig, SenderFile, SenderProfile,
+};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},
@@ -496,11 +498,13 @@ impl SendFilesApp {
     }
 
     fn open_file_browser(&self) {
-        self.b.open_file_browser(OpenFileBrowserRequest {
-            from: Page::SendFiles,
-            mode: BrowserMode::SelectMultiFiles,
-            sort: SortMode::Name,
-        });
+        self.b
+            .get_file_browser_manager()
+            .open_file_browser(OpenFileBrowserRequest {
+                from: Page::SendFiles,
+                mode: BrowserMode::SelectMultiFiles,
+                sort: SortMode::Name,
+            });
     }
 
     fn perform_action(&self) {
@@ -518,18 +522,13 @@ impl SendFilesApp {
                             self.add_file(path);
                             file_in.clear();
                         } else {
-                            // TODO
-                            // self.show_error(
-                            //     "File does not exist".to_string(),
-                            // );
+                            // TODO: info
                         }
                     }
                 }
             }
             Some(1) => {
                 self.send_files();
-                // TODO:
-                // self.start_send_operation().await?;
             }
             _ => {}
         }
@@ -537,7 +536,7 @@ impl SendFilesApp {
 
     fn send_files(&self) {
         if let Some(req) = self.make_send_files_request() {
-            self.b.send_files(req);
+            self.b.get_send_files_manager().send_files(req);
         }
     }
 
@@ -548,8 +547,14 @@ impl SendFilesApp {
             return None;
         }
 
-        todo!()
-        // return selected_files_in.len() > 0;
+        Some(SendFilesRequest {
+            files,
+            profile: SenderProfile {
+                name: "tui-sender".to_string(), // TODO: low
+                avatar_b64: None,               // TODO: low
+            },
+            config: SenderConfig::default(), // TODO: extra
+        })
     }
 
     fn get_sender_files(&self) -> Vec<SenderFile> {
