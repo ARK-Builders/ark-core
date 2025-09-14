@@ -32,7 +32,7 @@ impl HomeApp {
 
 impl App for HomeApp {
     fn draw(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let chunks = Layout::default()
+        let blocks = Layout::default()
             .direction(Direction::Horizontal)
             .margin(1)
             .constraints([
@@ -41,14 +41,14 @@ impl App for HomeApp {
             ])
             .split(area);
 
-        let left_chunks = Layout::default()
+        let left_blocks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(8), // Welcome message
                 Constraint::Length(6), // Features
                 Constraint::Min(0),    // Status info
             ])
-            .split(chunks[0]);
+            .split(blocks[0]);
 
         // Welcome message
         let welcome_content = vec![
@@ -90,7 +90,7 @@ impl App for HomeApp {
             .block(welcome_block)
             .alignment(Alignment::Left);
 
-        f.render_widget(welcome, left_chunks[0]);
+        f.render_widget(welcome, left_blocks[0]);
 
         // Features overview
         let features_content = vec![
@@ -129,7 +129,7 @@ impl App for HomeApp {
             .block(features_block)
             .alignment(Alignment::Left);
 
-        f.render_widget(features, left_chunks[1]);
+        f.render_widget(features, left_blocks[1]);
 
         // Status information
         let status_content = vec![
@@ -159,7 +159,7 @@ impl App for HomeApp {
             .block(status_block)
             .alignment(Alignment::Left);
 
-        f.render_widget(status, left_chunks[2]);
+        f.render_widget(status, left_blocks[2]);
 
         // Main menu
         let menu_items = vec![
@@ -260,7 +260,7 @@ impl App for HomeApp {
 
         f.render_stateful_widget(
             menu,
-            chunks[1],
+            blocks[1],
             &mut self.menu.write().unwrap(),
         );
     }

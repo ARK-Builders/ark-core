@@ -2,6 +2,8 @@ use crate::{
     App, AppBackend, AppFileBrowserSaveEvent, AppFileBrowserSubscriber,
     BrowserMode, OpenFileBrowserRequest, Page, SortMode,
 };
+use arkdrop_common::FileData;
+use arkdropx_sender::{SendFilesRequest, SenderFile};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},
@@ -38,7 +40,7 @@ impl App for SendFilesApp {
             ])
             .split(area);
 
-        let left_chunks = Layout::default()
+        let left_blocks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Title
@@ -47,7 +49,7 @@ impl App for SendFilesApp {
             ])
             .split(layout[0]);
 
-        let right_chunks = Layout::default()
+        let right_blocks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),    // Files list
@@ -55,12 +57,12 @@ impl App for SendFilesApp {
             ])
             .split(layout[1]);
 
-        self.draw_title(f, left_chunks[0]);
-        self.draw_file_input(f, left_chunks[1]);
-        self.draw_instructions(f, left_chunks[2]);
+        self.draw_title(f, left_blocks[0]);
+        self.draw_file_input(f, left_blocks[1]);
+        self.draw_instructions(f, left_blocks[2]);
 
-        self.draw_file_list(f, right_chunks[0]);
-        self.draw_send_files_button(f, right_chunks[1]);
+        self.draw_file_list(f, right_blocks[0]);
+        self.draw_send_files_button(f, right_blocks[1]);
     }
 
     fn handle_control(&self, ev: &Event) {
@@ -142,12 +144,12 @@ impl AppFileBrowserSubscriber for SendFilesApp {
             .replace_with(Page::SendFiles);
     }
 
-    fn on_save(&self, ev: Arc<dyn AppFileBrowserSaveEvent>) {
+    fn on_save(&self, ev: AppFileBrowserSaveEvent) {
         self.b
             .get_navigation()
             .replace_with(Page::SendFiles);
 
-        let mut selected_files = ev.get_selected_files();
+        let mut selected_files = ev.selected_files;
         self.selected_files_in
             .write()
             .unwrap()
@@ -496,7 +498,7 @@ impl SendFilesApp {
     fn open_file_browser(&self) {
         self.b.open_file_browser(OpenFileBrowserRequest {
             from: Page::SendFiles,
-            mode: BrowserMode::SelectMultipleFiles,
+            mode: BrowserMode::SelectMultiFiles,
             sort: SortMode::Name,
         });
     }
@@ -534,7 +536,45 @@ impl SendFilesApp {
     }
 
     fn send_files(&self) {
-        // TODO
+        if let Some(req) = self.make_send_files_request() {
+            self.b.send_files(req);
+        }
+    }
+
+    fn make_send_files_request(&self) -> Option<SendFilesRequest> {
+        let files = self.get_sender_files();
+
+        if files.is_empty() {
+            return None;
+        }
+
         todo!()
+        // return selected_files_in.len() > 0;
+    }
+
+    fn get_sender_files(&self) -> Vec<SenderFile> {
+        let selected_files_in = self.selected_files_in.read().unwrap();
+
+        if selected_files_in.is_empty() {
+            return Vec::new();
+        }
+
+        return selected_files_in
+            .iter()
+            .filter_map(|f| {
+                if let Some(name) = f.file_name() {
+                    if let Ok(data) = FileData::new(f.clone()) {
+                        let name = name.to_string_lossy().to_string();
+
+                        return Some(SenderFile {
+                            name,
+                            data: Arc::new(data),
+                        });
+                    }
+                }
+
+                return None;
+            })
+            .collect();
     }
 }

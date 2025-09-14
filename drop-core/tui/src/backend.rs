@@ -4,6 +4,7 @@ use std::{
 };
 
 use arkdrop_common::AppConfig;
+use arkdropx_sender::{SendFilesBubble, SendFilesRequest, send_files};
 
 use crate::{
     AppBackend, AppFileBrowser, AppFileBrowserSubscriber, AppNavigation,
@@ -15,6 +16,8 @@ pub struct MainAppBackend {
 
     file_browser: RwLock<Option<Arc<dyn AppFileBrowser>>>,
     file_browser_subs: RwLock<Vec<(Page, Arc<dyn AppFileBrowserSubscriber>)>>,
+
+    send_files_bub: RwLock<Option<SendFilesBubble>>,
 }
 
 impl MainAppBackend {
@@ -24,6 +27,8 @@ impl MainAppBackend {
 
             file_browser: RwLock::new(None),
             file_browser_subs: RwLock::new(Vec::new()),
+
+            send_files_bub: RwLock::new(None),
         }
     }
 
@@ -48,6 +53,10 @@ impl MainAppBackend {
 }
 
 impl AppBackend for MainAppBackend {
+    fn send_files(&self, req: SendFilesRequest) {
+        todo!()
+    }
+
     fn open_file_browser(&self, req: OpenFileBrowserRequest) {
         if let Some(fb) = self.file_browser.read().unwrap().deref() {
             for (subscriber_page, sub) in
@@ -55,6 +64,8 @@ impl AppBackend for MainAppBackend {
             {
                 if subscriber_page == &req.from {
                     let nav = self.get_navigation();
+
+                    fb.clear_selection();
                     fb.set_subscriber(sub.clone());
 
                     fb.set_mode(req.mode);

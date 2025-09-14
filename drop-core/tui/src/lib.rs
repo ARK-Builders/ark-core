@@ -6,6 +6,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use arkdrop_common::AppConfig;
+use arkdropx_sender::{SendFilesBubble, SendFilesRequest};
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -44,7 +45,7 @@ pub enum Page {
 pub enum BrowserMode {
     SelectFile,
     SelectDirectory,
-    SelectMultipleFiles,
+    SelectMultiFiles,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +54,10 @@ pub enum SortMode {
     Type,
     Size,
     Modified,
+}
+
+pub struct AppFileBrowserSaveEvent {
+    pub selected_files: Vec<PathBuf>,
 }
 
 pub struct OpenFileBrowserRequest {
@@ -74,20 +79,18 @@ pub trait AppNavigation {
     fn go_back(&self);
 }
 
-pub trait AppFileBrowserSaveEvent {
-    fn get_selected_files(&self) -> Vec<PathBuf>;
+pub trait AppBackend {
+    fn send_files(&self, req: SendFilesRequest);
+
+    fn open_file_browser(&self, req: OpenFileBrowserRequest);
+
+    fn get_config(&self) -> AppConfig;
+    fn get_navigation(&self) -> Arc<dyn AppNavigation>;
 }
 
 pub trait AppFileBrowserSubscriber {
     fn on_cancel(&self);
-    fn on_save(&self, ev: Arc<dyn AppFileBrowserSaveEvent>);
-}
-
-pub trait AppBackend {
-    fn open_file_browser(&self, request: OpenFileBrowserRequest);
-
-    fn get_config(&self) -> AppConfig;
-    fn get_navigation(&self) -> Arc<dyn AppNavigation>;
+    fn on_save(&self, ev: AppFileBrowserSaveEvent);
 }
 
 pub trait AppFileBrowser {
@@ -101,6 +104,9 @@ pub trait AppFileBrowser {
 
     fn set_mode(&self, mode: BrowserMode);
     fn set_sort(&self, sort: SortMode);
+
+    fn set_current_path(&self, path: PathBuf);
+    fn clear_selection(&self);
 }
 
 pub fn run_tui() -> Result<()> {
