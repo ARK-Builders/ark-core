@@ -82,6 +82,7 @@ pub trait AppNavigation {
 
 pub trait AppBackend {
     fn send_files(&self, req: SendFilesRequest);
+    fn get_send_files_bubble(&self) -> Option<Arc<SendFilesBubble>>;
 
     fn open_file_browser(&self, req: OpenFileBrowserRequest);
 
@@ -130,6 +131,7 @@ pub fn run_tui() -> Result<()> {
 
     b.set_navigation(layout.clone());
     b.set_file_browser(file_browser.clone());
+    // b.set_send_files_subscriber(send_files.clone()); // set send files progress
     b.file_browser_subscribe(Page::SendFiles, send_files.clone());
 
     layout.add_child(LayoutChild {

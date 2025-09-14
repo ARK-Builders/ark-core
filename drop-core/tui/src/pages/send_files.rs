@@ -3,7 +3,7 @@ use crate::{
     BrowserMode, OpenFileBrowserRequest, Page, SortMode,
 };
 use arkdrop_common::FileData;
-use arkdropx_sender::{SendFilesRequest, SenderFile};
+use arkdropx_sender::{SendFilesRequest, SendFilesSubscriber, SenderFile};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},

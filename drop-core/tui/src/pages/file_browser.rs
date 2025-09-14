@@ -644,7 +644,7 @@ impl FileBrowserApp {
 
 impl App for FileBrowserApp {
     fn draw(&self, f: &mut Frame, area: Rect) {
-        let blocks = self.get_layout_blocks(a);
+        let blocks = self.get_layout_blocks(area);
 
         self.draw_header(f, blocks[0]);
         self.draw_file_list(f, blocks[1]);
