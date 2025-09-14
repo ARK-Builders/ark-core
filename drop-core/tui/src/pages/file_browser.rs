@@ -624,7 +624,7 @@ impl FileBrowserApp {
         f.render_widget(footer, block);
     }
 
-    fn get_layout_blocks(&self, a: Rect) -> Rc<[Rect]> {
+    fn get_layout_blocks(&self, area: Rect) -> Rc<[Rect]> {
         let blocks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -632,7 +632,7 @@ impl FileBrowserApp {
                 Constraint::Min(0),    // File list
                 Constraint::Length(3), // Footer with help
             ])
-            .split(a);
+            .split(area);
 
         blocks
     }
@@ -643,7 +643,7 @@ impl FileBrowserApp {
 }
 
 impl App for FileBrowserApp {
-    fn draw(&self, f: &mut Frame, a: Rect) {
+    fn draw(&self, f: &mut Frame, area: Rect) {
         let blocks = self.get_layout_blocks(a);
 
         self.draw_header(f, blocks[0]);

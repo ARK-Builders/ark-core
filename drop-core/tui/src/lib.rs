@@ -25,7 +25,8 @@ use crate::{
     backend::MainAppBackend,
     layout::{LayoutApp, LayoutChild},
     pages::{
-        file_browser::FileBrowserApp, home::HomeApp, send_files::SendFilesApp,
+        file_browser::FileBrowserApp, help::HelpApp, home::HomeApp,
+        send_files::SendFilesApp,
     },
 };
 
@@ -68,7 +69,7 @@ pub struct OpenFileBrowserRequest {
 }
 
 pub trait App {
-    fn draw(&self, f: &mut Frame, a: Rect);
+    fn draw(&self, f: &mut Frame, area: Rect);
     fn handle_control(&self, ev: &Event);
 }
 
@@ -125,6 +126,8 @@ pub fn run_tui() -> Result<()> {
     let send_files = Arc::new(SendFilesApp::new(b.clone()));
     let file_browser = Arc::new(FileBrowserApp::new(b.clone()));
 
+    let help = Arc::new(HelpApp::new(b.clone()));
+
     b.set_navigation(layout.clone());
     b.set_file_browser(file_browser.clone());
     b.file_browser_subscribe(Page::SendFiles, send_files.clone());
@@ -140,7 +143,7 @@ pub fn run_tui() -> Result<()> {
     layout.add_child(LayoutChild {
         page: Some(Page::SendFiles),
         app: send_files,
-        is_active: true,
+        is_active: false,
         z_index: 0,
         control_index: 0,
     });
@@ -148,7 +151,15 @@ pub fn run_tui() -> Result<()> {
     layout.add_child(LayoutChild {
         page: Some(Page::FileBrowser),
         app: file_browser,
-        is_active: true,
+        is_active: false,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::Help),
+        app: help,
+        is_active: false,
         z_index: 0,
         control_index: 0,
     });
