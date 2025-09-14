@@ -522,7 +522,7 @@ impl SendFilesApp {
                             self.add_file(path);
                             file_in.clear();
                         } else {
-                            // TODO: info
+                            // TODO: info | log exception on TUI
                         }
                     }
                 }
@@ -547,13 +547,14 @@ impl SendFilesApp {
             return None;
         }
 
+        // TODO: low | use AppConfig to build the request
         Some(SendFilesRequest {
             files,
             profile: SenderProfile {
-                name: "tui-sender".to_string(), // TODO: low
-                avatar_b64: None,               // TODO: low
+                name: "tui-sender".to_string(),
+                avatar_b64: None,
             },
-            config: SenderConfig::default(), // TODO: extra
+            config: SenderConfig::default(), // TODO: extra | get from config
         })
     }
 

@@ -102,6 +102,11 @@ impl App for HomeApp {
                             .navigate_to(Page::ReceiveFiles);
                     }
                 }
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    if has_ctrl {
+                        self.b.shutdown();
+                    }
+                }
                 _ => {}
             }
         }

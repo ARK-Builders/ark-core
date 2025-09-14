@@ -260,15 +260,17 @@ impl LayoutApp {
             ),
             Page::Help => ("Esc Back • CTRL-Q Quit", Color::Magenta),
             Page::SendFilesProgress => {
-                // TODO: info
+                // TODO: info | set dynamic messages according to the transfer
+                // real-time progress/state
                 ("Transfer in progress... • CTRL-Q Quit", Color::Green)
             }
             Page::ReceiveFilesProgress => {
-                // TODO: info
+                // TODO: info | set dynamic messages according to the transfer
+                // real-time progress/state
                 ("Transfer in progress... • CTRL-Q Quit", Color::Blue)
             }
             Page::FileBrowser => (
-                "↑/↓ Navigate • Enter Navigate Into • Space Select • ESC|CTRL-S Save • CTRL-C Cancel • CTRL-Q Quit",
+                "↑/↓ Navigate • Enter Go • Space Select • ESC|CTRL-S Save • CTRL-H Hidden • CTRL-J Sort • CTRL-C Cancel • CTRL-Q Quit",
                 Color::Blue,
             ),
         };

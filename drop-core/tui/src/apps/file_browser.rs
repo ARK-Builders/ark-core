@@ -48,9 +48,117 @@ pub struct FileBrowserApp {
     has_hidden_items: AtomicBool,
     enforced_extensions: RwLock<Vec<String>>,
 
+    // TODO: low | implement dynamic filter based on user's input
     filter_in: RwLock<String>,
 
     sub: RwLock<Option<Arc<dyn AppFileBrowserSubscriber>>>,
+}
+
+impl App for FileBrowserApp {
+    fn draw(&self, f: &mut Frame, area: Rect) {
+        let blocks = self.get_layout_blocks(area);
+
+        self.draw_header(f, blocks[0]);
+        self.draw_file_list(f, blocks[1]);
+        self.draw_footer_with_help(f, blocks[2]);
+    }
+
+    fn handle_control(&self, ev: &Event) {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+
+            match key.code {
+                KeyCode::Up => {
+                    self.go_up();
+                }
+                KeyCode::Down => {
+                    self.go_down();
+                }
+                KeyCode::Enter => self.enter_current_menu_item(),
+                KeyCode::Char(' ') => self.select_current_menu_item(),
+                KeyCode::Esc => {
+                    self.on_save();
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    if has_ctrl {
+                        self.on_save()
+                    }
+                }
+                KeyCode::Char('h') | KeyCode::Char('H') => {
+                    if has_ctrl {
+                        self.toggle_hidden()
+                    }
+                }
+                KeyCode::Char('j') | KeyCode::Char('J') => {
+                    if has_ctrl {
+                        self.cycle_sort_mode()
+                    }
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    if has_ctrl {
+                        self.b.get_navigation().go_back();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Char('K') => {
+                    if has_ctrl {
+                        self.reset();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl AppFileBrowser for FileBrowserApp {
+    fn set_subscriber(&self, sub: Arc<dyn AppFileBrowserSubscriber>) {
+        self.sub.write().unwrap().replace(sub);
+    }
+
+    fn pop_subscriber(&self) {
+        self.sub.write().unwrap().take();
+    }
+
+    fn get_selected_files(&self) -> Vec<PathBuf> {
+        self.selected_files_in.read().unwrap().clone()
+    }
+
+    fn select_file(&self, path: PathBuf) {
+        self.selected_files_in.write().unwrap().push(path);
+    }
+
+    fn deselect_file(&self, file: PathBuf) {
+        let mut selected_files = self.selected_files_in.write().unwrap();
+        let selected_file_index =
+            selected_files.iter().position(|f| *f == file);
+
+        if let Some(selected_file_index) = selected_file_index {
+            selected_files.remove(selected_file_index);
+        }
+    }
+
+    fn set_mode(&self, mode: BrowserMode) {
+        *self.mode.write().unwrap() = mode;
+    }
+
+    fn set_sort(&self, sort: SortMode) {
+        *self.sort.write().unwrap() = sort;
+    }
+
+    fn set_current_path(&self, path: PathBuf) {
+        if path.exists() {
+            *self.current_path.write().unwrap() = path;
+        } else {
+            // TODO: info | log exception on TUI
+        }
+    }
+
+    fn clear_selection(&self) {
+        self.selected_files_in.write().unwrap().clear();
+        for item in self.items.write().unwrap().iter_mut() {
+            item.is_selected = false;
+        }
+    }
 }
 
 impl FileBrowserApp {
@@ -284,7 +392,8 @@ impl FileBrowserApp {
         self.current_path.read().unwrap().clone()
     }
 
-    fn go_to_home(&self) {
+    // TODO: util | implement some keybind to use it
+    fn _go_to_home(&self) {
         let mut current_path = self.current_path.write().unwrap();
 
         if let Ok(home) = env::var("HOME") {
@@ -300,7 +409,8 @@ impl FileBrowserApp {
         self.menu.write().unwrap().select(Some(0));
     }
 
-    fn go_to_root(&mut self) {
+    // TODO: util | implement some keybind to use it
+    fn _go_to_root(&mut self) {
         *self.current_path.write().unwrap() = PathBuf::from("/");
 
         self.refresh();
@@ -352,7 +462,7 @@ impl FileBrowserApp {
                             return self.transform_to_item(entry);
                         }
                         Err(_) => {
-                            // TODO: info
+                            // TODO: info | log exception on TUI
                             return None;
                         }
                     }
@@ -408,10 +518,14 @@ impl FileBrowserApp {
     }
 
     fn on_save(&self) {
+        let selected_files = self.get_selected_files();
+
+        if selected_files.is_empty() {
+            return;
+        }
+
         if let Some(sub) = self.get_sub() {
-            sub.on_save(AppFileBrowserSaveEvent {
-                selected_files: self.get_selected_files(),
-            });
+            sub.on_save(AppFileBrowserSaveEvent { selected_files });
         }
 
         self.b.get_navigation().go_back();
@@ -639,103 +753,6 @@ impl FileBrowserApp {
 
     fn get_sub(&self) -> Option<Arc<dyn AppFileBrowserSubscriber>> {
         self.sub.read().unwrap().clone()
-    }
-}
-
-impl App for FileBrowserApp {
-    fn draw(&self, f: &mut Frame, area: Rect) {
-        let blocks = self.get_layout_blocks(area);
-
-        self.draw_header(f, blocks[0]);
-        self.draw_file_list(f, blocks[1]);
-        self.draw_footer_with_help(f, blocks[2]);
-    }
-
-    fn handle_control(&self, ev: &Event) {
-        if let Event::Key(key) = ev {
-            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
-
-            match key.code {
-                KeyCode::Esc => {
-                    self.on_save();
-                }
-                KeyCode::Up => {
-                    self.go_up();
-                }
-                KeyCode::Down => {
-                    self.go_down();
-                }
-                KeyCode::Enter => self.enter_current_menu_item(),
-                KeyCode::Char(' ') => self.select_current_menu_item(),
-                KeyCode::Char('h') | KeyCode::Char('H') => {
-                    if has_ctrl {
-                        self.toggle_hidden()
-                    }
-                }
-                KeyCode::Char('s') | KeyCode::Char('S') => {
-                    if has_ctrl {
-                        self.cycle_sort_mode()
-                    }
-                }
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    if has_ctrl {
-                        self.b.get_navigation().go_back();
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-impl AppFileBrowser for FileBrowserApp {
-    fn set_subscriber(&self, sub: Arc<dyn AppFileBrowserSubscriber>) {
-        self.sub.write().unwrap().replace(sub);
-    }
-
-    fn pop_subscriber(&self) {
-        self.sub.write().unwrap().take();
-    }
-
-    fn get_selected_files(&self) -> Vec<PathBuf> {
-        self.selected_files_in.read().unwrap().clone()
-    }
-
-    fn select_file(&self, path: PathBuf) {
-        self.selected_files_in.write().unwrap().push(path);
-    }
-
-    fn deselect_file(&self, file: PathBuf) {
-        let mut selected_files = self.selected_files_in.write().unwrap();
-        let selected_file_index =
-            selected_files.iter().position(|f| *f == file);
-
-        if let Some(selected_file_index) = selected_file_index {
-            selected_files.remove(selected_file_index);
-        }
-    }
-
-    fn set_mode(&self, mode: BrowserMode) {
-        *self.mode.write().unwrap() = mode;
-    }
-
-    fn set_sort(&self, sort: SortMode) {
-        *self.sort.write().unwrap() = sort;
-    }
-
-    fn set_current_path(&self, path: PathBuf) {
-        if path.exists() {
-            *self.current_path.write().unwrap() = path;
-        } else {
-            // TODO: info
-        }
-    }
-
-    fn clear_selection(&self) {
-        self.selected_files_in.write().unwrap().clear();
-        for item in self.items.write().unwrap().iter_mut() {
-            item.is_selected = false;
-        }
     }
 }
 

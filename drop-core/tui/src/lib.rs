@@ -1,6 +1,6 @@
+mod apps;
 mod backend;
 mod layout;
-mod pages;
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
@@ -22,12 +22,12 @@ use ratatui::{
 };
 
 use crate::{
-    backend::MainAppBackend,
-    layout::{LayoutApp, LayoutChild},
-    pages::{
+    apps::{
         file_browser::FileBrowserApp, help::HelpApp, home::HomeApp,
         send_files::SendFilesApp,
     },
+    backend::MainAppBackend,
+    layout::{LayoutApp, LayoutChild},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -90,6 +90,8 @@ pub trait AppFileBrowserManager: Send + Sync {
 }
 
 pub trait AppBackend: Send + Sync {
+    fn shutdown(&self);
+
     fn get_send_files_manager(&self) -> Arc<dyn AppSendFilesManager>;
     fn get_file_browser_manager(&self) -> Arc<dyn AppFileBrowserManager>;
 
@@ -123,25 +125,22 @@ pub fn run_tui() -> Result<()> {
 
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    let b = Arc::new(MainAppBackend::new());
+    let backend = Arc::new(MainAppBackend::new());
     let layout = Arc::new(LayoutApp::new());
 
-    let home = Arc::new(HomeApp::new(b.clone()));
+    let file_browser = Arc::new(FileBrowserApp::new(backend.clone()));
+    let help = Arc::new(HelpApp::new(backend.clone()));
+    let home = Arc::new(HomeApp::new(backend.clone()));
+    let send_files = Arc::new(SendFilesApp::new(backend.clone()));
 
-    let send_files = Arc::new(SendFilesApp::new(b.clone()));
-    let file_browser = Arc::new(FileBrowserApp::new(b.clone()));
+    backend.set_navigation(layout.clone());
+    backend.set_file_browser(file_browser.clone());
+    backend.file_browser_subscribe(Page::SendFiles, send_files.clone());
 
-    let help = Arc::new(HelpApp::new(b.clone()));
-
-    b.set_navigation(layout.clone());
-    b.set_file_browser(file_browser.clone());
-    b.file_browser_subscribe(Page::SendFiles, send_files.clone());
-
-    // TODO: low | b.set_send_files_manager
-    // TODO: low | b.set_file_browser_manager
+    // TODO: low | b.set_send_files_manager(some_send_files_manager)
+    // TODO: low | b.set_file_browser_manager(some_file_browser_manager)
 
     layout.add_child(LayoutChild {
         page: Some(Page::Home),
@@ -186,7 +185,8 @@ pub fn run_tui() -> Result<()> {
             layout.handle_control(&ev);
         }
 
-        if layout.is_finished() {
+        let should_finish = layout.is_finished() || backend.is_shutdown();
+        if should_finish {
             break;
         }
     }

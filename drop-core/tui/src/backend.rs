@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, atomic::AtomicBool};
 
 use arkdrop_common::AppConfig;
 use arkdropx_sender::{SendFilesBubble, SendFilesSubscriber};
@@ -9,6 +9,8 @@ use crate::{
 };
 
 pub struct MainAppBackend {
+    is_shutdown: AtomicBool,
+
     send_files_manager: RwLock<Option<Arc<dyn AppSendFilesManager>>>,
     file_browser_manager: RwLock<Option<Arc<dyn AppFileBrowserManager>>>,
 
@@ -22,6 +24,11 @@ pub struct MainAppBackend {
 }
 
 impl AppBackend for MainAppBackend {
+    fn shutdown(&self) {
+        self.is_shutdown
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn get_send_files_manager(&self) -> Arc<dyn AppSendFilesManager> {
         self.send_files_manager
             .read()
@@ -50,6 +57,8 @@ impl AppBackend for MainAppBackend {
 impl MainAppBackend {
     pub fn new() -> Self {
         Self {
+            is_shutdown: AtomicBool::new(false),
+
             send_files_manager: RwLock::new(None),
             file_browser_manager: RwLock::new(None),
 
@@ -61,6 +70,11 @@ impl MainAppBackend {
             send_files_bub: RwLock::new(None),
             send_files_sub: RwLock::new(None),
         }
+    }
+
+    pub fn is_shutdown(&self) -> bool {
+        self.is_shutdown
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn set_send_files_manager(
