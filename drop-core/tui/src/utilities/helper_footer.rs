@@ -1,4 +1,3 @@
-use qrcode::render::string::Element;
 use ratatui::{
     layout::Alignment,
     style::{Color, Style, Stylize},
@@ -49,15 +48,15 @@ pub fn create_helper_footer(
 }
 
 fn create_controls_text(controls: Vec<HelperFooterControl>) -> String {
-    let controls_text = String::with_capacity(controls.len() * 21);
+    let mut controls_text = String::with_capacity(controls.len() * 21);
 
     for (i, c) in controls.iter().enumerate() {
         if i > 0 {
-            controls_text.append_to_string(&mut " • ".to_string());
+            controls_text.push_str(" • ");
         }
-        controls_text.append_to_string(&mut c.title.clone());
-        controls_text.append_to_string(&mut " ".to_string());
-        controls_text.append_to_string(&mut c.description.clone());
+        controls_text.push_str(&c.title);
+        controls_text.push_str(" ");
+        controls_text.push_str(&c.description);
     }
 
     controls_text

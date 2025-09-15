@@ -131,6 +131,9 @@ impl App for SendFilesApp {
                     },
                     _ => {}
                 },
+                KeyCode::Esc => {
+                    self.b.get_navigation().go_back();
+                }
                 _ => {}
             },
             _ => {}
