@@ -294,7 +294,14 @@ impl LayoutApp {
                 ])
             }
             Page::FileBrowser => create_helper_footer(vec![
-                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("↑/↓", "Navigate"),
+                HelperFooterControl::new("Enter", "Into"),
+                HelperFooterControl::new("Space", "Select"),
+                HelperFooterControl::new("ESC/CTRL-S", "Save"),
+                HelperFooterControl::new("CTRL-H", "Hidden"),
+                HelperFooterControl::new("CTRL-J", "Sort"),
+                HelperFooterControl::new("CTRL-K", "Reset"),
+                HelperFooterControl::new("CTRL-C", "Cancel"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
             ]),
         };
