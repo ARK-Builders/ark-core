@@ -1,5 +1,5 @@
 use std::{
-    env,
+    path::PathBuf,
     sync::{Arc, RwLock, atomic::AtomicBool},
 };
 
@@ -182,12 +182,14 @@ impl AppNavigation for LayoutApp {
 impl AppFileBrowserManager for LayoutApp {
     fn open_file_browser(&self, req: OpenFileBrowserRequest) {
         if let Some(fb) = self.get_file_browser() {
-            let curr_dir = env::current_dir().unwrap();
+            let curr_dir =
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
             let sub = self.get_file_browser_sub(&req.from);
 
             fb.clear_selection();
             fb.set_mode(req.mode);
             fb.set_sort(req.sort);
+
             fb.set_current_path(curr_dir);
 
             if let Some(sub) = sub {
