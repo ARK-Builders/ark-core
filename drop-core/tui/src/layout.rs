@@ -10,7 +10,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::{App, AppNavigation, Page};
+use crate::{
+    App, AppNavigation, Page,
+    utilities::helper_footer::{HelperFooterControl, create_helper_footer},
+};
 
 #[derive(Clone)]
 pub struct LayoutChild {
@@ -241,58 +244,60 @@ impl LayoutApp {
     fn draw_footer(&self, f: &mut Frame, area: Rect) {
         let current_page = self.current_page.read().unwrap().clone();
 
-        let (help_text, status_color) = match current_page {
-            Page::Home => (
-                "↑/↓ Navigate • Enter/Space Select • CTRL-S Send • CTRL-R Receive • CTRL-H Help • CTRL-Q Quit",
-                Color::Cyan,
-            ),
-            Page::SendFiles => (
-                "Tab Next Field • Enter Send • Esc Back • CTRL-Q Quit",
-                Color::Green,
-            ),
-            Page::ReceiveFiles => (
-                "↑/↓ Navigate • Tab Next Field • CTRL-Enter Receive • Esc Back • CTRL-Q Quit",
-                Color::Blue,
-            ),
-            Page::Config => (
-                "↑/↓ Navigate • Enter/Space Select • Esc Back • CTRL-Q Quit",
-                Color::Yellow,
-            ),
-            Page::Help => ("Esc Back • CTRL-Q Quit", Color::Magenta),
+        let footer = match current_page {
+            Page::Home => create_helper_footer(vec![
+                HelperFooterControl::new("↑/↓", "Navigate"),
+                HelperFooterControl::new("Enter/Space", "Interact"),
+                HelperFooterControl::new("CTRL-S", "Send"),
+                HelperFooterControl::new("CTRL-R", "Receive"),
+                HelperFooterControl::new("CTRL-H", "Help"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ]),
+            Page::SendFiles => create_helper_footer(vec![
+                HelperFooterControl::new("↑/↓", "Navigate"),
+                HelperFooterControl::new("Enter/Space", "Interact"),
+                HelperFooterControl::new("CTRL-Enter", "Send"),
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ]),
+            Page::ReceiveFiles => create_helper_footer(vec![
+                HelperFooterControl::new("↑/↓", "Navigate"),
+                HelperFooterControl::new("Enter/Space", "Interact"),
+                HelperFooterControl::new("CTRL-Enter", "Receive"),
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ]),
+            Page::Config => create_helper_footer(vec![
+                HelperFooterControl::new("↑/↓", "Navigate"),
+                HelperFooterControl::new("Enter/Space", "Interact"),
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ]),
+            Page::Help => create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ]),
             Page::SendFilesProgress => {
                 // TODO: info | set dynamic messages according to the transfer
                 // real-time progress/state
-                ("Transfer in progress... • CTRL-Q Quit", Color::Green)
+                create_helper_footer(vec![
+                    HelperFooterControl::new("ESC", "Back"),
+                    HelperFooterControl::new("CTRL-Q", "Quit"),
+                ])
             }
             Page::ReceiveFilesProgress => {
                 // TODO: info | set dynamic messages according to the transfer
                 // real-time progress/state
-                ("Transfer in progress... • CTRL-Q Quit", Color::Blue)
+                create_helper_footer(vec![
+                    HelperFooterControl::new("ESC", "Back"),
+                    HelperFooterControl::new("CTRL-Q", "Quit"),
+                ])
             }
-            Page::FileBrowser => (
-                "↑/↓ Navigate • Enter Go • Space Select • ESC|CTRL-S Save • CTRL-H Hidden • CTRL-J Sort • CTRL-C Cancel • CTRL-Q Quit",
-                Color::Blue,
-            ),
-        };
-
-        let footer_content = vec![
-            Line::from(vec![
-                Span::styled("💡 ", Style::default().fg(Color::Yellow)),
-                Span::styled(help_text, Style::default().fg(Color::White)),
+            Page::FileBrowser => create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
             ]),
-            Line::from(""),
-        ];
-
-        let footer_block = Block::default()
-            .borders(Borders::ALL)
-            .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(status_color))
-            .title(" Controls ")
-            .title_style(Style::default().fg(Color::White).bold());
-
-        let footer = Paragraph::new(footer_content)
-            .block(footer_block)
-            .alignment(Alignment::Center);
+        };
 
         f.render_widget(footer, area);
     }

@@ -1,6 +1,7 @@
 mod apps;
 mod backend;
 mod layout;
+mod utilities;
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 

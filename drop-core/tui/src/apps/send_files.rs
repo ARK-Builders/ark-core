@@ -32,13 +32,12 @@ pub struct SendFilesApp {
 
 impl App for SendFilesApp {
     fn draw(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let layout = Layout::default()
+        let blocks = Layout::default()
             .direction(Direction::Horizontal)
             .margin(1)
             .constraints([
-                Constraint::Percentage(60), // Left side - form
-                Constraint::Percentage(40), /* Right side - files list &
-                                             * actions */
+                Constraint::Percentage(60), // Left side
+                Constraint::Percentage(40), // Right side
             ])
             .split(area);
 
@@ -49,7 +48,7 @@ impl App for SendFilesApp {
                 Constraint::Length(6), // File selection
                 Constraint::Min(0),    // Instructions
             ])
-            .split(layout[0]);
+            .split(blocks[0]);
 
         let right_blocks = Layout::default()
             .direction(Direction::Vertical)
@@ -57,7 +56,7 @@ impl App for SendFilesApp {
                 Constraint::Min(0),    // Files list
                 Constraint::Length(5), // Send button
             ])
-            .split(layout[1]);
+            .split(blocks[1]);
 
         self.draw_title(f, left_blocks[0]);
         self.draw_file_input(f, left_blocks[1]);

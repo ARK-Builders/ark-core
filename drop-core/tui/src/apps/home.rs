@@ -41,7 +41,7 @@ impl App for HomeApp {
         draw_welcome(f, left_blocks[0]);
         draw_features_overview(f, left_blocks[1]);
         draw_status_info(f, left_blocks[2]);
-        self.draw_main_menu(f, blocks[1])
+        self.draw_main_menu(f, blocks[1]);
     }
 
     fn handle_control(&self, ev: &Event) {
@@ -110,6 +110,115 @@ impl App for HomeApp {
                 _ => {}
             }
         }
+    }
+}
+
+impl HomeApp {
+    pub fn new(b: Arc<dyn AppBackend>) -> Self {
+        let mut menu = ListState::default();
+        menu.select(Some(0));
+
+        Self {
+            b,
+            menu: RwLock::new(menu),
+        }
+    }
+
+    fn draw_main_menu(&self, f: &mut Frame<'_>, area: Rect) {
+        let menu_items = vec![
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        "📤 ",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                    Span::styled(
+                        "Send Files",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("   ", Style::default()),
+                    Span::styled(
+                        "Share files with others",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+            ]),
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled("� ", Style::default().fg(Color::Blue).bold()),
+                    Span::styled(
+                        "Receive Files",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("   ", Style::default()),
+                    Span::styled(
+                        "Download files from sender",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+            ]),
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        "⚙️ ",
+                        Style::default().fg(Color::Yellow).bold(),
+                    ),
+                    Span::styled(
+                        "Configuration",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("   ", Style::default()),
+                    Span::styled(
+                        "Adjust settings and preferences",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+            ]),
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        "❓ ",
+                        Style::default().fg(Color::Magenta).bold(),
+                    ),
+                    Span::styled(
+                        "Help",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("   ", Style::default()),
+                    Span::styled(
+                        "View help and keyboard shortcuts",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+            ]),
+        ];
+
+        let menu_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::White))
+            .title(" Main Menu ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        let menu = List::new(menu_items)
+            .block(menu_block)
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ");
+
+        f.render_stateful_widget(menu, area, &mut self.menu.write().unwrap());
     }
 }
 
@@ -222,113 +331,4 @@ fn draw_status_info(f: &mut Frame<'_>, area: Rect) {
         .alignment(Alignment::Left);
 
     f.render_widget(status, area);
-}
-
-impl HomeApp {
-    pub fn new(b: Arc<dyn AppBackend>) -> Self {
-        let mut menu = ListState::default();
-        menu.select(Some(0));
-
-        Self {
-            b,
-            menu: RwLock::new(menu),
-        }
-    }
-
-    fn draw_main_menu(&self, f: &mut Frame<'_>, area: Rect) {
-        let menu_items = vec![
-            ListItem::new(vec![
-                Line::from(vec![
-                    Span::styled(
-                        "📤 ",
-                        Style::default().fg(Color::Green).bold(),
-                    ),
-                    Span::styled(
-                        "Send Files",
-                        Style::default().fg(Color::White).bold(),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled("   ", Style::default()),
-                    Span::styled(
-                        "Share files with others",
-                        Style::default().fg(Color::Gray),
-                    ),
-                ]),
-            ]),
-            ListItem::new(vec![
-                Line::from(vec![
-                    Span::styled("� ", Style::default().fg(Color::Blue).bold()),
-                    Span::styled(
-                        "Receive Files",
-                        Style::default().fg(Color::White).bold(),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled("   ", Style::default()),
-                    Span::styled(
-                        "Download files from sender",
-                        Style::default().fg(Color::Gray),
-                    ),
-                ]),
-            ]),
-            ListItem::new(vec![
-                Line::from(vec![
-                    Span::styled(
-                        "⚙️ ",
-                        Style::default().fg(Color::Yellow).bold(),
-                    ),
-                    Span::styled(
-                        "Configuration",
-                        Style::default().fg(Color::White).bold(),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled("   ", Style::default()),
-                    Span::styled(
-                        "Adjust settings and preferences",
-                        Style::default().fg(Color::Gray),
-                    ),
-                ]),
-            ]),
-            ListItem::new(vec![
-                Line::from(vec![
-                    Span::styled(
-                        "❓ ",
-                        Style::default().fg(Color::Magenta).bold(),
-                    ),
-                    Span::styled(
-                        "Help",
-                        Style::default().fg(Color::White).bold(),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled("   ", Style::default()),
-                    Span::styled(
-                        "View help and keyboard shortcuts",
-                        Style::default().fg(Color::Gray),
-                    ),
-                ]),
-            ]),
-        ];
-
-        let menu_block = Block::default()
-            .borders(Borders::ALL)
-            .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(Color::White))
-            .title(" Main Menu ")
-            .title_style(Style::default().fg(Color::White).bold());
-
-        let menu = List::new(menu_items)
-            .block(menu_block)
-            .highlight_style(
-                Style::default()
-                    .bg(Color::DarkGray)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("▶ ");
-
-        f.render_stateful_widget(menu, area, &mut self.menu.write().unwrap());
-    }
 }
