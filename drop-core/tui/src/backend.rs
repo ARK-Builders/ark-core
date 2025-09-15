@@ -15,12 +15,6 @@ pub struct MainAppBackend {
     file_browser_manager: RwLock<Option<Arc<dyn AppFileBrowserManager>>>,
 
     navigation: RwLock<Option<Arc<dyn AppNavigation>>>,
-
-    file_browser: RwLock<Option<Arc<dyn AppFileBrowser>>>,
-    file_browser_subs: RwLock<Vec<(Page, Arc<dyn AppFileBrowserSubscriber>)>>,
-
-    send_files_bub: RwLock<Option<Arc<SendFilesBubble>>>,
-    send_files_sub: RwLock<Option<Arc<dyn SendFilesSubscriber>>>,
 }
 
 impl AppBackend for MainAppBackend {
@@ -63,12 +57,6 @@ impl MainAppBackend {
             file_browser_manager: RwLock::new(None),
 
             navigation: RwLock::new(None),
-
-            file_browser: RwLock::new(None),
-            file_browser_subs: RwLock::new(Vec::new()),
-
-            send_files_bub: RwLock::new(None),
-            send_files_sub: RwLock::new(None),
         }
     }
 
@@ -97,26 +85,8 @@ impl MainAppBackend {
             .replace(manager);
     }
 
-    pub fn set_send_files_subscriber(&self, sub: Arc<dyn SendFilesSubscriber>) {
-        self.send_files_sub.write().unwrap().replace(sub);
-    }
-
     pub fn set_navigation(&self, nav: Arc<dyn AppNavigation>) {
         self.navigation.write().unwrap().replace(nav);
     }
 
-    pub fn set_file_browser(&self, fb: Arc<dyn AppFileBrowser>) {
-        self.file_browser.write().unwrap().replace(fb);
-    }
-
-    pub fn file_browser_subscribe(
-        &self,
-        page: Page,
-        sub: Arc<dyn AppFileBrowserSubscriber>,
-    ) {
-        self.file_browser_subs
-            .write()
-            .unwrap()
-            .push((page, sub));
-    }
 }

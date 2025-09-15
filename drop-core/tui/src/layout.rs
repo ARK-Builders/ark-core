@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock, atomic::AtomicBool};
+use std::{
+    env,
+    sync::{Arc, RwLock, atomic::AtomicBool},
+};
 
 use ratatui::{
     Frame,
@@ -11,7 +14,8 @@ use ratatui::{
 };
 
 use crate::{
-    App, AppNavigation, Page,
+    App, AppFileBrowser, AppFileBrowserManager, AppFileBrowserSubscriber,
+    AppNavigation, OpenFileBrowserRequest, Page,
     utilities::helper_footer::{HelperFooterControl, create_helper_footer},
 };
 
@@ -31,6 +35,9 @@ pub struct LayoutApp {
     previous_pages: RwLock<Vec<Page>>,
 
     is_finished: AtomicBool,
+
+    file_browser: RwLock<Option<Arc<dyn AppFileBrowser>>>,
+    file_browser_subs: RwLock<Vec<(Page, Arc<dyn AppFileBrowserSubscriber>)>>,
 }
 
 impl App for LayoutApp {
@@ -172,6 +179,26 @@ impl AppNavigation for LayoutApp {
     }
 }
 
+impl AppFileBrowserManager for LayoutApp {
+    fn open_file_browser(&self, req: OpenFileBrowserRequest) {
+        if let Some(fb) = self.get_file_browser() {
+            let curr_dir = env::current_dir().unwrap();
+            let sub = self.get_file_browser_sub(&req.from);
+
+            fb.clear_selection();
+            fb.set_mode(req.mode);
+            fb.set_sort(req.sort);
+            fb.set_current_path(curr_dir);
+
+            if let Some(sub) = sub {
+                fb.set_subscriber(sub);
+            }
+
+            self.navigate_to(Page::FileBrowser);
+        }
+    }
+}
+
 impl LayoutApp {
     pub fn new() -> Self {
         Self {
@@ -181,7 +208,45 @@ impl LayoutApp {
             previous_pages: RwLock::new(Vec::new()),
 
             is_finished: AtomicBool::new(false),
+
+            file_browser: RwLock::new(None),
+            file_browser_subs: RwLock::new(Vec::new()),
         }
+    }
+
+    fn get_file_browser_sub(
+        &self,
+        page: &Page,
+    ) -> Option<Arc<dyn AppFileBrowserSubscriber>> {
+        self.file_browser_subs
+            .read()
+            .unwrap()
+            .iter()
+            .find_map(|(p, s)| {
+                if p == page {
+                    return Some(s.clone());
+                }
+                return None;
+            })
+    }
+
+    pub fn set_file_browser(&self, fb: Arc<dyn AppFileBrowser>) {
+        self.file_browser.write().unwrap().replace(fb);
+    }
+
+    pub fn file_browser_subscribe(
+        &self,
+        page: Page,
+        sub: Arc<dyn AppFileBrowserSubscriber>,
+    ) {
+        self.file_browser_subs
+            .write()
+            .unwrap()
+            .push((page, sub));
+    }
+
+    fn get_file_browser(&self) -> Option<Arc<dyn AppFileBrowser>> {
+        return self.file_browser.read().unwrap().clone();
     }
 
     pub fn add_child(&self, c: LayoutChild) {

@@ -48,7 +48,7 @@ pub struct FileBrowserApp {
     has_hidden_items: AtomicBool,
     enforced_extensions: RwLock<Vec<String>>,
 
-    // TODO: low | implement dynamic filter based on user's input
+    // TODO: extra | implement dynamic filter based on user's input
     filter_in: RwLock<String>,
 
     sub: RwLock<Option<Arc<dyn AppFileBrowserSubscriber>>>,

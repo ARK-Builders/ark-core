@@ -1,6 +1,7 @@
 mod apps;
 mod backend;
 mod layout;
+mod send_files_manager;
 mod utilities;
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -29,6 +30,7 @@ use crate::{
     },
     backend::MainAppBackend,
     layout::{LayoutApp, LayoutChild},
+    send_files_manager::MainAppSendFilesManager,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -136,12 +138,14 @@ pub fn run_tui() -> Result<()> {
     let home = Arc::new(HomeApp::new(backend.clone()));
     let send_files = Arc::new(SendFilesApp::new(backend.clone()));
 
-    backend.set_navigation(layout.clone());
-    backend.set_file_browser(file_browser.clone());
-    backend.file_browser_subscribe(Page::SendFiles, send_files.clone());
+    let send_files_manager = Arc::new(MainAppSendFilesManager::new());
 
-    // TODO: low | b.set_send_files_manager(some_send_files_manager)
-    // TODO: low | b.set_file_browser_manager(some_file_browser_manager)
+    layout.set_file_browser(file_browser.clone());
+    layout.file_browser_subscribe(Page::SendFiles, send_files.clone());
+
+    backend.set_navigation(layout.clone());
+    backend.set_file_browser_manager(layout.clone());
+    backend.set_send_files_manager(send_files_manager);
 
     layout.add_child(LayoutChild {
         page: Some(Page::Home),
