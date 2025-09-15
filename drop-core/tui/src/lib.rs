@@ -26,7 +26,7 @@ use ratatui::{
 use crate::{
     apps::{
         file_browser::FileBrowserApp, help::HelpApp, home::HomeApp,
-        send_files::SendFilesApp,
+        send_files::SendFilesApp, send_files_progress::SendFilesProgressApp,
     },
     backend::MainAppBackend,
     layout::{LayoutApp, LayoutChild},
@@ -137,6 +137,8 @@ pub fn run_tui() -> Result<()> {
     let help = Arc::new(HelpApp::new(backend.clone()));
     let home = Arc::new(HomeApp::new(backend.clone()));
     let send_files = Arc::new(SendFilesApp::new(backend.clone()));
+    let send_files_progress =
+        Arc::new(SendFilesProgressApp::new(backend.clone()));
 
     let send_files_manager = Arc::new(MainAppSendFilesManager::new());
 
@@ -145,7 +147,9 @@ pub fn run_tui() -> Result<()> {
 
     backend.set_navigation(layout.clone());
     backend.set_file_browser_manager(layout.clone());
-    backend.set_send_files_manager(send_files_manager);
+    backend.set_send_files_manager(send_files_manager.clone());
+
+    send_files_manager.set_send_files_subscriber(send_files_progress.clone());
 
     layout.add_child(LayoutChild {
         page: Some(Page::Home),
@@ -174,6 +178,14 @@ pub fn run_tui() -> Result<()> {
     layout.add_child(LayoutChild {
         page: Some(Page::Help),
         app: help,
+        is_active: false,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::SendFilesProgress),
+        app: send_files_progress,
         is_active: false,
         z_index: 0,
         control_index: 0,

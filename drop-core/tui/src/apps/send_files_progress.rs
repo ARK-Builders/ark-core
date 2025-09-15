@@ -4,9 +4,11 @@ use std::{
 };
 
 use crate::{App, AppBackend};
+use arkdropx_sender::SendFilesSubscriber;
 use ratatui::{
     Frame,
-    layout::Alignment,
+    crossterm::event::{Event, KeyCode},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
@@ -22,35 +24,72 @@ pub struct SendFilesProgressApp {
 
 impl App for SendFilesProgressApp {
     fn draw(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
-        // let main_blocks = Layout::default()
-        //     .direction(Direction::Vertical)
-        //     .margin(1)
-        //     .constraints([
-        //         Constraint::Length(3),  // Title
-        //         Constraint::Length(12), // Progress section
-        //         Constraint::Min(0),     // Details/logs or QR code
-        //         Constraint::Length(4),  // Footer
-        //     ])
-        //     .split(area);
+        let blocks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3),  // Title
+                Constraint::Length(12), // Progress section
+                Constraint::Min(0),     // Details/logs or QR code
+                Constraint::Length(4),  // Footer
+            ])
+            .split(area);
 
-        // let progress_blocks = Layout::default()
-        //     .direction(Direction::Horizontal)
-        //     .constraints([
-        //         Constraint::Percentage(50), // Status info
-        //         Constraint::Percentage(50), // Progress visualization
-        //     ])
-        //     .split(main_blocks[1]);
+        let progress_blocks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(50), // Status info
+                Constraint::Percentage(50), // Progress visualization
+            ])
+            .split(blocks[1]);
 
-        // let right_blocks = Layout::default()
-        //     .direction(Direction::Vertical)
-        //     .constraints([
-        //         Constraint::Length(6), // Progress bar
-        //         Constraint::Min(0),    // Transfer stats
-        //     ])
-        //     .split(progress_blocks[1]);
+        let right_blocks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(6), // Progress bar
+                Constraint::Min(0),    // Transfer stats
+            ])
+            .split(progress_blocks[1]);
+
+        self.draw_title(f, blocks[0]);
+        self.draw_status(f, progress_blocks[0]);
+
+        self.draw_progress(f, right_blocks[0]);
+        self.draw_statistics(f, right_blocks[1]);
+        
+        self.draw_info(f, blocks[2]);
+        self.draw_footer(f, blocks[3]);
     }
 
     fn handle_control(&self, ev: &ratatui::crossterm::event::Event) {
+        if let Event::Key(key) = ev {
+            match key.code {
+                KeyCode::Esc => {
+                    self.b.get_navigation().go_back();
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl SendFilesSubscriber for SendFilesProgressApp {
+    fn get_id(&self) -> String {
+        todo!()
+    }
+
+    fn log(&self, message: String) {
+        todo!()
+    }
+
+    fn notify_sending(&self, event: arkdropx_sender::SendFilesSendingEvent) {
+        todo!()
+    }
+
+    fn notify_connecting(
+        &self,
+        event: arkdropx_sender::SendFilesConnectingEvent,
+    ) {
         todo!()
     }
 }
@@ -219,11 +258,11 @@ impl SendFilesProgressApp {
                 format!("{:.1}%", progress_pct),
                 Style::default().fg(Color::White).bold(),
             ));
+
         f.render_widget(progress, area);
     }
 
     fn draw_statistics(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
-        // Transfer statistics
         let files_count = 0; // TODO: this should track sent/received files
 
         let stats_content = vec![
@@ -409,7 +448,6 @@ impl SendFilesProgressApp {
     fn draw_footer(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
         let progress_pct = self.get_progress_pct();
 
-        // Footer
         let (footer_text, footer_color, footer_icon) = if let Some(bubble) =
             self.b
                 .get_send_files_manager()
