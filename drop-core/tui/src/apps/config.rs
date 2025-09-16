@@ -10,9 +10,7 @@ use crate::{
     App, AppBackend, AppFileBrowserSaveEvent, AppFileBrowserSubscriber,
     BrowserMode, SortMode,
 };
-use arkdrop_common::AppConfig;
-use base64::{Engine as _, engine::general_purpose};
-use image::ImageFormat;
+use arkdrop_common::{AppConfig, transform_to_base64};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},
@@ -22,7 +20,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
-use std::io::Cursor;
 
 #[derive(Clone, PartialEq)]
 enum ConfigField {
@@ -513,7 +510,7 @@ impl ConfigApp {
         let is_processing = self.is_processing.clone();
 
         std::thread::spawn(move || {
-            match Self::convert_image_to_base64_preview(&path_clone) {
+            match transform_to_base64(&path_clone) {
                 Ok(base64_string) => {
                     *avatar_base64_preview.write().unwrap() =
                         Some(base64_string);
@@ -532,27 +529,6 @@ impl ConfigApp {
             }
             is_processing.store(false, std::sync::atomic::Ordering::Relaxed);
         });
-    }
-
-    fn convert_image_to_base64_preview(
-        path: &PathBuf,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        // Read and decode the image
-        let img = image::open(path)?;
-
-        // Resize to low resolution (64x64 pixels) for preview only
-        let resized = img.resize(64, 64, image::imageops::FilterType::Lanczos3);
-
-        // Convert to JPEG format for smaller size
-        let mut buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut buffer);
-
-        resized.write_to(&mut cursor, ImageFormat::Jpeg)?;
-
-        // Encode to base64
-        let base64_string = general_purpose::STANDARD.encode(&buffer);
-
-        Ok(format!("data:image/jpeg;base64,{}", base64_string))
     }
 
     fn save_configuration(&self) {

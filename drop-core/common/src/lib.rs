@@ -1,8 +1,9 @@
 //! arkdrop_common library
-//! TODO
 //! ```
 use std::{
-    env, fs,
+    env,
+    fs::{self},
+    io::Cursor,
     path::PathBuf,
     sync::{RwLock, atomic::AtomicBool},
 };
@@ -10,6 +11,7 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use arkdropx_sender::SenderFileData;
 use base64::{Engine, engine::general_purpose};
+use image::ImageFormat;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the application.
@@ -135,6 +137,20 @@ impl AppConfig {
         self.avatar_name.replace(name);
     }
 
+    pub fn get_avatar_name(&self) -> String {
+        self.avatar_name
+            .clone()
+            .unwrap_or("unknown".to_string())
+    }
+
+    pub fn get_avatar_base64(&self) -> Option<String> {
+        if let Some(path) = &self.avatar_file {
+            return transform_to_base64(path).ok();
+        }
+
+        None
+    }
+
     pub fn set_avatar_file(&mut self, file: PathBuf) {
         self.avatar_file.replace(file);
     }
@@ -152,6 +168,23 @@ impl AppConfig {
             None => suggested_default_out_dir(),
         }
     }
+}
+
+pub fn transform_to_base64(path: &PathBuf) -> Result<String> {
+    let img = image::open(path)?;
+
+    let resized = img.resize(64, 64, image::imageops::FilterType::Lanczos3);
+
+    // Convert to JPEG format for smaller size
+    let mut buffer = Vec::new();
+    let mut cursor = Cursor::new(&mut buffer);
+
+    resized.write_to(&mut cursor, ImageFormat::Jpeg)?;
+
+    // Encode to base64
+    let base64_string = general_purpose::STANDARD.encode(&buffer);
+
+    Ok(format!("data:image/jpeg;base64,{}", base64_string))
 }
 
 /// Profile for the application.

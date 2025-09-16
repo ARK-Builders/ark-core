@@ -2,7 +2,7 @@ use crate::{
     App, AppBackend, AppFileBrowserSaveEvent, AppFileBrowserSubscriber,
     BrowserMode, OpenFileBrowserRequest, Page, SortMode,
 };
-use arkdropx_receiver::ReceiveFilesRequest;
+use arkdropx_receiver::{ReceiveFilesRequest, ReceiverProfile};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},
@@ -571,9 +571,17 @@ impl ReceiveFilesApp {
             return None;
         }
 
-        // TODO: Implement proper ReceiveFilesRequest creation
-        // This should use the ticket, confirmation, and output directory
-        None
+        let config = self.b.get_config();
+
+        return Some(ReceiveFilesRequest {
+            ticket: self.get_ticket_in(),
+            confirmation: self.get_confirmation_in().parse().unwrap(),
+            profile: ReceiverProfile {
+                name: config.get_avatar_name(),
+                avatar_b64: config.get_avatar_base64(),
+            },
+            config: None,
+        });
     }
 
     fn set_status_message(&self, message: &str) {

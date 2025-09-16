@@ -67,7 +67,7 @@ pub struct SendFilesProgressApp {
 
     status_text: RwLock<String>,
 
-    log_text: RwLock<String>,
+    log_text: RwLock<String>, // TODO: info | display log text on UI
 
     files: RwLock<Vec<ProgressFile>>,
     total_transfer_speed: RwLock<f64>,
@@ -239,16 +239,8 @@ impl SendFilesProgressApp {
         self.title_text.read().unwrap().clone()
     }
 
-    fn get_log_text(&self) -> String {
-        self.log_text.read().unwrap().clone()
-    }
-
     fn get_block_title_text(&self) -> String {
         self.block_title_text.read().unwrap().clone()
-    }
-
-    fn get_status_text(&self) -> String {
-        self.status_text.read().unwrap().clone()
     }
 
     fn get_progress_pct(&self) -> f64 {
