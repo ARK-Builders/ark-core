@@ -325,11 +325,10 @@ impl FileBrowserApp {
     fn select_current_menu_item(&self) {
         let mode = self.mode.read().unwrap();
         let menu = self.menu.read().unwrap();
-        let mut items = self.items.write().unwrap();
-        let mut selected_files_in = self.selected_files_in.write().unwrap();
+        let selected_files_in = self.get_selected_files();
 
         if let Some(item_idx) = menu.selected() {
-            if let Some(item) = items.get_mut(item_idx) {
+            if let Some(item) = self.items.write().unwrap().get_mut(item_idx) {
                 match *mode {
                     BrowserMode::SelectFile => {
                         self.select_file(item);
@@ -366,12 +365,18 @@ impl FileBrowserApp {
                 {
                     if item.is_selected {
                         // Remove from selection
-                        selected_files_in.retain(|p| p != &item.path);
+                        self.selected_files_in
+                            .write()
+                            .unwrap()
+                            .retain(|p| p != &item.path);
                         item.is_selected = false;
                     } else {
                         // Add to selection
                         if !selected_files_in.contains(&item.path) {
-                            selected_files_in.push(item.path.clone());
+                            self.selected_files_in
+                                .write()
+                                .unwrap()
+                                .push(item.path.clone());
                         }
                         item.is_selected = true;
                     }
