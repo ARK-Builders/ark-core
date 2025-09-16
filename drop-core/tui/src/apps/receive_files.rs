@@ -3,6 +3,7 @@ use crate::{
     BrowserMode, OpenFileBrowserRequest, Page, SortMode,
 };
 use arkdropx_receiver::{ReceiveFilesRequest, ReceiverProfile};
+use clipboard::{ClipboardContext, ClipboardProvider};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},
@@ -208,6 +209,7 @@ impl ReceiveFilesApp {
             KeyCode::Char(c) => {
                 if has_ctrl {
                     match c {
+                        'v' | 'V' => self.paste_clipboard(),
                         'a' | 'A' => self.move_cursor_home(),
                         'e' | 'E' => self.move_cursor_end(),
                         'u' | 'U' => self.clear_input(),
@@ -421,6 +423,44 @@ impl ReceiveFilesApp {
         self.input_buffer.write().unwrap().clear();
         self.cursor_position
             .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn paste_clipboard(&self) {
+        match ClipboardContext::new() {
+            Ok(mut ctx) => {
+                match ctx.get_contents() {
+                    Ok(clipboard_text) => {
+                        let mut buffer = self.input_buffer.write().unwrap();
+                        let cursor_pos = self
+                            .cursor_position
+                            .load(std::sync::atomic::Ordering::Relaxed);
+
+                        // Insert clipboard content at cursor position
+                        buffer.insert_str(cursor_pos, &clipboard_text);
+
+                        // Move cursor to end of pasted content
+                        let new_cursor_pos = cursor_pos + clipboard_text.len();
+                        self.cursor_position.store(
+                            new_cursor_pos,
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+
+                        self.set_status_message(&format!(
+                            "Pasted {} characters from clipboard",
+                            clipboard_text.len()
+                        ));
+                    }
+                    Err(_) => {
+                        self.set_status_message(
+                            "Failed to read from clipboard",
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                self.set_status_message("Clipboard not available");
+            }
+        }
     }
 
     fn delete_word_backward(&self) {
