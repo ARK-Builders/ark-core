@@ -345,7 +345,7 @@ impl HomeApp {
     fn draw_welcome(&self, f: &mut Frame<'_>, area: Rect) {
         let config = self.b.get_config();
         let greeting_text = match config.avatar_name {
-            Some(name) => format!("👋 Hi, {name}"),
+            Some(name) => format!("👋 Hi, {name}! "),
             None => "👋 ".to_string(),
         };
 
