@@ -62,6 +62,7 @@ impl App for ReceiveFilesApp {
         self.draw_ticket_field(f, left_blocks[1]);
         self.draw_confirmation_field(f, left_blocks[2]);
         self.draw_output_field(f, left_blocks[3]);
+        self.draw_instructions(f, left_blocks[4]);
         self.draw_receive_button(f, right_blocks[0]);
     }
 

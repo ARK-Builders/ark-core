@@ -1,12 +1,10 @@
 use std::sync::{Arc, RwLock, atomic::AtomicBool};
 
 use arkdrop_common::AppConfig;
-use arkdropx_sender::{SendFilesBubble, SendFilesSubscriber};
 
 use crate::{
-    AppBackend, AppFileBrowser, AppFileBrowserManager,
-    AppFileBrowserSubscriber, AppNavigation, AppReceiveFilesManager,
-    AppSendFilesManager, Page,
+    AppBackend, AppFileBrowserManager, AppNavigation, AppReceiveFilesManager,
+    AppSendFilesManager,
 };
 
 pub struct MainAppBackend {
