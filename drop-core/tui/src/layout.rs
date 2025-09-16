@@ -312,68 +312,60 @@ impl LayoutApp {
         let current_page = self.current_page.read().unwrap().clone();
 
         let footer = match current_page {
-            Page::Home => create_helper_footer(vec![
+            Page::Home => Some(create_helper_footer(vec![
                 HelperFooterControl::new("↑/↓", "Navigate"),
                 HelperFooterControl::new("Enter/Space", "Interact"),
                 HelperFooterControl::new("CTRL-S", "Send"),
                 HelperFooterControl::new("CTRL-R", "Receive"),
                 HelperFooterControl::new("CTRL-H", "Help"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
-            ]),
-            Page::SendFiles => create_helper_footer(vec![
+            ])),
+            Page::SendFiles => Some(create_helper_footer(vec![
                 HelperFooterControl::new("↑/↓", "Navigate"),
                 HelperFooterControl::new("Enter/Space", "Interact"),
                 HelperFooterControl::new("CTRL-Enter", "Send"),
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
-            ]),
-            Page::ReceiveFiles => create_helper_footer(vec![
+            ])),
+            Page::ReceiveFiles => Some(create_helper_footer(vec![
                 HelperFooterControl::new("↑/↓", "Navigate"),
                 HelperFooterControl::new("Enter/Space", "Interact"),
                 HelperFooterControl::new("CTRL-Enter", "Receive"),
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
-            ]),
-            Page::Config => create_helper_footer(vec![
+            ])),
+            Page::Config => Some(create_helper_footer(vec![
                 HelperFooterControl::new("↑/↓", "Navigate"),
                 HelperFooterControl::new("Enter/Space", "Interact"),
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
-            ]),
-            Page::Help => create_helper_footer(vec![
+            ])),
+            Page::Help => Some(create_helper_footer(vec![
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
-            ]),
+            ])),
             Page::SendFilesProgress => {
                 // TODO: info | set dynamic messages according to the transfer
                 // real-time progress/state
-                create_helper_footer(vec![
+                Some(create_helper_footer(vec![
                     HelperFooterControl::new("ESC", "Back"),
                     HelperFooterControl::new("CTRL-Q", "Quit"),
-                ])
+                ]))
             }
             Page::ReceiveFilesProgress => {
                 // TODO: info | set dynamic messages according to the transfer
                 // real-time progress/state
-                create_helper_footer(vec![
+                Some(create_helper_footer(vec![
                     HelperFooterControl::new("ESC", "Back"),
                     HelperFooterControl::new("CTRL-Q", "Quit"),
-                ])
+                ]))
             }
-            Page::FileBrowser => create_helper_footer(vec![
-                HelperFooterControl::new("↑/↓", "Navigate"),
-                HelperFooterControl::new("Enter", "Into"),
-                HelperFooterControl::new("Space", "Select"),
-                HelperFooterControl::new("ESC/CTRL-S", "Save"),
-                HelperFooterControl::new("CTRL-H", "Hidden"),
-                HelperFooterControl::new("CTRL-J", "Sort"),
-                HelperFooterControl::new("CTRL-K", "Reset"),
-                HelperFooterControl::new("CTRL-C", "Cancel"),
-                HelperFooterControl::new("CTRL-Q", "Quit"),
-            ]),
+            Page::FileBrowser => None,
         };
 
-        f.render_widget(footer, area);
+        if let Some(footer) = footer {
+            f.render_widget(footer, area);
+        }
     }
 }
 
