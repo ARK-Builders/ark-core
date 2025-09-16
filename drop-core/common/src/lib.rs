@@ -131,6 +131,14 @@ impl AppConfig {
         Ok(())
     }
 
+    pub fn set_avatar_name(&mut self, name: String) {
+        self.avatar_name.replace(name);
+    }
+
+    pub fn set_avatar_file(&mut self, file: PathBuf) {
+        self.avatar_file.replace(file);
+    }
+
     /// Updates and persists the default receive directory.
     pub fn set_out_dir(&mut self, dir: PathBuf) -> Result<()> {
         self.out_dir = Some(dir);

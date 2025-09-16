@@ -78,6 +78,11 @@ pub struct ConfigApp {
 
     // File browser integration
     awaiting_browser_result: RwLock<Option<ConfigField>>,
+
+    // Text input state for avatar name
+    is_editing_name: Arc<AtomicBool>,
+    name_input_buffer: Arc<RwLock<String>>,
+    name_cursor_position: Arc<AtomicUsize>,
 }
 
 impl App for ConfigApp {
@@ -100,37 +105,83 @@ impl App for ConfigApp {
     fn handle_control(&self, ev: &Event) {
         if let Event::Key(key) = ev {
             let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+            let is_editing = self.is_editing_name();
 
-            match key.code {
-                KeyCode::Up => self.navigate_up(),
-                KeyCode::Down => self.navigate_down(),
-                KeyCode::Enter | KeyCode::Char(' ') => {
-                    self.activate_current_field()
+            if is_editing {
+                // Handle text input mode for avatar name
+                match key.code {
+                    KeyCode::Enter => {
+                        self.finish_editing_name();
+                    }
+                    KeyCode::Esc => {
+                        self.cancel_editing_name();
+                    }
+                    KeyCode::Backspace => {
+                        self.handle_backspace();
+                    }
+                    KeyCode::Delete => {
+                        self.handle_delete();
+                    }
+                    KeyCode::Left => {
+                        self.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        self.move_cursor_right();
+                    }
+                    KeyCode::Home => {
+                        self.move_cursor_home();
+                    }
+                    KeyCode::End => {
+                        self.move_cursor_end();
+                    }
+                    KeyCode::Char(c) => {
+                        if has_ctrl {
+                            match c {
+                                'a' | 'A' => self.move_cursor_home(),
+                                'e' | 'E' => self.move_cursor_end(),
+                                'u' | 'U' => self.clear_input(),
+                                'w' | 'W' => self.delete_word_backward(),
+                                _ => {}
+                            }
+                        } else {
+                            self.insert_char(c);
+                        }
+                    }
+                    _ => {}
                 }
-                KeyCode::Esc => {
-                    if self.is_processing() {
-                        self.set_status_message("Operation cancelled");
-                        self.set_processing(false);
-                    } else {
-                        self.b.get_navigation().go_back();
+            } else {
+                // Handle normal navigation mode
+                if has_ctrl {
+                    match key.code {
+                        KeyCode::Char('s') | KeyCode::Char('S') => {
+                            self.save_configuration();
+                        }
+                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                            self.reset_to_defaults();
+                        }
+                        KeyCode::Char('c') | KeyCode::Char('C') => {
+                            self.b.get_navigation().go_back();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    match key.code {
+                        KeyCode::Up => self.navigate_up(),
+                        KeyCode::Down => self.navigate_down(),
+                        KeyCode::Enter | KeyCode::Char(' ') => {
+                            self.activate_current_field()
+                        }
+                        KeyCode::Esc => {
+                            if self.is_processing() {
+                                self.set_status_message("Operation cancelled");
+                                self.set_processing(false);
+                            } else {
+                                self.b.get_navigation().go_back();
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                KeyCode::Char('s') | KeyCode::Char('S') => {
-                    if has_ctrl {
-                        self.save_configuration();
-                    }
-                }
-                KeyCode::Char('r') | KeyCode::Char('R') => {
-                    if has_ctrl {
-                        self.reset_to_defaults();
-                    }
-                }
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    if has_ctrl {
-                        self.b.get_navigation().go_back();
-                    }
-                }
-                _ => {}
             }
         }
     }
@@ -194,6 +245,11 @@ impl ConfigApp {
             is_processing: Arc::new(AtomicBool::new(false)),
 
             awaiting_browser_result: RwLock::new(None),
+
+            // Text input state
+            is_editing_name: Arc::new(AtomicBool::new(false)),
+            name_input_buffer: Arc::new(RwLock::new(String::new())),
+            name_cursor_position: Arc::new(AtomicUsize::new(0)),
         };
 
         // Generate preview for existing avatar file
@@ -266,9 +322,158 @@ impl ConfigApp {
     }
 
     fn edit_avatar_name(&self) {
-        // For now, we'll use a simple approach - in a real implementation,
-        // you might want to implement a text input widget
-        self.set_status_message("Name editing not implemented in this demo - use config file directly");
+        // Initialize input buffer with current name or empty string
+        let current_name = self.get_avatar_name().unwrap_or_default();
+        *self.name_input_buffer.write().unwrap() = current_name.clone();
+
+        // Set cursor to end of current text
+        self.name_cursor_position
+            .store(current_name.len(), std::sync::atomic::Ordering::Relaxed);
+
+        // Enter editing mode
+        self.is_editing_name
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.set_status_message(
+            "Editing display name - Enter to save, Esc to cancel",
+        );
+    }
+
+    fn is_editing_name(&self) -> bool {
+        self.is_editing_name
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn finish_editing_name(&self) {
+        let input_text = self.name_input_buffer.read().unwrap().clone();
+        let trimmed_text = input_text.trim();
+
+        if trimmed_text.is_empty() {
+            *self.avatar_name.write().unwrap() = None;
+            self.set_status_message("Display name cleared");
+        } else {
+            *self.avatar_name.write().unwrap() = Some(trimmed_text.to_string());
+            self.set_status_message(&format!(
+                "Display name set to: {}",
+                trimmed_text
+            ));
+        }
+
+        // Exit editing mode
+        self.is_editing_name
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn cancel_editing_name(&self) {
+        // Exit editing mode without saving
+        self.is_editing_name
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.set_status_message("Name editing cancelled");
+    }
+
+    fn insert_char(&self, c: char) {
+        let mut buffer = self.name_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        // Insert character at cursor position
+        buffer.insert(cursor_pos, c);
+
+        // Move cursor forward
+        self.name_cursor_position
+            .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn handle_backspace(&self) {
+        let mut buffer = self.name_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos > 0 {
+            buffer.remove(cursor_pos - 1);
+            self.name_cursor_position
+                .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn handle_delete(&self) {
+        let mut buffer = self.name_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos < buffer.len() {
+            buffer.remove(cursor_pos);
+        }
+    }
+
+    fn move_cursor_left(&self) {
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cursor_pos > 0 {
+            self.name_cursor_position
+                .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn move_cursor_right(&self) {
+        let buffer = self.name_input_buffer.read().unwrap();
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cursor_pos < buffer.len() {
+            self.name_cursor_position
+                .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn move_cursor_home(&self) {
+        self.name_cursor_position
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn move_cursor_end(&self) {
+        let buffer = self.name_input_buffer.read().unwrap();
+        self.name_cursor_position
+            .store(buffer.len(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn clear_input(&self) {
+        self.name_input_buffer.write().unwrap().clear();
+        self.name_cursor_position
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn delete_word_backward(&self) {
+        let mut buffer = self.name_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos == 0 {
+            return;
+        }
+
+        // Find the start of the current word
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Delete word characters backwards
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Remove the characters
+        buffer.drain(new_pos..cursor_pos);
+        self.name_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn open_avatar_browser(&self) {
@@ -572,21 +777,33 @@ impl ConfigApp {
     fn draw_footer(&self, f: &mut Frame, area: Rect) {
         let status_message = self.get_status_message();
         let is_processing = self.is_processing();
+        let is_editing = self.is_editing_name();
 
         let (status_icon, status_color) = if is_processing {
             ("⏳", Color::Yellow)
+        } else if is_editing {
+            ("✏️", Color::Green)
         } else {
             ("ℹ️", Color::Blue)
         };
 
-        let footer_content = vec![
+        let help_line = if is_editing {
             Line::from(vec![
+                Span::styled("Enter", Style::default().fg(Color::Green).bold()),
+                Span::styled(": Save • ", Style::default().fg(Color::Gray)),
+                Span::styled("ESC", Style::default().fg(Color::Red).bold()),
+                Span::styled(": Cancel • ", Style::default().fg(Color::Gray)),
+                Span::styled("CTRL-A", Style::default().fg(Color::Cyan).bold()),
+                Span::styled(": Home • ", Style::default().fg(Color::Gray)),
+                Span::styled("CTRL-E", Style::default().fg(Color::Cyan).bold()),
+                Span::styled(": End • ", Style::default().fg(Color::Gray)),
                 Span::styled(
-                    format!("{} ", status_icon),
-                    Style::default().fg(status_color),
+                    "CTRL-U",
+                    Style::default().fg(Color::Yellow).bold(),
                 ),
-                Span::styled(status_message, Style::default().fg(Color::White)),
-            ]),
+                Span::styled(": Clear", Style::default().fg(Color::Gray)),
+            ])
+        } else {
             Line::from(vec![
                 Span::styled("Enter", Style::default().fg(Color::Cyan).bold()),
                 Span::styled(": Edit • ", Style::default().fg(Color::Gray)),
@@ -602,7 +819,18 @@ impl ConfigApp {
                 Span::styled(": Reset • ", Style::default().fg(Color::Gray)),
                 Span::styled("ESC", Style::default().fg(Color::Red).bold()),
                 Span::styled(": Back", Style::default().fg(Color::Gray)),
+            ])
+        };
+
+        let footer_content = vec![
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", status_icon),
+                    Style::default().fg(status_color),
+                ),
+                Span::styled(status_message, Style::default().fg(Color::White)),
             ]),
+            help_line,
         ];
 
         let footer_block = Block::default()
@@ -622,7 +850,24 @@ impl ConfigApp {
     fn get_field_value_display(&self, field: &ConfigField) -> String {
         match field {
             ConfigField::AvatarName => {
-                if let Some(name) = self.get_avatar_name() {
+                if self.is_editing_name() && field == &ConfigField::AvatarName {
+                    // Show input buffer with cursor when editing
+                    let buffer = self.name_input_buffer.read().unwrap().clone();
+                    let cursor_pos = self
+                        .name_cursor_position
+                        .load(std::sync::atomic::Ordering::Relaxed);
+
+                    if buffer.is_empty() {
+                        "│ (typing...)".to_string()
+                    } else {
+                        // Insert cursor indicator
+                        let mut display = buffer.clone();
+                        if cursor_pos <= display.len() {
+                            display.insert(cursor_pos, '│');
+                        }
+                        display
+                    }
+                } else if let Some(name) = self.get_avatar_name() {
                     name
                 } else {
                     "Not set".to_string()
