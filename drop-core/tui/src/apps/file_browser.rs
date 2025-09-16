@@ -323,62 +323,22 @@ impl FileBrowserApp {
     }
 
     fn select_current_menu_item(&self) {
-        let mode = self.mode.read().unwrap();
-        let menu = self.menu.read().unwrap();
-        let selected_files_in = self.get_selected_files();
+        let mode = self.get_mode();
+        let menu = self.get_menu();
 
         if let Some(item_idx) = menu.selected() {
             if let Some(item) = self.items.write().unwrap().get_mut(item_idx) {
-                match *mode {
+                match mode {
                     BrowserMode::SelectFile => {
                         self.select_file(item);
+                        self.on_save();
                     }
                     BrowserMode::SelectDirectory => {
                         self.select_dir(item);
-                        if item.is_directory {
-                            self.select_item_at(item_idx);
-                        }
-                    }
-                    BrowserMode::SelectMultiFiles => {
-                        if item.is_directory {
-                            self.enter_item_path(item);
-                        } else {
-                            self.select_item_at(item_idx);
-                        }
-                    }
-                }
-
-                match *mode {
-                    BrowserMode::SelectFile => {
-                        self.select_file(item);
-                    }
-                    BrowserMode::SelectDirectory => {
-                        self.select_file(item);
+                        self.on_save();
                     }
                     BrowserMode::SelectMultiFiles => {
                         self.select_file(item);
-                    }
-                }
-
-                if matches!(*mode, BrowserMode::SelectMultiFiles)
-                    && !item.is_directory
-                {
-                    if item.is_selected {
-                        // Remove from selection
-                        self.selected_files_in
-                            .write()
-                            .unwrap()
-                            .retain(|p| p != &item.path);
-                        item.is_selected = false;
-                    } else {
-                        // Add to selection
-                        if !selected_files_in.contains(&item.path) {
-                            self.selected_files_in
-                                .write()
-                                .unwrap()
-                                .push(item.path.clone());
-                        }
-                        item.is_selected = true;
                     }
                 }
             }
