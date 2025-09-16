@@ -280,8 +280,6 @@ impl FileBrowserApp {
             .load(std::sync::atomic::Ordering::Relaxed);
         self.has_hidden_items
             .store(!current, std::sync::atomic::Ordering::Relaxed);
-
-        self.refresh();
     }
 
     fn cycle_sort_mode(&self) {
@@ -293,8 +291,6 @@ impl FileBrowserApp {
             SortMode::Modified => SortMode::Type,
             SortMode::Type => SortMode::Name,
         };
-
-        self.refresh();
     }
 
     fn get_menu(&self) -> ListState {
@@ -316,8 +312,6 @@ impl FileBrowserApp {
 
     fn enter_item_path(&self, item: &FileItem) {
         *self.current_path.write().unwrap() = item.path.clone();
-
-        self.refresh();
 
         self.menu.write().unwrap().select(Some(0));
     }
@@ -356,32 +350,6 @@ impl FileBrowserApp {
 
     fn get_current_path(&self) -> PathBuf {
         self.current_path.read().unwrap().clone()
-    }
-
-    // TODO: util | implement some keybind to use it
-    fn _go_to_home(&self) {
-        let mut current_path = self.current_path.write().unwrap();
-
-        if let Ok(home) = env::var("HOME") {
-            *current_path = PathBuf::from(home);
-        } else if let Ok(userprofile) = env::var("USERPROFILE") {
-            *current_path = PathBuf::from(userprofile);
-        } else {
-            *current_path = PathBuf::from("/");
-        }
-
-        self.refresh();
-
-        self.menu.write().unwrap().select(Some(0));
-    }
-
-    // TODO: util | implement some keybind to use it
-    fn _go_to_root(&mut self) {
-        *self.current_path.write().unwrap() = PathBuf::from("/");
-
-        self.refresh();
-
-        self.menu.write().unwrap().select(Some(0));
     }
 
     fn is_extension_valid(&self, name: &String) -> bool {
@@ -534,24 +502,6 @@ impl FileBrowserApp {
                 selected_files_in.push(item.path.clone());
             }
             item.is_selected = true;
-        }
-    }
-
-    fn select_item_at(&self, idx: usize) {
-        if let Some(item) = self.items.write().unwrap().get_mut(idx) {
-            match self.get_mode() {
-                BrowserMode::SelectFile => {
-                    self.select_file(item);
-                    self.on_save();
-                }
-                BrowserMode::SelectDirectory => {
-                    self.select_file(item);
-                    self.on_save();
-                }
-                BrowserMode::SelectMultiFiles => {
-                    self.select_file(item);
-                }
-            }
         }
     }
 
