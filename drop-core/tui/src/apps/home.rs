@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, atomic::AtomicUsize};
 
 use ratatui::{
     Frame,
@@ -12,10 +12,23 @@ use ratatui::{
 
 use crate::{App, AppBackend, Page};
 
+#[derive(Clone, PartialEq)]
+enum MenuItem {
+    SendFiles,
+    ReceiveFiles,
+    Config,
+    Help,
+}
+
 pub struct HomeApp {
     b: Arc<dyn AppBackend>,
 
+    // UI State
     menu: RwLock<ListState>,
+    selected_item: AtomicUsize,
+
+    // Status and feedback
+    status_message: Arc<RwLock<String>>,
 }
 
 impl App for HomeApp {
@@ -38,77 +51,17 @@ impl App for HomeApp {
             ])
             .split(blocks[0]);
 
-        draw_welcome(f, left_blocks[0]);
-        draw_features_overview(f, left_blocks[1]);
-        draw_status_info(f, left_blocks[2]);
+        self.draw_welcome(f, left_blocks[0]);
+        self.draw_features_overview(f, left_blocks[1]);
+        self.draw_status_info(f, left_blocks[2]);
         self.draw_main_menu(f, blocks[1]);
     }
 
     fn handle_control(&self, ev: &Event) {
         if let Event::Key(key) = ev {
             let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
-            match key.code {
-                KeyCode::Up => {
-                    let selected =
-                        self.menu.write().unwrap().selected().unwrap_or(0);
-                    if selected > 0 {
-                        self.menu
-                            .write()
-                            .unwrap()
-                            .select(Some(selected - 1));
-                    } else {
-                        self.menu.write().unwrap().select(Some(3));
-                    }
-                }
-                KeyCode::Down => {
-                    let selected =
-                        self.menu.write().unwrap().selected().unwrap_or(0);
-                    if selected < 3 {
-                        self.menu
-                            .write()
-                            .unwrap()
-                            .select(Some(selected + 1));
-                    } else {
-                        self.menu.write().unwrap().select(Some(0));
-                    }
-                }
-                KeyCode::Enter => {
-                    let nav = self.b.get_navigation();
 
-                    match self.menu.write().unwrap().selected() {
-                        Some(0) => nav.navigate_to(Page::SendFiles),
-                        Some(1) => nav.navigate_to(Page::ReceiveFiles),
-                        Some(2) => nav.navigate_to(Page::Config),
-                        Some(3) => nav.navigate_to(Page::Help),
-                        _ => {}
-                    }
-                }
-                KeyCode::Char('h') | KeyCode::Char('H') => {
-                    if has_ctrl {
-                        self.b.get_navigation().navigate_to(Page::Help);
-                    }
-                }
-                KeyCode::Char('s') | KeyCode::Char('S') => {
-                    if has_ctrl {
-                        self.b
-                            .get_navigation()
-                            .navigate_to(Page::SendFiles);
-                    }
-                }
-                KeyCode::Char('r') | KeyCode::Char('R') => {
-                    if has_ctrl {
-                        self.b
-                            .get_navigation()
-                            .navigate_to(Page::ReceiveFiles);
-                    }
-                }
-                KeyCode::Char('q') | KeyCode::Char('Q') => {
-                    if has_ctrl {
-                        self.b.shutdown();
-                    }
-                }
-                _ => {}
-            }
+            self.handle_navigation_controls(key.code, has_ctrl);
         }
     }
 }
@@ -121,7 +74,168 @@ impl HomeApp {
         Self {
             b,
             menu: RwLock::new(menu),
+            selected_item: AtomicUsize::new(0),
+            status_message: Arc::new(RwLock::new(
+                "Welcome to ARK Drop - Select an option to get started"
+                    .to_string(),
+            )),
         }
+    }
+
+    fn handle_navigation_controls(&self, key_code: KeyCode, has_ctrl: bool) {
+        if has_ctrl {
+            match key_code {
+                KeyCode::Char('h') | KeyCode::Char('H') => {
+                    self.navigate_to_page(Page::Help);
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    self.navigate_to_page(Page::SendFiles);
+                }
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    self.navigate_to_page(Page::ReceiveFiles);
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    self.navigate_to_page(Page::Config);
+                }
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    self.shutdown_application();
+                }
+                _ => {}
+            }
+        } else {
+            match key_code {
+                KeyCode::Up | KeyCode::BackTab => {
+                    self.navigate_up();
+                }
+                KeyCode::Down | KeyCode::Tab => {
+                    self.navigate_down();
+                }
+                KeyCode::Enter => {
+                    self.activate_current_item();
+                }
+                KeyCode::Char('1') => {
+                    self.select_item(0);
+                    self.activate_current_item();
+                }
+                KeyCode::Char('2') => {
+                    self.select_item(1);
+                    self.activate_current_item();
+                }
+                KeyCode::Char('3') => {
+                    self.select_item(2);
+                    self.activate_current_item();
+                }
+                KeyCode::Char('4') => {
+                    self.select_item(3);
+                    self.activate_current_item();
+                }
+                KeyCode::Esc => {
+                    self.set_status_message("Press Ctrl+Q to quit application");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn get_menu_items(&self) -> Vec<MenuItem> {
+        vec![
+            MenuItem::SendFiles,
+            MenuItem::ReceiveFiles,
+            MenuItem::Config,
+            MenuItem::Help,
+        ]
+    }
+
+    fn get_selected_item(&self) -> usize {
+        self.selected_item
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn navigate_up(&self) {
+        let items = self.get_menu_items();
+        let current = self.get_selected_item();
+        let new_index = if current > 0 {
+            current - 1
+        } else {
+            items.len() - 1
+        };
+
+        self.select_item(new_index);
+    }
+
+    fn navigate_down(&self) {
+        let items = self.get_menu_items();
+        let current = self.get_selected_item();
+        let new_index = if current < items.len() - 1 {
+            current + 1
+        } else {
+            0
+        };
+
+        self.select_item(new_index);
+    }
+
+    fn select_item(&self, index: usize) {
+        let items = self.get_menu_items();
+        if index < items.len() {
+            self.selected_item
+                .store(index, std::sync::atomic::Ordering::Relaxed);
+            self.menu.write().unwrap().select(Some(index));
+
+            // Update status message based on selection
+            let item_name = match items.get(index) {
+                Some(MenuItem::SendFiles) => "Send files to another device",
+                Some(MenuItem::ReceiveFiles) => {
+                    "Receive files from another device"
+                }
+                Some(MenuItem::Config) => {
+                    "Configure your profile and preferences"
+                }
+                Some(MenuItem::Help) => "View help and keyboard shortcuts",
+                None => "Unknown option",
+            };
+            self.set_status_message(item_name);
+        }
+    }
+
+    fn activate_current_item(&self) {
+        let items = self.get_menu_items();
+        let current = self.get_selected_item();
+
+        if let Some(item) = items.get(current) {
+            match item {
+                MenuItem::SendFiles => {
+                    self.navigate_to_page(Page::SendFiles);
+                }
+                MenuItem::ReceiveFiles => {
+                    self.navigate_to_page(Page::ReceiveFiles);
+                }
+                MenuItem::Config => {
+                    self.navigate_to_page(Page::Config);
+                }
+                MenuItem::Help => {
+                    self.navigate_to_page(Page::Help);
+                }
+            }
+        }
+    }
+
+    fn navigate_to_page(&self, page: Page) {
+        self.set_status_message(&format!("Navigating to {:?}...", page));
+        self.b.get_navigation().navigate_to(page);
+    }
+
+    fn shutdown_application(&self) {
+        self.set_status_message("Shutting down application...");
+        self.b.shutdown();
+    }
+
+    fn set_status_message(&self, message: &str) {
+        *self.status_message.write().unwrap() = message.to_string();
+    }
+
+    fn get_status_message(&self) -> String {
+        self.status_message.read().unwrap().clone()
     }
 
     fn draw_main_menu(&self, f: &mut Frame<'_>, area: Rect) {
@@ -136,6 +250,7 @@ impl HomeApp {
                         "Send Files",
                         Style::default().fg(Color::White).bold(),
                     ),
+                    Span::styled(" (1)", Style::default().fg(Color::DarkGray)),
                 ]),
                 Line::from(vec![
                     Span::styled("   ", Style::default()),
@@ -147,11 +262,15 @@ impl HomeApp {
             ]),
             ListItem::new(vec![
                 Line::from(vec![
-                    Span::styled("� ", Style::default().fg(Color::Blue).bold()),
+                    Span::styled(
+                        "📥 ",
+                        Style::default().fg(Color::Blue).bold(),
+                    ),
                     Span::styled(
                         "Receive Files",
                         Style::default().fg(Color::White).bold(),
                     ),
+                    Span::styled(" (2)", Style::default().fg(Color::DarkGray)),
                 ]),
                 Line::from(vec![
                     Span::styled("   ", Style::default()),
@@ -171,6 +290,7 @@ impl HomeApp {
                         "Configuration",
                         Style::default().fg(Color::White).bold(),
                     ),
+                    Span::styled(" (3)", Style::default().fg(Color::DarkGray)),
                 ]),
                 Line::from(vec![
                     Span::styled("   ", Style::default()),
@@ -190,6 +310,7 @@ impl HomeApp {
                         "Help",
                         Style::default().fg(Color::White).bold(),
                     ),
+                    Span::styled(" (4)", Style::default().fg(Color::DarkGray)),
                 ]),
                 Line::from(vec![
                     Span::styled("   ", Style::default()),
@@ -220,115 +341,139 @@ impl HomeApp {
 
         f.render_stateful_widget(menu, area, &mut self.menu.write().unwrap());
     }
-}
 
-fn draw_welcome(f: &mut Frame<'_>, area: Rect) {
-    let welcome_content = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("👋 ", Style::default().fg(Color::Yellow)),
-            Span::styled("Welcome to ", Style::default().fg(Color::White)),
-            Span::styled("ARK Drop", Style::default().fg(Color::Cyan).bold()),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("🔒 ", Style::default().fg(Color::Green)),
-            Span::styled(
-                "Secure peer-to-peer file transfer",
-                Style::default().fg(Color::Gray),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("⚡ ", Style::default().fg(Color::Yellow)),
-            Span::styled(
-                "Fast and reliable connections",
-                Style::default().fg(Color::Gray),
-            ),
-        ]),
-        Line::from(""),
-    ];
+    fn draw_welcome(&self, f: &mut Frame<'_>, area: Rect) {
+        let config = self.b.get_config();
+        let greeting_text = match config.avatar_name {
+            Some(name) => format!("👋 Hi, {name}"),
+            None => "👋 ".to_string(),
+        };
 
-    let welcome_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(" About ")
-        .title_style(Style::default().fg(Color::White).bold());
+        let welcome_content = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(greeting_text, Style::default().fg(Color::Yellow)),
+                Span::styled("Welcome to ", Style::default().fg(Color::White)),
+                Span::styled(
+                    "ARK Drop",
+                    Style::default().fg(Color::Cyan).bold(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("🔒 ", Style::default().fg(Color::Green)),
+                Span::styled(
+                    "Secure peer-to-peer file transfer",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("⚡ ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "Fast and reliable connections",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(""),
+        ];
 
-    let welcome = Paragraph::new(welcome_content)
-        .block(welcome_block)
-        .alignment(Alignment::Left);
+        let welcome_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(" About ")
+            .title_style(Style::default().fg(Color::White).bold());
 
-    f.render_widget(welcome, area);
-}
+        let welcome = Paragraph::new(welcome_content)
+            .block(welcome_block)
+            .alignment(Alignment::Left);
 
-fn draw_features_overview(f: &mut Frame<'_>, area: Rect) {
-    let features_content = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("• ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                "No file size limits",
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("• ", Style::default().fg(Color::Green)),
-            Span::styled(
-                "End-to-end encryption",
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("• ", Style::default().fg(Color::Blue)),
-            Span::styled(
-                "Works across networks",
-                Style::default().fg(Color::White),
-            ),
-        ]),
-    ];
+        f.render_widget(welcome, area);
+    }
 
-    let features_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Green))
-        .title(" Features ")
-        .title_style(Style::default().fg(Color::White).bold());
+    fn draw_features_overview(&self, f: &mut Frame<'_>, area: Rect) {
+        let features_content = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("• ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "No file size limits",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("• ", Style::default().fg(Color::Green)),
+                Span::styled(
+                    "End-to-end encryption",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("• ", Style::default().fg(Color::Blue)),
+                Span::styled(
+                    "Works across networks",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+        ];
 
-    let features = Paragraph::new(features_content)
-        .block(features_block)
-        .alignment(Alignment::Left);
+        let features_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Green))
+            .title(" Features ")
+            .title_style(Style::default().fg(Color::White).bold());
 
-    f.render_widget(features, area);
-}
+        let features = Paragraph::new(features_content)
+            .block(features_block)
+            .alignment(Alignment::Left);
 
-fn draw_status_info(f: &mut Frame<'_>, area: Rect) {
-    let status_content = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("🟢 ", Style::default().fg(Color::Green)),
-            Span::styled(
-                "Ready to transfer files",
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(vec![Span::styled(
-            "Get started by choosing an option →",
-            Style::default().fg(Color::Gray).italic(),
-        )]),
-    ];
+        f.render_widget(features, area);
+    }
 
-    let status_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Gray))
-        .title(" Status ")
-        .title_style(Style::default().fg(Color::White).bold());
+    fn draw_status_info(&self, f: &mut Frame<'_>, area: Rect) {
+        let status_message = self.get_status_message();
 
-    let status = Paragraph::new(status_content)
-        .block(status_block)
-        .alignment(Alignment::Left);
+        let status_content = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("🟢 ", Style::default().fg(Color::Green)),
+                Span::styled(
+                    "Ready to transfer files",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("ℹ️ ", Style::default().fg(Color::Blue)),
+                Span::styled(
+                    status_message,
+                    Style::default().fg(Color::Gray).italic(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Ctrl+Q", Style::default().fg(Color::Red).bold()),
+                Span::styled(" - Quit • ", Style::default().fg(Color::Gray)),
+                Span::styled("1-4", Style::default().fg(Color::Cyan).bold()),
+                Span::styled(
+                    " - Quick select",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+        ];
 
-    f.render_widget(status, area);
+        let status_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Gray))
+            .title(" Status & Controls ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        let status = Paragraph::new(status_content)
+            .block(status_block)
+            .alignment(Alignment::Left);
+
+        f.render_widget(status, area);
+    }
 }

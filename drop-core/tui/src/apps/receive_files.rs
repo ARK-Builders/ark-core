@@ -15,7 +15,10 @@ use ratatui::{
 
 use std::{
     path::PathBuf,
-    sync::{Arc, RwLock},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicUsize},
+    },
 };
 
 #[derive(Clone, PartialEq)]
@@ -25,16 +28,37 @@ enum TransferState {
     PreparingNewTransfer,
 }
 
+#[derive(Clone, PartialEq)]
+enum InputField {
+    Ticket,
+    Confirmation,
+    OutputDirectory,
+    ReceiveButton,
+}
+
 pub struct ReceiveFilesApp {
     b: Arc<dyn AppBackend>,
 
+    // UI State
     menu: RwLock<ListState>,
     transfer_state: RwLock<TransferState>,
+    selected_field: AtomicUsize,
 
+    // Input fields
     ticket_in: RwLock<String>,
     confirmation_in: RwLock<String>,
     out_dir_in: RwLock<String>,
     selected_files_in: RwLock<Vec<PathBuf>>,
+
+    // Text input state
+    is_editing_field: Arc<AtomicBool>,
+    current_editing_field: Arc<AtomicUsize>,
+    input_buffer: Arc<RwLock<String>>,
+    cursor_position: Arc<AtomicUsize>,
+
+    // Status and feedback
+    status_message: Arc<RwLock<String>>,
+    is_processing: Arc<AtomicBool>,
 }
 
 impl App for ReceiveFilesApp {
@@ -52,14 +76,23 @@ impl App for ReceiveFilesApp {
     }
 
     fn handle_control(&self, ev: &Event) {
-        let transfer_state = self.transfer_state.read().unwrap().clone();
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+            let transfer_state = self.transfer_state.read().unwrap().clone();
 
-        match transfer_state {
-            TransferState::OngoingTransfer => {
-                self.handle_ongoing_transfer_controls(ev);
-            }
-            _ => {
-                self.handle_new_transfer_controls(ev);
+            match transfer_state {
+                TransferState::OngoingTransfer => {
+                    self.handle_ongoing_transfer_controls(key.code, has_ctrl);
+                }
+                _ => {
+                    let is_editing = self.is_editing_field();
+
+                    if is_editing {
+                        self.handle_text_input_controls(key.code, has_ctrl);
+                    } else {
+                        self.handle_navigation_controls(key.code, has_ctrl);
+                    }
+                }
             }
         }
     }
@@ -77,11 +110,14 @@ impl AppFileBrowserSubscriber for ReceiveFilesApp {
             .get_navigation()
             .replace_with(Page::ReceiveFiles);
 
-        let mut selected_files = ev.selected_files;
-        self.selected_files_in
-            .write()
-            .unwrap()
-            .append(&mut selected_files);
+        if let Some(selected_path) = ev.selected_files.first() {
+            *self.out_dir_in.write().unwrap() =
+                selected_path.to_string_lossy().to_string();
+            self.set_status_message(&format!(
+                "Output directory set: {}",
+                selected_path.display()
+            ));
+        }
     }
 }
 
@@ -95,11 +131,387 @@ impl ReceiveFilesApp {
 
             menu: RwLock::new(menu),
             transfer_state: RwLock::new(TransferState::NoTransfer),
+            selected_field: AtomicUsize::new(0),
 
             ticket_in: RwLock::new(String::new()),
             confirmation_in: RwLock::new(String::new()),
             out_dir_in: RwLock::new(String::new()),
             selected_files_in: RwLock::new(Vec::new()),
+
+            // Text input state
+            is_editing_field: Arc::new(AtomicBool::new(false)),
+            current_editing_field: Arc::new(AtomicUsize::new(0)),
+            input_buffer: Arc::new(RwLock::new(String::new())),
+            cursor_position: Arc::new(AtomicUsize::new(0)),
+
+            // Status and feedback
+            status_message: Arc::new(RwLock::new(
+                "Enter transfer details to receive files".to_string(),
+            )),
+            is_processing: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn handle_ongoing_transfer_controls(
+        &self,
+        key_code: KeyCode,
+        has_ctrl: bool,
+    ) {
+        if has_ctrl {
+            match key_code {
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    self.b.get_navigation().go_back();
+                }
+                _ => {}
+            }
+        } else {
+            match key_code {
+                KeyCode::Enter => {
+                    self.b
+                        .get_navigation()
+                        .navigate_to(Page::ReceiveFilesProgress);
+                }
+                KeyCode::Esc => {
+                    self.b.get_navigation().go_back();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn handle_text_input_controls(&self, key_code: KeyCode, has_ctrl: bool) {
+        match key_code {
+            KeyCode::Enter => {
+                self.finish_editing_field();
+            }
+            KeyCode::Esc => {
+                self.cancel_editing_field();
+            }
+            KeyCode::Backspace => {
+                self.handle_backspace();
+            }
+            KeyCode::Delete => {
+                self.handle_delete();
+            }
+            KeyCode::Left => {
+                self.move_cursor_left();
+            }
+            KeyCode::Right => {
+                self.move_cursor_right();
+            }
+            KeyCode::Home => {
+                self.move_cursor_home();
+            }
+            KeyCode::End => {
+                self.move_cursor_end();
+            }
+            KeyCode::Char(c) => {
+                if has_ctrl {
+                    match c {
+                        'a' | 'A' => self.move_cursor_home(),
+                        'e' | 'E' => self.move_cursor_end(),
+                        'u' | 'U' => self.clear_input(),
+                        'w' | 'W' => self.delete_word_backward(),
+                        'o' | 'O' => {
+                            if self
+                                .current_editing_field
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                                == 2
+                            {
+                                self.cancel_editing_field();
+                                self.open_dir_browser();
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    self.insert_char(c);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_navigation_controls(&self, key_code: KeyCode, has_ctrl: bool) {
+        if has_ctrl {
+            match key_code {
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    self.receive_files();
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    self.open_dir_browser();
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    self.clear_all_fields();
+                }
+                _ => {}
+            }
+        } else {
+            match key_code {
+                KeyCode::Up | KeyCode::BackTab => {
+                    self.navigate_up();
+                }
+                KeyCode::Down | KeyCode::Tab => {
+                    self.navigate_down();
+                }
+                KeyCode::Enter => {
+                    self.activate_current_field();
+                }
+                KeyCode::Esc => {
+                    if self.is_processing() {
+                        self.set_status_message("Operation cancelled");
+                        self.set_processing(false);
+                    } else {
+                        self.b.get_navigation().go_back();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn is_editing_field(&self) -> bool {
+        self.is_editing_field
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn start_editing_field(&self, field_index: usize) {
+        let current_value = match field_index {
+            0 => self.ticket_in.read().unwrap().clone(),
+            1 => self.confirmation_in.read().unwrap().clone(),
+            2 => self.out_dir_in.read().unwrap().clone(),
+            _ => String::new(),
+        };
+
+        *self.input_buffer.write().unwrap() = current_value.clone();
+        self.cursor_position
+            .store(current_value.len(), std::sync::atomic::Ordering::Relaxed);
+        self.current_editing_field
+            .store(field_index, std::sync::atomic::Ordering::Relaxed);
+        self.is_editing_field
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let field_name = match field_index {
+            0 => "ticket",
+            1 => "confirmation code",
+            2 => "output directory",
+            _ => "field",
+        };
+
+        self.set_status_message(&format!(
+            "Editing {} - Enter to save, Esc to cancel",
+            field_name
+        ));
+    }
+
+    fn finish_editing_field(&self) {
+        let input_text = self.input_buffer.read().unwrap().clone();
+        let trimmed_text = input_text.trim();
+        let field_index = self
+            .current_editing_field
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        match field_index {
+            0 => {
+                *self.ticket_in.write().unwrap() = trimmed_text.to_string();
+                if trimmed_text.is_empty() {
+                    self.set_status_message("Ticket cleared");
+                } else {
+                    self.set_status_message("Ticket updated");
+                }
+            }
+            1 => {
+                *self.confirmation_in.write().unwrap() =
+                    trimmed_text.to_string();
+                if trimmed_text.is_empty() {
+                    self.set_status_message("Confirmation code cleared");
+                } else {
+                    self.set_status_message("Confirmation code updated");
+                }
+            }
+            2 => {
+                *self.out_dir_in.write().unwrap() = trimmed_text.to_string();
+                if trimmed_text.is_empty() {
+                    self.set_status_message("Output directory cleared");
+                } else {
+                    self.set_status_message("Output directory updated");
+                }
+            }
+            _ => {}
+        }
+
+        self.is_editing_field
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn cancel_editing_field(&self) {
+        self.is_editing_field
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.set_status_message("Field editing cancelled");
+    }
+
+    fn insert_char(&self, c: char) {
+        let mut buffer = self.input_buffer.write().unwrap();
+        let cursor_pos = self
+            .cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        buffer.insert(cursor_pos, c);
+        self.cursor_position
+            .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn handle_backspace(&self) {
+        let mut buffer = self.input_buffer.write().unwrap();
+        let cursor_pos = self
+            .cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos > 0 {
+            buffer.remove(cursor_pos - 1);
+            self.cursor_position
+                .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn handle_delete(&self) {
+        let mut buffer = self.input_buffer.write().unwrap();
+        let cursor_pos = self
+            .cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos < buffer.len() {
+            buffer.remove(cursor_pos);
+        }
+    }
+
+    fn move_cursor_left(&self) {
+        let cursor_pos = self
+            .cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cursor_pos > 0 {
+            self.cursor_position
+                .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn move_cursor_right(&self) {
+        let buffer = self.input_buffer.read().unwrap();
+        let cursor_pos = self
+            .cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cursor_pos < buffer.len() {
+            self.cursor_position
+                .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn move_cursor_home(&self) {
+        self.cursor_position
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn move_cursor_end(&self) {
+        let buffer = self.input_buffer.read().unwrap();
+        self.cursor_position
+            .store(buffer.len(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn clear_input(&self) {
+        self.input_buffer.write().unwrap().clear();
+        self.cursor_position
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn delete_word_backward(&self) {
+        let mut buffer = self.input_buffer.write().unwrap();
+        let cursor_pos = self
+            .cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos == 0 {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Delete word characters backwards
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        buffer.drain(new_pos..cursor_pos);
+        self.cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn get_input_fields(&self) -> Vec<InputField> {
+        vec![
+            InputField::Ticket,
+            InputField::Confirmation,
+            InputField::OutputDirectory,
+            InputField::ReceiveButton,
+        ]
+    }
+
+    fn get_selected_field(&self) -> usize {
+        self.selected_field
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn navigate_up(&self) {
+        let fields = self.get_input_fields();
+        let current = self.get_selected_field();
+        let new_index = if current > 0 {
+            current - 1
+        } else {
+            fields.len() - 1
+        };
+
+        self.selected_field
+            .store(new_index, std::sync::atomic::Ordering::Relaxed);
+        self.menu.write().unwrap().select(Some(new_index));
+    }
+
+    fn navigate_down(&self) {
+        let fields = self.get_input_fields();
+        let current = self.get_selected_field();
+        let new_index = if current < fields.len() - 1 {
+            current + 1
+        } else {
+            0
+        };
+
+        self.selected_field
+            .store(new_index, std::sync::atomic::Ordering::Relaxed);
+        self.menu.write().unwrap().select(Some(new_index));
+    }
+
+    fn activate_current_field(&self) {
+        let fields = self.get_input_fields();
+        let current = self.get_selected_field();
+
+        if let Some(field) = fields.get(current) {
+            match field {
+                InputField::Ticket => {
+                    self.start_editing_field(0);
+                }
+                InputField::Confirmation => {
+                    self.start_editing_field(1);
+                }
+                InputField::OutputDirectory => {
+                    self.start_editing_field(2);
+                }
+                InputField::ReceiveButton => {
+                    self.receive_files();
+                }
+            }
         }
     }
 
@@ -117,6 +529,87 @@ impl ReceiveFilesApp {
         };
 
         *self.transfer_state.write().unwrap() = new_state;
+    }
+
+    fn clear_all_fields(&self) {
+        *self.ticket_in.write().unwrap() = String::new();
+        *self.confirmation_in.write().unwrap() = String::new();
+        *self.out_dir_in.write().unwrap() = String::new();
+        self.set_status_message("All fields cleared");
+    }
+
+    fn open_dir_browser(&self) {
+        self.set_status_message("Opening directory browser...");
+        self.b
+            .get_file_browser_manager()
+            .open_file_browser(OpenFileBrowserRequest {
+                from: Page::ReceiveFiles,
+                mode: BrowserMode::SelectDirectory,
+                sort: SortMode::Name,
+            });
+    }
+
+    fn receive_files(&self) {
+        if let Some(req) = self.make_receive_files_request() {
+            self.set_processing(true);
+            self.set_status_message("Starting file reception...");
+            self.b
+                .get_receive_files_manager()
+                .receive_files(req);
+            self.b
+                .get_navigation()
+                .navigate_to(Page::ReceiveFilesProgress);
+        } else {
+            self.set_status_message(
+                "Missing required information - check ticket and confirmation",
+            );
+        }
+    }
+
+    fn make_receive_files_request(&self) -> Option<ReceiveFilesRequest> {
+        if !self.can_receive() {
+            return None;
+        }
+
+        // TODO: Implement proper ReceiveFilesRequest creation
+        // This should use the ticket, confirmation, and output directory
+        None
+    }
+
+    fn set_status_message(&self, message: &str) {
+        *self.status_message.write().unwrap() = message.to_string();
+    }
+
+    fn set_processing(&self, processing: bool) {
+        self.is_processing
+            .store(processing, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn is_processing(&self) -> bool {
+        self.is_processing
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn get_status_message(&self) -> String {
+        self.status_message.read().unwrap().clone()
+    }
+
+    fn get_ticket_in(&self) -> String {
+        self.ticket_in.read().unwrap().clone()
+    }
+
+    fn get_confirmation_in(&self) -> String {
+        self.confirmation_in.read().unwrap().clone()
+    }
+
+    fn get_out_dir_in(&self) -> String {
+        self.out_dir_in.read().unwrap().clone()
+    }
+
+    fn can_receive(&self) -> bool {
+        !self.get_ticket_in().is_empty()
+            && !self.get_confirmation_in().is_empty()
+            && !self.get_out_dir_in().is_empty()
     }
 
     fn draw_ongoing_transfer_view(&self, f: &mut Frame, area: Rect) {
@@ -352,89 +845,6 @@ impl ReceiveFilesApp {
         f.render_widget(instructions, area);
     }
 
-    fn handle_ongoing_transfer_controls(&self, ev: &Event) {
-        match ev {
-            Event::Key(key) => match key.code {
-                KeyCode::Enter => {
-                    self.b
-                        .get_navigation()
-                        .navigate_to(Page::ReceiveFilesProgress);
-                }
-                KeyCode::Esc => {
-                    self.b.get_navigation().go_back();
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
-    fn handle_new_transfer_controls(&self, ev: &Event) {
-        if let Event::Key(key) = ev {
-            let menu = self.get_menu();
-            let curr_selected = menu.selected().unwrap_or(0);
-            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
-
-            match key.code {
-                KeyCode::Down | KeyCode::Tab => {
-                    self.navigate_down();
-                }
-                KeyCode::Up | KeyCode::BackTab => {
-                    self.navigate_up();
-                }
-                KeyCode::Enter => {
-                    if has_ctrl {
-                        self.receive_files();
-                    } else {
-                        match curr_selected {
-                            2 => {
-                                self.open_dir_browser();
-                            }
-                            3 => {
-                                self.receive_files();
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                KeyCode::Backspace => match curr_selected {
-                    0 => {
-                        self.ticket_in.write().unwrap().pop();
-                    }
-                    1 => {
-                        self.confirmation_in.write().unwrap().pop();
-                    }
-                    2 => {
-                        self.out_dir_in.write().unwrap().pop();
-                    }
-                    _ => {}
-                },
-                KeyCode::Char(c) => {
-                    if has_ctrl && (c == 'o' || c == 'O') {
-                        self.open_dir_browser();
-                    } else {
-                        match curr_selected {
-                            0 => {
-                                self.ticket_in.write().unwrap().push(c);
-                            }
-                            1 => {
-                                self.confirmation_in.write().unwrap().push(c);
-                            }
-                            2 => {
-                                self.out_dir_in.write().unwrap().push(c);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                KeyCode::Esc => {
-                    self.b.get_navigation().go_back();
-                }
-                _ => {}
-            }
-        }
-    }
-
     fn draw_title(&self, f: &mut Frame<'_>, area: Rect) {
         // Check for ongoing transfer on each draw
         self.update_transfer_state();
@@ -462,14 +872,39 @@ impl ReceiveFilesApp {
     }
 
     fn draw_ticket_field(&self, f: &mut Frame<'_>, area: Rect) {
-        let menu = self.get_menu();
+        let is_focused = self.get_selected_field() == 0;
+        let is_editing = self.is_editing_field()
+            && self
+                .current_editing_field
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 0;
         let ticket_in = self.get_ticket_in();
 
-        let is_focused = menu.selected() == Some(0);
-        let style = if is_focused {
+        let style = if is_focused || is_editing {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::Gray)
+        };
+
+        let display_text = if is_editing {
+            let buffer = self.input_buffer.read().unwrap().clone();
+            let cursor_pos = self
+                .cursor_position
+                .load(std::sync::atomic::Ordering::Relaxed);
+
+            if buffer.is_empty() {
+                "│ (typing...)".to_string()
+            } else {
+                let mut display = buffer.clone();
+                if cursor_pos <= display.len() {
+                    display.insert(cursor_pos, '│');
+                }
+                display
+            }
+        } else if ticket_in.is_empty() {
+            "Enter ticket from sender...".to_string()
+        } else {
+            ticket_in.clone()
         };
 
         let ticket_content = vec![
@@ -483,24 +918,22 @@ impl ReceiveFilesApp {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    if is_focused {
+                    if is_focused || is_editing {
                         "▶ "
                     } else {
                         "  "
                     },
-                    if is_focused {
+                    if is_focused || is_editing {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default()
                     },
                 ),
                 Span::styled(
-                    if ticket_in.is_empty() {
-                        "Enter ticket from sender..."
-                    } else {
-                        &ticket_in
-                    },
-                    if ticket_in.is_empty() {
+                    display_text,
+                    if is_editing {
+                        Style::default().fg(Color::White)
+                    } else if ticket_in.is_empty() {
                         Style::default().fg(Color::DarkGray).italic()
                     } else {
                         Style::default().fg(Color::White).bold()
@@ -525,15 +958,39 @@ impl ReceiveFilesApp {
     }
 
     fn draw_confirmation_field(&self, f: &mut Frame<'_>, area: Rect) {
-        let menu = self.get_menu();
+        let is_focused = self.get_selected_field() == 1;
+        let is_editing = self.is_editing_field()
+            && self
+                .current_editing_field
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 1;
         let confirmation_in = self.get_confirmation_in();
-        let curr_selected = menu.selected().unwrap_or(0);
 
-        let confirmation_focused = curr_selected == 1;
-        let confirmation_style = if confirmation_focused {
+        let confirmation_style = if is_focused || is_editing {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::Gray)
+        };
+
+        let display_text = if is_editing {
+            let buffer = self.input_buffer.read().unwrap().clone();
+            let cursor_pos = self
+                .cursor_position
+                .load(std::sync::atomic::Ordering::Relaxed);
+
+            if buffer.is_empty() {
+                "│ (typing...)".to_string()
+            } else {
+                let mut display = buffer.clone();
+                if cursor_pos <= display.len() {
+                    display.insert(cursor_pos, '│');
+                }
+                display
+            }
+        } else if confirmation_in.is_empty() {
+            "Enter confirmation code...".to_string()
+        } else {
+            confirmation_in.clone()
         };
 
         let confirmation_content = vec![
@@ -547,24 +1004,22 @@ impl ReceiveFilesApp {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    if confirmation_focused {
+                    if is_focused || is_editing {
                         "▶ "
                     } else {
                         "  "
                     },
-                    if confirmation_focused {
+                    if is_focused || is_editing {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default()
                     },
                 ),
                 Span::styled(
-                    if confirmation_in.is_empty() {
-                        "Enter confirmation code..."
-                    } else {
-                        &confirmation_in
-                    },
-                    if confirmation_in.is_empty() {
+                    display_text,
+                    if is_editing {
+                        Style::default().fg(Color::White)
+                    } else if confirmation_in.is_empty() {
                         Style::default().fg(Color::DarkGray).italic()
                     } else {
                         Style::default().fg(Color::White).bold()
@@ -588,15 +1043,39 @@ impl ReceiveFilesApp {
     }
 
     fn draw_output_field(&self, f: &mut Frame<'_>, area: Rect) {
-        let menu = self.get_menu();
+        let is_focused = self.get_selected_field() == 2;
+        let is_editing = self.is_editing_field()
+            && self
+                .current_editing_field
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 2;
         let out_dir_in = self.get_out_dir_in();
-        let curr_selected = menu.selected().unwrap_or(0);
 
-        let output_focused = curr_selected == 2;
-        let output_style = if output_focused {
+        let output_style = if is_focused || is_editing {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::Gray)
+        };
+
+        let display_text = if is_editing {
+            let buffer = self.input_buffer.read().unwrap().clone();
+            let cursor_pos = self
+                .cursor_position
+                .load(std::sync::atomic::Ordering::Relaxed);
+
+            if buffer.is_empty() {
+                "│ (typing...)".to_string()
+            } else {
+                let mut display = buffer.clone();
+                if cursor_pos <= display.len() {
+                    display.insert(cursor_pos, '│');
+                }
+                display
+            }
+        } else if out_dir_in.is_empty() {
+            "/path/to/save/directory".to_string()
+        } else {
+            out_dir_in.clone()
         };
 
         let output_content = vec![
@@ -610,24 +1089,22 @@ impl ReceiveFilesApp {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    if output_focused {
+                    if is_focused || is_editing {
                         "▶ "
                     } else {
                         "  "
                     },
-                    if output_focused {
+                    if is_focused || is_editing {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default()
                     },
                 ),
                 Span::styled(
-                    if out_dir_in.is_empty() {
-                        "/path/to/save/directory"
-                    } else {
-                        &out_dir_in
-                    },
-                    if out_dir_in.is_empty() {
+                    display_text,
+                    if is_editing {
+                        Style::default().fg(Color::White)
+                    } else if out_dir_in.is_empty() {
                         Style::default().fg(Color::DarkGray).italic()
                     } else {
                         Style::default().fg(Color::White)
@@ -637,15 +1114,12 @@ impl ReceiveFilesApp {
             Line::from(""),
             Line::from(vec![
                 Span::styled("Enter", Style::default().fg(Color::Cyan).bold()),
-                Span::styled(" browse • ", Style::default().fg(Color::Gray)),
+                Span::styled(" edit • ", Style::default().fg(Color::Gray)),
                 Span::styled(
                     "Ctrl+O",
                     Style::default().fg(Color::Green).bold(),
                 ),
-                Span::styled(
-                    " system dialog",
-                    Style::default().fg(Color::Gray),
-                ),
+                Span::styled(" browse", Style::default().fg(Color::Gray)),
             ]),
         ];
 
@@ -664,7 +1138,54 @@ impl ReceiveFilesApp {
     }
 
     fn draw_instructions(&self, f: &mut Frame<'_>, area: Rect) {
-        let instructions_content = if self.can_receive() {
+        let is_editing = self.is_editing_field();
+        let can_receive = self.can_receive();
+        let status_message = self.get_status_message();
+
+        let instructions_content = if is_editing {
+            vec![
+                Line::from(vec![
+                    Span::styled("✏️ ", Style::default().fg(Color::Green)),
+                    Span::styled(
+                        "Text Input Mode",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(
+                        "Enter",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                    Span::styled(
+                        " - Save • ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled("Esc", Style::default().fg(Color::Red).bold()),
+                    Span::styled(" - Cancel", Style::default().fg(Color::Gray)),
+                ]),
+                Line::from(vec![
+                    Span::styled(
+                        "Ctrl+A",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(
+                        " - Home • ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled(
+                        "Ctrl+E",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(" - End • ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        "Ctrl+U",
+                        Style::default().fg(Color::Yellow).bold(),
+                    ),
+                    Span::styled(" - Clear", Style::default().fg(Color::Gray)),
+                ]),
+            ]
+        } else if can_receive {
             vec![
                 Line::from(vec![
                     Span::styled("✅ ", Style::default().fg(Color::Green)),
@@ -675,9 +1196,28 @@ impl ReceiveFilesApp {
                 ]),
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled("📥 ", Style::default().fg(Color::Blue)),
                     Span::styled(
-                        "Click Receive button to start download",
+                        "Ctrl+R",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                    Span::styled(
+                        " - Start receiving • ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled(
+                        "Ctrl+C",
+                        Style::default().fg(Color::Red).bold(),
+                    ),
+                    Span::styled(
+                        " - Clear all",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("ℹ️ ", Style::default().fg(Color::Blue)),
+                    Span::styled(
+                        status_message,
                         Style::default().fg(Color::Gray),
                     ),
                 ]),
@@ -695,7 +1235,15 @@ impl ReceiveFilesApp {
                 Line::from(vec![
                     Span::styled("💡 ", Style::default().fg(Color::Cyan)),
                     Span::styled(
-                        "Enter both ticket and confirmation code",
+                        "Enter ticket, confirmation code, and output directory",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("ℹ️ ", Style::default().fg(Color::Blue)),
+                    Span::styled(
+                        status_message,
                         Style::default().fg(Color::Gray),
                     ),
                 ]),
@@ -706,7 +1254,7 @@ impl ReceiveFilesApp {
             .borders(Borders::ALL)
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(Color::Gray))
-            .title(" Status ")
+            .title(" Status & Help ")
             .title_style(Style::default().fg(Color::White).bold());
 
         let instructions = Paragraph::new(instructions_content)
@@ -717,19 +1265,16 @@ impl ReceiveFilesApp {
     }
 
     fn draw_receive_button(&self, f: &mut Frame<'_>, area: Rect) {
-        let menu = self.get_menu();
+        let is_focused = self.get_selected_field() == 3;
         let out_dir_in = self.get_out_dir_in();
         let can_receive = self.can_receive();
-        let curr_selected = menu.selected().unwrap_or(0);
 
-        let receive_button_focused = curr_selected == 3;
-
-        let receive_button_style = if receive_button_focused && can_receive {
+        let receive_button_style = if is_focused && can_receive {
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Blue)
                 .bold()
-        } else if receive_button_focused {
+        } else if is_focused {
             Style::default()
                 .fg(Color::DarkGray)
                 .bg(Color::Black)
@@ -744,12 +1289,12 @@ impl ReceiveFilesApp {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    if receive_button_focused {
+                    if is_focused {
                         "▶ "
                     } else {
                         "  "
                     },
-                    if receive_button_focused {
+                    if is_focused {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default()
@@ -787,7 +1332,7 @@ impl ReceiveFilesApp {
         let receive_button_block = Block::default()
             .borders(Borders::ALL)
             .border_set(border::ROUNDED)
-            .border_style(if receive_button_focused {
+            .border_style(if is_focused {
                 Style::default().fg(Color::Yellow)
             } else if can_receive {
                 Style::default().fg(Color::Blue)
@@ -802,79 +1347,5 @@ impl ReceiveFilesApp {
             .alignment(Alignment::Center);
 
         f.render_widget(receive_button, area);
-    }
-
-    fn navigate_down(&self) {
-        let mut menu = self.menu.write().unwrap();
-        let selected = menu.selected();
-
-        match selected {
-            Some(i) => menu.select(Some((i + 1) % 4)),
-            None => menu.select(Some(0)),
-        }
-    }
-
-    fn navigate_up(&self) {
-        let mut menu = self.menu.write().unwrap();
-        let selected = menu.selected();
-
-        match selected {
-            Some(i) => menu.select(Some((i + 3) % 4)),
-            None => menu.select(Some(0)),
-        }
-    }
-
-    fn open_dir_browser(&self) {
-        self.b
-            .get_file_browser_manager()
-            .open_file_browser(OpenFileBrowserRequest {
-                from: Page::ReceiveFiles,
-                mode: BrowserMode::SelectMultiFiles,
-                sort: SortMode::Name,
-            });
-    }
-
-    fn receive_files(&self) {
-        if let Some(req) = self.make_receive_files_request() {
-            self.b
-                .get_receive_files_manager()
-                .receive_files(req);
-            // Navigate to progress view after starting transfer
-            self.b
-                .get_navigation()
-                .navigate_to(Page::ReceiveFilesProgress);
-        }
-    }
-
-    fn make_receive_files_request(&self) -> Option<ReceiveFilesRequest> {
-        if !self.can_receive() {
-            return None;
-        }
-
-        // TODO: Implement proper ReceiveFilesRequest creation
-        // This should use the ticket, confirmation, and output directory
-        None
-    }
-
-    fn get_menu(&self) -> ListState {
-        self.menu.read().unwrap().clone()
-    }
-
-    fn get_ticket_in(&self) -> String {
-        self.ticket_in.read().unwrap().clone()
-    }
-
-    fn get_confirmation_in(&self) -> String {
-        self.confirmation_in.read().unwrap().clone()
-    }
-
-    fn get_out_dir_in(&self) -> String {
-        self.out_dir_in.read().unwrap().clone()
-    }
-
-    fn can_receive(&self) -> bool {
-        !self.get_ticket_in().is_empty()
-            && !self.get_confirmation_in().is_empty()
-            && !self.get_out_dir_in().is_empty()
     }
 }

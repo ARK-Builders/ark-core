@@ -18,30 +18,51 @@ use ratatui::{
 
 use std::{
     path::PathBuf,
-    sync::{Arc, RwLock},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicUsize},
+    },
 };
 
 #[derive(Clone, PartialEq)]
 enum TransferState {
     NoTransfer,
     OngoingTransfer,
+    PreparingNewTransfer,
+}
+
+#[derive(Clone, PartialEq)]
+enum InputField {
+    FilePath,
+    SendButton,
 }
 
 pub struct SendFilesApp {
     b: Arc<dyn AppBackend>,
 
+    // UI State
     menu: RwLock<ListState>,
     transfer_state: RwLock<TransferState>,
+    selected_field: AtomicUsize,
 
+    // Input fields
     file_in: RwLock<String>,
     selected_files_in: RwLock<Vec<PathBuf>>,
+
+    // Text input state
+    is_editing_path: Arc<AtomicBool>,
+    path_input_buffer: Arc<RwLock<String>>,
+    path_cursor_position: Arc<AtomicUsize>,
+
+    // Status and feedback
+    status_message: Arc<RwLock<String>>,
+    is_processing: Arc<AtomicBool>,
 }
 
 impl App for SendFilesApp {
     fn draw(&self, f: &mut Frame, area: ratatui::layout::Rect) {
         let transfer_state = self.transfer_state.read().unwrap().clone();
 
-        self.update_transfer_state();
         match transfer_state {
             TransferState::OngoingTransfer => {
                 self.draw_ongoing_transfer_view(f, area);
@@ -53,14 +74,23 @@ impl App for SendFilesApp {
     }
 
     fn handle_control(&self, ev: &Event) {
-        let transfer_state = self.transfer_state.read().unwrap().clone();
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+            let transfer_state = self.transfer_state.read().unwrap().clone();
 
-        match transfer_state {
-            TransferState::OngoingTransfer => {
-                self.handle_ongoing_transfer_controls(ev);
-            }
-            _ => {
-                self.handle_new_transfer_controls(ev);
+            match transfer_state {
+                TransferState::OngoingTransfer => {
+                    self.handle_ongoing_transfer_controls(key.code, has_ctrl);
+                }
+                _ => {
+                    let is_editing = self.is_editing_path();
+
+                    if is_editing {
+                        self.handle_text_input_controls(key.code, has_ctrl);
+                    } else {
+                        self.handle_navigation_controls(key.code, has_ctrl);
+                    }
+                }
             }
         }
     }
@@ -83,6 +113,11 @@ impl AppFileBrowserSubscriber for SendFilesApp {
             .write()
             .unwrap()
             .append(&mut selected_files);
+
+        self.set_status_message(&format!(
+            "Added {} file(s)",
+            selected_files.len()
+        ));
     }
 }
 
@@ -96,9 +131,344 @@ impl SendFilesApp {
 
             menu: RwLock::new(menu),
             transfer_state: RwLock::new(TransferState::NoTransfer),
+            selected_field: AtomicUsize::new(0),
 
             file_in: RwLock::new(String::new()),
             selected_files_in: RwLock::new(Vec::new()),
+
+            // Text input state
+            is_editing_path: Arc::new(AtomicBool::new(false)),
+            path_input_buffer: Arc::new(RwLock::new(String::new())),
+            path_cursor_position: Arc::new(AtomicUsize::new(0)),
+
+            // Status and feedback
+            status_message: Arc::new(RwLock::new(
+                "Add files to send to another device".to_string(),
+            )),
+            is_processing: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn handle_ongoing_transfer_controls(
+        &self,
+        key_code: KeyCode,
+        has_ctrl: bool,
+    ) {
+        if has_ctrl {
+            match key_code {
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    self.b.get_navigation().go_back();
+                }
+                _ => {}
+            }
+        } else {
+            match key_code {
+                KeyCode::Enter => {
+                    self.b
+                        .get_navigation()
+                        .navigate_to(Page::SendFilesProgress);
+                }
+                KeyCode::Esc => {
+                    self.b.get_navigation().go_back();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn handle_text_input_controls(&self, key_code: KeyCode, has_ctrl: bool) {
+        match key_code {
+            KeyCode::Enter => {
+                self.finish_editing_path();
+            }
+            KeyCode::Esc => {
+                self.cancel_editing_path();
+            }
+            KeyCode::Backspace => {
+                self.handle_backspace();
+            }
+            KeyCode::Delete => {
+                self.handle_delete();
+            }
+            KeyCode::Left => {
+                self.move_cursor_left();
+            }
+            KeyCode::Right => {
+                self.move_cursor_right();
+            }
+            KeyCode::Home => {
+                self.move_cursor_home();
+            }
+            KeyCode::End => {
+                self.move_cursor_end();
+            }
+            KeyCode::Char(c) => {
+                if has_ctrl {
+                    match c {
+                        'a' | 'A' => self.move_cursor_home(),
+                        'e' | 'E' => self.move_cursor_end(),
+                        'u' | 'U' => self.clear_input(),
+                        'w' | 'W' => self.delete_word_backward(),
+                        'o' | 'O' => {
+                            self.cancel_editing_path();
+                            self.open_file_browser();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    self.insert_char(c);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_navigation_controls(&self, key_code: KeyCode, has_ctrl: bool) {
+        if has_ctrl {
+            match key_code {
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    self.send_files();
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    self.open_file_browser();
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    self.clear_selected_files();
+                }
+                _ => {}
+            }
+        } else {
+            match key_code {
+                KeyCode::Up | KeyCode::BackTab => {
+                    self.navigate_up();
+                }
+                KeyCode::Down | KeyCode::Tab => {
+                    self.navigate_down();
+                }
+                KeyCode::Enter => {
+                    self.activate_current_field();
+                }
+                KeyCode::Delete => {
+                    self.remove_last_file();
+                }
+                KeyCode::Esc => {
+                    if self.is_processing() {
+                        self.set_status_message("Operation cancelled");
+                        self.set_processing(false);
+                    } else {
+                        self.b.get_navigation().go_back();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn is_editing_path(&self) -> bool {
+        self.is_editing_path
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn start_editing_path(&self) {
+        let current_path = self.file_in.read().unwrap().clone();
+        *self.path_input_buffer.write().unwrap() = current_path.clone();
+
+        self.path_cursor_position
+            .store(current_path.len(), std::sync::atomic::Ordering::Relaxed);
+
+        self.is_editing_path
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.set_status_message(
+            "Editing file path - Enter to add, Esc to cancel, Ctrl+O to browse",
+        );
+    }
+
+    fn finish_editing_path(&self) {
+        let input_text = self.path_input_buffer.read().unwrap().clone();
+        let trimmed_text = input_text.trim();
+
+        if !trimmed_text.is_empty() {
+            if trimmed_text == "browse" {
+                self.open_file_browser();
+            } else {
+                let path = PathBuf::from(trimmed_text);
+                if path.exists() {
+                    self.add_file(path.clone());
+                    *self.file_in.write().unwrap() = String::new();
+                    self.set_status_message(&format!(
+                        "Added file: {}",
+                        path.display()
+                    ));
+                } else {
+                    self.set_status_message(&format!(
+                        "File not found: {}",
+                        trimmed_text
+                    ));
+                }
+            }
+        }
+
+        self.is_editing_path
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn cancel_editing_path(&self) {
+        self.is_editing_path
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.set_status_message("Path editing cancelled");
+    }
+
+    fn insert_char(&self, c: char) {
+        let mut buffer = self.path_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        buffer.insert(cursor_pos, c);
+        self.path_cursor_position
+            .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn handle_backspace(&self) {
+        let mut buffer = self.path_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos > 0 {
+            buffer.remove(cursor_pos - 1);
+            self.path_cursor_position
+                .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn handle_delete(&self) {
+        let mut buffer = self.path_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos < buffer.len() {
+            buffer.remove(cursor_pos);
+        }
+    }
+
+    fn move_cursor_left(&self) {
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cursor_pos > 0 {
+            self.path_cursor_position
+                .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn move_cursor_right(&self) {
+        let buffer = self.path_input_buffer.read().unwrap();
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cursor_pos < buffer.len() {
+            self.path_cursor_position
+                .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn move_cursor_home(&self) {
+        self.path_cursor_position
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn move_cursor_end(&self) {
+        let buffer = self.path_input_buffer.read().unwrap();
+        self.path_cursor_position
+            .store(buffer.len(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn clear_input(&self) {
+        self.path_input_buffer.write().unwrap().clear();
+        self.path_cursor_position
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn delete_word_backward(&self) {
+        let mut buffer = self.path_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos == 0 {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Delete word characters backwards
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        buffer.drain(new_pos..cursor_pos);
+        self.path_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn get_input_fields(&self) -> Vec<InputField> {
+        vec![InputField::FilePath, InputField::SendButton]
+    }
+
+    fn get_selected_field(&self) -> usize {
+        self.selected_field
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn navigate_up(&self) {
+        let fields = self.get_input_fields();
+        let current = self.get_selected_field();
+        let new_index = if current > 0 {
+            current - 1
+        } else {
+            fields.len() - 1
+        };
+
+        self.selected_field
+            .store(new_index, std::sync::atomic::Ordering::Relaxed);
+        self.menu.write().unwrap().select(Some(new_index));
+    }
+
+    fn navigate_down(&self) {
+        let fields = self.get_input_fields();
+        let current = self.get_selected_field();
+        let new_index = if current < fields.len() - 1 {
+            current + 1
+        } else {
+            0
+        };
+
+        self.selected_field
+            .store(new_index, std::sync::atomic::Ordering::Relaxed);
+        self.menu.write().unwrap().select(Some(new_index));
+    }
+
+    fn activate_current_field(&self) {
+        let fields = self.get_input_fields();
+        let current = self.get_selected_field();
+
+        if let Some(field) = fields.get(current) {
+            match field {
+                InputField::FilePath => {
+                    self.start_editing_path();
+                }
+                InputField::SendButton => {
+                    self.send_files();
+                }
+            }
         }
     }
 
@@ -116,6 +486,117 @@ impl SendFilesApp {
         };
 
         *self.transfer_state.write().unwrap() = new_state;
+    }
+
+    fn add_file(&self, file: PathBuf) {
+        self.selected_files_in.write().unwrap().push(file);
+    }
+
+    fn remove_last_file(&self) {
+        if let Some(removed_file) =
+            self.selected_files_in.write().unwrap().pop()
+        {
+            self.set_status_message(&format!(
+                "Removed file: {}",
+                removed_file
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+            ));
+        } else {
+            self.set_status_message("No files to remove");
+        }
+    }
+
+    fn clear_selected_files(&self) {
+        let count = self.selected_files_in.read().unwrap().len();
+        self.selected_files_in.write().unwrap().clear();
+        self.set_status_message(&format!("Cleared {} file(s)", count));
+    }
+
+    fn open_file_browser(&self) {
+        self.set_status_message("Opening file browser...");
+        self.b
+            .get_file_browser_manager()
+            .open_file_browser(OpenFileBrowserRequest {
+                from: Page::SendFiles,
+                mode: BrowserMode::SelectMultiFiles,
+                sort: SortMode::Name,
+            });
+    }
+
+    fn send_files(&self) {
+        if let Some(req) = self.make_send_files_request() {
+            self.set_processing(true);
+            self.set_status_message("Starting file transfer...");
+            self.b.get_send_files_manager().send_files(req);
+            self.b
+                .get_navigation()
+                .navigate_to(Page::SendFilesProgress);
+        } else {
+            self.set_status_message("No files selected to send");
+        }
+    }
+
+    fn make_send_files_request(&self) -> Option<SendFilesRequest> {
+        let files = self.get_sender_files();
+
+        if files.is_empty() {
+            return None;
+        }
+
+        Some(SendFilesRequest {
+            files,
+            profile: SenderProfile {
+                name: "tui-sender".to_string(),
+                avatar_b64: None,
+            },
+            config: SenderConfig::default(),
+        })
+    }
+
+    fn get_sender_files(&self) -> Vec<SenderFile> {
+        let selected_files_in = self.selected_files_in.read().unwrap();
+
+        if selected_files_in.is_empty() {
+            return Vec::new();
+        }
+
+        return selected_files_in
+            .iter()
+            .filter_map(|f| {
+                if let Some(name) = f.file_name() {
+                    if let Ok(data) = FileData::new(f.clone()) {
+                        let name = name.to_string_lossy().to_string();
+
+                        return Some(SenderFile {
+                            name,
+                            data: Arc::new(data),
+                        });
+                    }
+                }
+
+                return None;
+            })
+            .collect();
+    }
+
+    fn set_status_message(&self, message: &str) {
+        *self.status_message.write().unwrap() = message.to_string();
+    }
+
+    fn set_processing(&self, processing: bool) {
+        self.is_processing
+            .store(processing, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn is_processing(&self) -> bool {
+        self.is_processing
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn get_status_message(&self) -> String {
+        self.status_message.read().unwrap().clone()
     }
 
     fn draw_ongoing_transfer_view(&self, f: &mut Frame, area: Rect) {
@@ -370,94 +851,10 @@ impl SendFilesApp {
         f.render_widget(instructions, area);
     }
 
-    fn handle_ongoing_transfer_controls(&self, ev: &Event) {
-        match ev {
-            Event::Key(key) => match key.code {
-                KeyCode::Enter => {
-                    self.b
-                        .get_navigation()
-                        .navigate_to(Page::SendFilesProgress);
-                }
-                KeyCode::Esc => {
-                    self.b.get_navigation().go_back();
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
-    fn handle_new_transfer_controls(&self, ev: &Event) {
-        match ev {
-            Event::Key(key) => match key.code {
-                KeyCode::Down => {
-                    self.navigate_down();
-                }
-                KeyCode::Up => {
-                    self.navigate_up();
-                }
-                KeyCode::Tab => {
-                    self.navigate_down();
-                }
-                KeyCode::BackTab => {
-                    self.navigate_up();
-                }
-                KeyCode::Enter => {
-                    if let KeyModifiers::CONTROL = key.modifiers {
-                        self.send_files();
-                    } else {
-                        self.perform_action()
-                    }
-                }
-                KeyCode::Backspace => {
-                    match self.menu.read().unwrap().selected() {
-                        Some(0) => {
-                            self.file_in.write().unwrap().pop();
-                        }
-                        _ => {}
-                    }
-                }
-                KeyCode::Delete => {
-                    if self.menu.read().unwrap().selected() == Some(0)
-                        && !self.selected_files_in.read().unwrap().is_empty()
-                    {
-                        // Remove last added file
-                        self.selected_files_in.write().unwrap().pop();
-                    }
-                }
-                KeyCode::Char(c) => match key.modifiers {
-                    KeyModifiers::NONE => {
-                        match self.menu.read().unwrap().selected() {
-                            Some(0) => {
-                                self.file_in.write().unwrap().push(c);
-                            }
-                            _ => {}
-                        }
-                    }
-                    KeyModifiers::CONTROL => match c {
-                        'c' => match self.menu.read().unwrap().selected() {
-                            Some(0) => {
-                                self.file_in.write().unwrap().clear();
-                            }
-                            _ => {}
-                        },
-                        'o' => {
-                            self.open_file_browser();
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                },
-                KeyCode::Esc => {
-                    self.b.get_navigation().go_back();
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
     fn draw_title(&self, f: &mut Frame<'_>, area: Rect) {
+        // Check for ongoing transfer on each draw
+        self.update_transfer_state();
+
         let title_content = vec![Line::from(vec![
             Span::styled("📤 ", Style::default().fg(Color::Green).bold()),
             Span::styled(
@@ -481,15 +878,38 @@ impl SendFilesApp {
     }
 
     fn draw_file_input(&self, f: &mut Frame<'_>, area: Rect) {
-        let is_focused = self.menu.read().unwrap().selected() == Some(0);
+        let is_focused = self.get_selected_field() == 0;
+        let is_editing = self.is_editing_path();
 
-        let style = if is_focused {
+        let style = if is_focused || is_editing {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::Gray)
         };
 
-        let file_in = self.file_in.read().unwrap();
+        let display_text = if is_editing {
+            let buffer = self.path_input_buffer.read().unwrap().clone();
+            let cursor_pos = self
+                .path_cursor_position
+                .load(std::sync::atomic::Ordering::Relaxed);
+
+            if buffer.is_empty() {
+                "│ (typing...)".to_string()
+            } else {
+                let mut display = buffer.clone();
+                if cursor_pos <= display.len() {
+                    display.insert(cursor_pos, '│');
+                }
+                display
+            }
+        } else {
+            let file_in = self.file_in.read().unwrap();
+            if file_in.is_empty() {
+                "/path/to/your/file.txt".to_string()
+            } else {
+                file_in.clone()
+            }
+        };
 
         let content = vec![
             Line::from(vec![
@@ -500,19 +920,17 @@ impl SendFilesApp {
             Line::from(vec![
                 Span::styled(
                     "▶ ",
-                    if is_focused {
+                    if is_focused || is_editing {
                         Style::default().fg(Color::Yellow)
                     } else {
                         Style::default().fg(Color::DarkGray)
                     },
                 ),
                 Span::styled(
-                    if file_in.is_empty() {
-                        "/path/to/your/file.txt"
-                    } else {
-                        &file_in
-                    },
-                    if file_in.is_empty() {
+                    display_text,
+                    if is_editing {
+                        Style::default().fg(Color::White)
+                    } else if self.file_in.read().unwrap().is_empty() {
                         Style::default().fg(Color::DarkGray).italic()
                     } else {
                         Style::default().fg(Color::White)
@@ -522,14 +940,14 @@ impl SendFilesApp {
             Line::from(""),
             Line::from(vec![
                 Span::styled("Enter", Style::default().fg(Color::Cyan).bold()),
-                Span::styled(" add • ", Style::default().fg(Color::Gray)),
+                Span::styled(" edit • ", Style::default().fg(Color::Gray)),
                 Span::styled(
                     "Ctrl+O",
                     Style::default().fg(Color::Green).bold(),
                 ),
                 Span::styled(" browse • ", Style::default().fg(Color::Gray)),
-                Span::styled("Ctrl+C", Style::default().fg(Color::Red).bold()),
-                Span::styled(" clear", Style::default().fg(Color::Gray)),
+                Span::styled("Del", Style::default().fg(Color::Red).bold()),
+                Span::styled(" remove last", Style::default().fg(Color::Gray)),
             ]),
         ];
 
@@ -629,7 +1047,53 @@ impl SendFilesApp {
 
     fn draw_instructions(&self, f: &mut Frame<'_>, area: Rect) {
         let selected_files_in = self.selected_files_in.read().unwrap();
-        let instructions_content = if selected_files_in.is_empty() {
+        let is_editing = self.is_editing_path();
+        let status_message = self.get_status_message();
+
+        let instructions_content = if is_editing {
+            vec![
+                Line::from(vec![
+                    Span::styled("✏️ ", Style::default().fg(Color::Green)),
+                    Span::styled(
+                        "Text Input Mode",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(
+                        "Enter",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                    Span::styled(
+                        " - Save path • ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled("Esc", Style::default().fg(Color::Red).bold()),
+                    Span::styled(" - Cancel", Style::default().fg(Color::Gray)),
+                ]),
+                Line::from(vec![
+                    Span::styled(
+                        "Ctrl+A",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(
+                        " - Home • ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled(
+                        "Ctrl+E",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(" - End • ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        "Ctrl+U",
+                        Style::default().fg(Color::Yellow).bold(),
+                    ),
+                    Span::styled(" - Clear", Style::default().fg(Color::Gray)),
+                ]),
+            ]
+        } else if selected_files_in.is_empty() {
             vec![
                 Line::from(vec![
                     Span::styled("⚠️ ", Style::default().fg(Color::Yellow)),
@@ -645,7 +1109,15 @@ impl SendFilesApp {
                         Style::default().fg(Color::Cyan).bold(),
                     ),
                     Span::styled(
-                        "Enter full file paths or 'browse' command",
+                        "Enter full file paths or use 'browse' command",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("ℹ️ ", Style::default().fg(Color::Blue)),
+                    Span::styled(
+                        status_message,
                         Style::default().fg(Color::Gray),
                     ),
                 ]),
@@ -665,9 +1137,28 @@ impl SendFilesApp {
                 ]),
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled("🚀 ", Style::default().fg(Color::Yellow)),
                     Span::styled(
-                        "Click Send button to start transfer",
+                        "Ctrl+S",
+                        Style::default().fg(Color::Green).bold(),
+                    ),
+                    Span::styled(
+                        " - Send files • ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled(
+                        "Ctrl+C",
+                        Style::default().fg(Color::Red).bold(),
+                    ),
+                    Span::styled(
+                        " - Clear all",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("ℹ️ ", Style::default().fg(Color::Blue)),
+                    Span::styled(
+                        status_message,
                         Style::default().fg(Color::Gray),
                     ),
                 ]),
@@ -678,7 +1169,7 @@ impl SendFilesApp {
             .borders(Borders::ALL)
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(Color::Gray))
-            .title(" Instructions ")
+            .title(" Status & Help ")
             .title_style(Style::default().fg(Color::White).bold());
 
         let instructions = Paragraph::new(instructions_content)
@@ -689,7 +1180,7 @@ impl SendFilesApp {
     }
 
     fn draw_send_files_button(&self, f: &mut Frame<'_>, area: Rect) {
-        let is_focused = self.menu.read().unwrap().selected() == Some(1);
+        let is_focused = self.get_selected_field() == 1;
         let selected_files_in = self.selected_files_in.read().unwrap();
         let has_files = !selected_files_in.is_empty();
 
@@ -754,120 +1245,5 @@ impl SendFilesApp {
             .alignment(Alignment::Center);
 
         f.render_widget(send_button, area);
-    }
-
-    fn navigate_down(&self) {
-        let mut menu = self.menu.write().unwrap();
-        let selected = menu.selected();
-
-        match selected {
-            Some(i) => menu.select(Some((i + 1) % 2)),
-            None => menu.select(Some(0)),
-        }
-    }
-
-    fn navigate_up(&self) {
-        let mut menu = self.menu.write().unwrap();
-        let selected = menu.selected();
-
-        match selected {
-            Some(i) => menu.select(Some((i + 1) % 2)),
-            None => menu.select(Some(0)),
-        }
-    }
-
-    fn add_file(&self, file: PathBuf) {
-        self.selected_files_in.write().unwrap().push(file);
-    }
-
-    fn open_file_browser(&self) {
-        self.b
-            .get_file_browser_manager()
-            .open_file_browser(OpenFileBrowserRequest {
-                from: Page::SendFiles,
-                mode: BrowserMode::SelectMultiFiles,
-                sort: SortMode::Name,
-            });
-    }
-
-    fn perform_action(&self) {
-        let menu = self.menu.read().unwrap();
-
-        match menu.selected() {
-            Some(0) => {
-                let mut file_in = self.file_in.write().unwrap();
-                if !file_in.is_empty() {
-                    if file_in.as_str() == "browse" {
-                        self.open_file_browser();
-                    } else {
-                        let path = PathBuf::from(&file_in.clone());
-                        if path.exists() {
-                            self.add_file(path);
-                            file_in.clear();
-                        } else {
-                            // TODO: info | log exception on TUI
-                        }
-                    }
-                }
-            }
-            Some(1) => {
-                self.send_files();
-            }
-            _ => {}
-        }
-    }
-
-    fn send_files(&self) {
-        if let Some(req) = self.make_send_files_request() {
-            self.b.get_send_files_manager().send_files(req);
-            // Navigate to progress view after starting transfer
-            self.b
-                .get_navigation()
-                .navigate_to(Page::SendFilesProgress);
-        }
-    }
-
-    fn make_send_files_request(&self) -> Option<SendFilesRequest> {
-        let files = self.get_sender_files();
-
-        if files.is_empty() {
-            return None;
-        }
-
-        // TODO: low | use AppConfig to build the request
-        Some(SendFilesRequest {
-            files,
-            profile: SenderProfile {
-                name: "tui-sender".to_string(),
-                avatar_b64: None,
-            },
-            config: SenderConfig::default(), // TODO: extra | get from config
-        })
-    }
-
-    fn get_sender_files(&self) -> Vec<SenderFile> {
-        let selected_files_in = self.selected_files_in.read().unwrap();
-
-        if selected_files_in.is_empty() {
-            return Vec::new();
-        }
-
-        return selected_files_in
-            .iter()
-            .filter_map(|f| {
-                if let Some(name) = f.file_name() {
-                    if let Ok(data) = FileData::new(f.clone()) {
-                        let name = name.to_string_lossy().to_string();
-
-                        return Some(SenderFile {
-                            name,
-                            data: Arc::new(data),
-                        });
-                    }
-                }
-
-                return None;
-            })
-            .collect();
     }
 }
