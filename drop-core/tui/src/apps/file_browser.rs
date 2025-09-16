@@ -58,6 +58,7 @@ impl App for FileBrowserApp {
     fn draw(&self, f: &mut Frame, area: Rect) {
         let blocks = self.get_layout_blocks(area);
 
+        self.refresh();
         self.draw_header(f, blocks[0]);
         self.draw_file_list(f, blocks[1]);
         self.draw_footer_with_help(f, blocks[2]);
@@ -187,7 +188,7 @@ impl FileBrowserApp {
         }
     }
 
-    pub fn refresh(&self) {
+    fn refresh(&self) {
         self.refresh_items();
         self.refresh_menu();
     }
