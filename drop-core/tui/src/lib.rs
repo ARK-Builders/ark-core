@@ -1,6 +1,7 @@
 mod apps;
 mod backend;
 mod layout;
+mod receive_files_manager;
 mod send_files_manager;
 mod utilities;
 
@@ -8,6 +9,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use arkdrop_common::AppConfig;
+use arkdropx_receiver::{ReceiveFilesBubble, ReceiveFilesRequest};
 use arkdropx_sender::{SendFilesBubble, SendFilesRequest};
 use ratatui::{
     Frame, Terminal,
@@ -26,11 +28,13 @@ use ratatui::{
 use crate::{
     apps::{
         file_browser::FileBrowserApp, help::HelpApp, home::HomeApp,
-        receive_files::ReceiveFilesApp, send_files::SendFilesApp,
-        send_files_progress::SendFilesProgressApp,
+        receive_files::ReceiveFilesApp,
+        receive_files_progress::ReceiveFilesProgressApp,
+        send_files::SendFilesApp, send_files_progress::SendFilesProgressApp,
     },
     backend::MainAppBackend,
     layout::{LayoutApp, LayoutChild},
+    receive_files_manager::MainAppReceiveFilesManager,
     send_files_manager::MainAppSendFilesManager,
 };
 
@@ -89,6 +93,11 @@ pub trait AppSendFilesManager: Send + Sync {
     fn get_send_files_bubble(&self) -> Option<Arc<SendFilesBubble>>;
 }
 
+pub trait AppReceiveFilesManager: Send + Sync {
+    fn receive_files(&self, req: ReceiveFilesRequest);
+    fn get_receive_files_bubble(&self) -> Option<Arc<ReceiveFilesBubble>>;
+}
+
 pub trait AppFileBrowserManager: Send + Sync {
     fn open_file_browser(&self, req: OpenFileBrowserRequest);
 }
@@ -97,6 +106,7 @@ pub trait AppBackend: Send + Sync {
     fn shutdown(&self);
 
     fn get_send_files_manager(&self) -> Arc<dyn AppSendFilesManager>;
+    fn get_receive_files_manager(&self) -> Arc<dyn AppReceiveFilesManager>;
     fn get_file_browser_manager(&self) -> Arc<dyn AppFileBrowserManager>;
 
     fn get_config(&self) -> AppConfig;
@@ -137,12 +147,17 @@ pub fn run_tui() -> Result<()> {
     let file_browser = Arc::new(FileBrowserApp::new(backend.clone()));
     let help = Arc::new(HelpApp::new(backend.clone()));
     let home = Arc::new(HomeApp::new(backend.clone()));
+
     let send_files = Arc::new(SendFilesApp::new(backend.clone()));
     let receive_files = Arc::new(ReceiveFilesApp::new(backend.clone()));
+
     let send_files_progress =
         Arc::new(SendFilesProgressApp::new(backend.clone()));
+    let receive_files_progress =
+        Arc::new(ReceiveFilesProgressApp::new(backend.clone()));
 
     let send_files_manager = Arc::new(MainAppSendFilesManager::new());
+    let receive_files_manager = Arc::new(MainAppReceiveFilesManager::new());
 
     layout.set_file_browser(file_browser.clone());
     layout.file_browser_subscribe(Page::SendFiles, send_files.clone());
@@ -151,8 +166,11 @@ pub fn run_tui() -> Result<()> {
     backend.set_navigation(layout.clone());
     backend.set_file_browser_manager(layout.clone());
     backend.set_send_files_manager(send_files_manager.clone());
+    backend.set_receive_files_manager(receive_files_manager.clone());
 
     send_files_manager.set_send_files_subscriber(send_files_progress.clone());
+    receive_files_manager
+        .set_receive_files_subscriber(receive_files_progress.clone());
 
     layout.add_child(LayoutChild {
         page: Some(Page::Home),
@@ -197,6 +215,14 @@ pub fn run_tui() -> Result<()> {
     layout.add_child(LayoutChild {
         page: Some(Page::ReceiveFiles),
         app: receive_files,
+        is_active: false,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::ReceiveFilesProgress),
+        app: receive_files_progress,
         is_active: false,
         z_index: 0,
         control_index: 0,
