@@ -25,8 +25,10 @@ arkdropx-sender = { path = "../exchanges/sender" }
 arkdropx-receiver = { path = "../exchanges/receiver" }  
 
 toml = "0.9.5"
+image = "0.25"
 tokio = "1.47.1"
 anyhow = "1.0.99"
+crossterm = "0.28"
 ratatui = "0.29.0"
 base64 = "0.22.1"
 qrcode = "0.14.1"
