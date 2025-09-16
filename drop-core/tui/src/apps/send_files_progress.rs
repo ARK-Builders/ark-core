@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::{Arc, RwLock, atomic::AtomicU32},
     time::Instant,
 };
@@ -17,12 +18,29 @@ use ratatui::{
 };
 use uuid::Uuid;
 
+#[derive(Clone)]
+struct ProgressFile {
+    id: String,
+    name: String,
+    sent: u64,
+    remaining: u64,
+}
+
 pub struct SendFilesProgressApp {
     id: String,
     b: Arc<dyn AppBackend>,
 
     progress_pct: AtomicU32,
     operation_start_time: RwLock<Option<Instant>>,
+
+    title_text: RwLock<String>,
+    block_title_text: RwLock<String>,
+
+    status_text: RwLock<String>,
+
+    log_text: RwLock<String>,
+
+    files: RwLock<Vec<ProgressFile>>,
 }
 
 impl App for SendFilesProgressApp {
@@ -82,18 +100,29 @@ impl SendFilesSubscriber for SendFilesProgressApp {
     }
 
     fn log(&self, message: String) {
-        // pass
+        self.set_log_text(message.as_str());
     }
 
     fn notify_sending(&self, event: arkdropx_sender::SendFilesSendingEvent) {
-        // TODO
+        let id = event.id;
+        let name = event.name;
+        let remaining = event.remaining;
+        let sent = event.sent;
+
+        // TODO: update progress files
     }
 
     fn notify_connecting(
         &self,
         event: arkdropx_sender::SendFilesConnectingEvent,
     ) {
+        let receiver = event.receiver;
+        let name = receiver.name;
+
         self.set_now_as_operation_start_time();
+        self.set_title_text("📤 Sending Files ✅");
+        self.set_block_title_text(format!("Connected to {name}").as_str());
+        self.set_status_text(format!("Sending Files to {name}").as_str());
     }
 }
 
@@ -105,7 +134,44 @@ impl SendFilesProgressApp {
 
             progress_pct: AtomicU32::new(0),
             operation_start_time: RwLock::new(None),
+
+            title_text: RwLock::new("📤 Sending Files".to_string()),
+            block_title_text: RwLock::new(
+                "Waiting Peer Connection".to_string(),
+            ),
+
+            status_text: RwLock::new("Waiting for Peer".to_string()),
+
+            log_text: RwLock::new("No logs".to_string()),
         }
+    }
+
+    fn add_file(&self, file: ProgressFile) {
+        self.files.write().unwrap().push(file);
+    }
+
+    fn get_files(&self) -> Vec<ProgressFile> {
+        self.files.read().unwrap().clone()
+    }
+
+    fn clear_files(&self) {
+        self.files.write().unwrap().clear();
+    }
+
+    fn set_title_text(&self, text: &str) {
+        *self.title_text.write().unwrap() = text.to_string()
+    }
+
+    fn set_block_title_text(&self, text: &str) {
+        *self.block_title_text.write().unwrap() = text.to_string()
+    }
+
+    fn set_status_text(&self, text: &str) {
+        *self.status_text.write().unwrap() = text.to_string()
+    }
+
+    fn set_log_text(&self, text: &str) {
+        *self.log_text.write().unwrap() = text.to_string()
     }
 
     fn set_now_as_operation_start_time(&self) {
@@ -115,11 +181,31 @@ impl SendFilesProgressApp {
             .replace(Instant::now());
     }
 
+    fn get_title_text(&self) -> String {
+        self.title_text.read().unwrap().clone()
+    }
+
+    fn get_log_text(&self) -> String {
+        self.log_text.read().unwrap().clone()
+    }
+
+    fn get_block_title_text(&self) -> String {
+        self.block_title_text.read().unwrap().clone()
+    }
+
+    fn get_status_text(&self) -> String {
+        self.status_text.read().unwrap().clone()
+    }
+
     fn get_progress_pct(&self) -> f64 {
         let v = self
             .progress_pct
             .load(std::sync::atomic::Ordering::Relaxed);
         return f64::from(v);
+    }
+
+    fn get_operation_start_time(&self) -> Option<Instant> {
+        self.operation_start_time.read().unwrap().clone()
     }
 
     fn draw_title(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
@@ -138,7 +224,7 @@ impl SendFilesProgressApp {
                 Style::default().fg(Color::Blue).bold(),
             ),
             Span::styled(
-                "📤 Sending Files",
+                self.get_title_text(),
                 Style::default().fg(Color::White).bold(),
             ),
             Span::styled(
@@ -151,7 +237,7 @@ impl SendFilesProgressApp {
             .borders(Borders::ALL)
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(Color::Blue))
-            .title(" Transfer in Progress ") // TODO: extra | dynamic title
+            .title(self.get_block_title_text())
             .title_style(Style::default().fg(Color::White).bold());
 
         let title_widget = Paragraph::new(title_content)
@@ -159,10 +245,6 @@ impl SendFilesProgressApp {
             .alignment(Alignment::Center);
 
         f.render_widget(title_widget, area);
-    }
-
-    fn get_operation_start_time(&self) -> Option<Instant> {
-        self.operation_start_time.read().unwrap().clone()
     }
 
     fn draw_status(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
@@ -201,7 +283,7 @@ impl SendFilesProgressApp {
                     Style::default().fg(Color::White).bold(),
                 ),
                 Span::styled(
-                    "Sending Files",
+                    self.get_status_text(),
                     Style::default().fg(Color::Blue).bold(),
                 ),
             ]),
@@ -226,7 +308,7 @@ impl SendFilesProgressApp {
             Line::from(vec![
                 Span::styled("💬 ", Style::default().fg(Color::Blue)),
                 Span::styled(
-                    "TODO: message",
+                    self.get_log_text(),
                     Style::default().fg(Color::Gray).italic(),
                 ),
             ]),
