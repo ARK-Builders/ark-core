@@ -21,10 +21,17 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+#[derive(Clone, PartialEq)]
+enum TransferState {
+    NoTransfer,
+    OngoingTransfer,
+}
+
 pub struct SendFilesApp {
     b: Arc<dyn AppBackend>,
 
     menu: RwLock<ListState>,
+    transfer_state: RwLock<TransferState>,
 
     file_in: RwLock<String>,
     selected_files_in: RwLock<Vec<PathBuf>>,
@@ -32,6 +39,104 @@ pub struct SendFilesApp {
 
 impl App for SendFilesApp {
     fn draw(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        let transfer_state = self.transfer_state.read().unwrap().clone();
+
+        self.update_transfer_state();
+        match transfer_state {
+            TransferState::OngoingTransfer => {
+                self.draw_ongoing_transfer_view(f, area);
+            }
+            _ => {
+                self.draw_new_transfer_view(f, area);
+            }
+        }
+    }
+
+    fn handle_control(&self, ev: &Event) {
+        let transfer_state = self.transfer_state.read().unwrap().clone();
+
+        match transfer_state {
+            TransferState::OngoingTransfer => {
+                self.handle_ongoing_transfer_controls(ev);
+            }
+            _ => {
+                self.handle_new_transfer_controls(ev);
+            }
+        }
+    }
+}
+
+impl AppFileBrowserSubscriber for SendFilesApp {
+    fn on_cancel(&self) {
+        self.b
+            .get_navigation()
+            .replace_with(Page::SendFiles);
+    }
+
+    fn on_save(&self, ev: AppFileBrowserSaveEvent) {
+        self.b
+            .get_navigation()
+            .replace_with(Page::SendFiles);
+
+        let mut selected_files = ev.selected_files;
+        self.selected_files_in
+            .write()
+            .unwrap()
+            .append(&mut selected_files);
+    }
+}
+
+impl SendFilesApp {
+    pub fn new(b: Arc<dyn AppBackend>) -> Self {
+        let mut menu = ListState::default();
+        menu.select(Some(0));
+
+        Self {
+            b,
+
+            menu: RwLock::new(menu),
+            transfer_state: RwLock::new(TransferState::NoTransfer),
+
+            file_in: RwLock::new(String::new()),
+            selected_files_in: RwLock::new(Vec::new()),
+        }
+    }
+
+    fn update_transfer_state(&self) {
+        let has_ongoing_transfer = self
+            .b
+            .get_send_files_manager()
+            .get_send_files_bubble()
+            .is_some();
+
+        let new_state = if has_ongoing_transfer {
+            TransferState::OngoingTransfer
+        } else {
+            TransferState::NoTransfer
+        };
+
+        *self.transfer_state.write().unwrap() = new_state;
+    }
+
+    fn draw_ongoing_transfer_view(&self, f: &mut Frame, area: Rect) {
+        let blocks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(5), // Header with transfer info
+                Constraint::Length(8), // Transfer summary card
+                Constraint::Length(6), // Action buttons
+                Constraint::Min(0),    // Instructions
+            ])
+            .split(area);
+
+        self.draw_ongoing_transfer_header(f, blocks[0]);
+        self.draw_transfer_summary_card(f, blocks[1]);
+        self.draw_ongoing_transfer_actions(f, blocks[2]);
+        self.draw_ongoing_transfer_instructions(f, blocks[3]);
+    }
+
+    fn draw_new_transfer_view(&self, f: &mut Frame, area: Rect) {
         let blocks = Layout::default()
             .direction(Direction::Horizontal)
             .margin(1)
@@ -66,7 +171,223 @@ impl App for SendFilesApp {
         self.draw_send_files_button(f, right_blocks[1]);
     }
 
-    fn handle_control(&self, ev: &Event) {
+    fn draw_ongoing_transfer_header(&self, f: &mut Frame, area: Rect) {
+        let bubble = self
+            .b
+            .get_send_files_manager()
+            .get_send_files_bubble();
+
+        let (status_text, status_color, status_icon) =
+            if let Some(bubble) = bubble {
+                (
+                    format!(
+                        "Transfer Code: {} {}",
+                        bubble.get_ticket(),
+                        bubble.get_confirmation()
+                    ),
+                    Color::Blue,
+                    "🔄",
+                )
+            } else {
+                ("Transfer in progress...".to_string(), Color::Yellow, "⏳")
+            };
+
+        let header_content = vec![
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", status_icon),
+                    Style::default().fg(status_color).bold(),
+                ),
+                Span::styled(
+                    "Active Transfer",
+                    Style::default().fg(Color::White).bold(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("📱 ", Style::default().fg(Color::Blue)),
+                Span::styled(status_text, Style::default().fg(Color::Cyan)),
+            ]),
+        ];
+
+        let header_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Blue))
+            .title(" Transfer Status ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        let header = Paragraph::new(header_content)
+            .block(header_block)
+            .alignment(Alignment::Center);
+
+        f.render_widget(header, area);
+    }
+
+    fn draw_transfer_summary_card(&self, f: &mut Frame, area: Rect) {
+        let summary_content = vec![
+            Line::from(vec![
+                Span::styled("📊 ", Style::default().fg(Color::Green)),
+                Span::styled(
+                    "Transfer Overview",
+                    Style::default().fg(Color::White).bold(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   • ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    "Files are being sent to the connected device",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("   • ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    "View detailed progress in the transfer monitor",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("   • ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    "You can start a new transfer after this one completes",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+        ];
+
+        let summary_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Green))
+            .title(" Summary ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        let summary = Paragraph::new(summary_content)
+            .block(summary_block)
+            .alignment(Alignment::Left);
+
+        f.render_widget(summary, area);
+    }
+
+    fn draw_ongoing_transfer_actions(&self, f: &mut Frame, area: Rect) {
+        let is_focused = self.menu.read().unwrap().selected() == Some(0);
+
+        let actions_content = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    if is_focused {
+                        "▶ "
+                    } else {
+                        "  "
+                    },
+                    if is_focused {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    },
+                ),
+                Span::styled(
+                    "📈 View Transfer Progress",
+                    if is_focused {
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Blue)
+                            .bold()
+                    } else {
+                        Style::default().fg(Color::Blue).bold()
+                    },
+                ),
+            ]),
+            Line::from(""),
+        ];
+
+        let actions_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(if is_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Blue)
+            })
+            .title(" Actions ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        let actions = Paragraph::new(actions_content)
+            .block(actions_block)
+            .alignment(Alignment::Center);
+
+        f.render_widget(actions, area);
+    }
+
+    fn draw_ongoing_transfer_instructions(&self, f: &mut Frame, area: Rect) {
+        let instructions_content = vec![
+            Line::from(vec![
+                Span::styled("💡 ", Style::default().fg(Color::Cyan).bold()),
+                Span::styled(
+                    "Transfer Management",
+                    Style::default().fg(Color::White).bold(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Enter", Style::default().fg(Color::Green).bold()),
+                Span::styled(
+                    " - View detailed transfer progress",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Esc", Style::default().fg(Color::Red).bold()),
+                Span::styled(
+                    " - Return to main menu",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("ℹ️ ", Style::default().fg(Color::Blue)),
+                Span::styled(
+                    "The transfer will continue in the background",
+                    Style::default().fg(Color::Gray).italic(),
+                ),
+            ]),
+        ];
+
+        let instructions_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Gray))
+            .title(" Help ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        let instructions = Paragraph::new(instructions_content)
+            .block(instructions_block)
+            .alignment(Alignment::Left);
+
+        f.render_widget(instructions, area);
+    }
+
+    fn handle_ongoing_transfer_controls(&self, ev: &Event) {
+        match ev {
+            Event::Key(key) => match key.code {
+                KeyCode::Enter => {
+                    self.b
+                        .get_navigation()
+                        .navigate_to(Page::SendFilesProgress);
+                }
+                KeyCode::Esc => {
+                    self.b.get_navigation().go_back();
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn handle_new_transfer_controls(&self, ev: &Event) {
         match ev {
             Event::Key(key) => match key.code {
                 KeyCode::Down => {
@@ -101,11 +422,7 @@ impl App for SendFilesApp {
                         && !self.selected_files_in.read().unwrap().is_empty()
                     {
                         // Remove last added file
-                        self.selected_files_in
-                            .write()
-                            .unwrap()
-                            .clone()
-                            .pop();
+                        self.selected_files_in.write().unwrap().pop();
                     }
                 }
                 KeyCode::Char(c) => match key.modifiers {
@@ -139,42 +456,6 @@ impl App for SendFilesApp {
             _ => {}
         }
     }
-}
-
-impl AppFileBrowserSubscriber for SendFilesApp {
-    fn on_cancel(&self) {
-        self.b
-            .get_navigation()
-            .replace_with(Page::SendFiles);
-    }
-
-    fn on_save(&self, ev: AppFileBrowserSaveEvent) {
-        self.b
-            .get_navigation()
-            .replace_with(Page::SendFiles);
-
-        let mut selected_files = ev.selected_files;
-        self.selected_files_in
-            .write()
-            .unwrap()
-            .append(&mut selected_files);
-    }
-}
-
-impl SendFilesApp {
-    pub fn new(b: Arc<dyn AppBackend>) -> Self {
-        let mut menu = ListState::default();
-        menu.select(Some(0));
-
-        Self {
-            b,
-
-            menu: RwLock::new(menu),
-
-            file_in: RwLock::new(String::new()),
-            selected_files_in: RwLock::new(Vec::new()),
-        }
-    }
 
     fn draw_title(&self, f: &mut Frame<'_>, area: Rect) {
         let title_content = vec![Line::from(vec![
@@ -189,7 +470,7 @@ impl SendFilesApp {
             .borders(Borders::ALL)
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(Color::Green))
-            .title(" Outgoing Transfer ")
+            .title(" New Transfer ")
             .title_style(Style::default().fg(Color::White).bold());
 
         let title = Paragraph::new(title_content)
@@ -408,7 +689,7 @@ impl SendFilesApp {
     }
 
     fn draw_send_files_button(&self, f: &mut Frame<'_>, area: Rect) {
-        let is_focused = self.menu.read().unwrap().selected() == Some(3);
+        let is_focused = self.menu.read().unwrap().selected() == Some(1);
         let selected_files_in = self.selected_files_in.read().unwrap();
         let has_files = !selected_files_in.is_empty();
 
@@ -480,7 +761,7 @@ impl SendFilesApp {
         let selected = menu.selected();
 
         match selected {
-            Some(i) => menu.select(Some((i - 1) % 2)),
+            Some(i) => menu.select(Some((i + 1) % 2)),
             None => menu.select(Some(0)),
         }
     }
@@ -539,6 +820,10 @@ impl SendFilesApp {
     fn send_files(&self) {
         if let Some(req) = self.make_send_files_request() {
             self.b.get_send_files_manager().send_files(req);
+            // Navigate to progress view after starting transfer
+            self.b
+                .get_navigation()
+                .navigate_to(Page::SendFilesProgress);
         }
     }
 
