@@ -5,17 +5,20 @@ use std::{
 
 use crate::{App, AppBackend};
 use arkdropx_sender::SendFilesSubscriber;
+use qrcode::QrCode;
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode},
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, Borders, Gauge, Paragraph, Wrap},
 };
+use uuid::Uuid;
 
 pub struct SendFilesProgressApp {
+    id: String,
     b: Arc<dyn AppBackend>,
 
     progress_pct: AtomicU32,
@@ -56,7 +59,7 @@ impl App for SendFilesProgressApp {
 
         self.draw_progress(f, right_blocks[0]);
         self.draw_statistics(f, right_blocks[1]);
-        
+
         self.draw_info(f, blocks[2]);
         self.draw_footer(f, blocks[3]);
     }
@@ -75,33 +78,41 @@ impl App for SendFilesProgressApp {
 
 impl SendFilesSubscriber for SendFilesProgressApp {
     fn get_id(&self) -> String {
-        todo!()
+        self.id.clone()
     }
 
     fn log(&self, message: String) {
-        todo!()
+        // pass
     }
 
     fn notify_sending(&self, event: arkdropx_sender::SendFilesSendingEvent) {
-        todo!()
+        // TODO
     }
 
     fn notify_connecting(
         &self,
         event: arkdropx_sender::SendFilesConnectingEvent,
     ) {
-        todo!()
+        self.set_now_as_operation_start_time();
     }
 }
 
 impl SendFilesProgressApp {
     pub fn new(b: Arc<dyn AppBackend>) -> Self {
         Self {
+            id: Uuid::new_v4().to_string(),
             b,
 
             progress_pct: AtomicU32::new(0),
             operation_start_time: RwLock::new(None),
         }
+    }
+
+    fn set_now_as_operation_start_time(&self) {
+        self.operation_start_time
+            .write()
+            .unwrap()
+            .replace(Instant::now());
     }
 
     fn get_progress_pct(&self) -> f64 {
@@ -300,149 +311,160 @@ impl SendFilesProgressApp {
     }
 
     fn draw_info(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
-        // Check if we have a ticket and confirmation to display QR code
-        // if let Some(bubble) = app
-        //     .send_files_bubble
-        //     .read()
-        //     .unwrap()
-        //     .as_ref(&self)
-        // {
-        //     let qr_data = format!(
-        //         "{} {}",
-        //         bubble.get_ticket(),
-        //         bubble.get_confirmation()
-        //     );
+        if let Some(bubble) = self
+            .b
+            .get_send_files_manager()
+            .get_send_files_bubble()
+        {
+            let qr_data = format!(
+                "{} {}",
+                bubble.get_ticket(),
+                bubble.get_confirmation()
+            );
 
-        //     // Split the area for QR code and details
-        //     let qr_chunks = Layout::default()
-        //         .direction(Direction::Horizontal)
-        //         .constraints([
-        //             Constraint::Percentage(50), // Details
-        //             Constraint::Percentage(50), // QR Code
-        //         ])
-        //         .split(area);
+            // Split the area for QR code and details
+            let qr_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50), // Details
+                    Constraint::Percentage(50), // QR Code
+                ])
+                .split(area);
 
-        //     // Details on the left
-        //     let details_content = vec![
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("📤 ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Sending Files",
-        //                 Style::default().fg(Color::White).bold(),
-        //             ),
-        //         ]),
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Connection established with receiver",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("🔑 ", Style::default().fg(Color::Blue)),
-        //             Span::styled(
-        //                 "Transfer Ticket: ",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //             Span::styled(
-        //                 bubble.get_ticket(),
-        //                 Style::default().fg(Color::Cyan),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("🔒 ", Style::default().fg(Color::Blue)),
-        //             Span::styled(
-        //                 "Confirmation Code: ",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //             Span::styled(
-        //                 bubble.get_confirmation().to_string(),
-        //                 Style::default().fg(Color::Cyan),
-        //             ),
-        //         ]),
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("💡 ", Style::default().fg(Color::Yellow)),
-        //             Span::styled(
-        //                 "Share QR Code or ticket with receiver",
-        //                 Style::default().fg(Color::Gray),
-        //             ),
-        //         ]),
-        //     ];
+            // Details on the left
+            let details_content = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("📤 ", Style::default().fg(Color::Green)),
+                    Span::styled(
+                        "Sending Files",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("✓ ", Style::default().fg(Color::Green)),
+                    Span::styled(
+                        "Connection established with receiver",
+                        Style::default().fg(Color::White),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("🔑 ", Style::default().fg(Color::Blue)),
+                    Span::styled(
+                        "Transfer Ticket: ",
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(
+                        bubble.get_ticket(),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("🔒 ", Style::default().fg(Color::Blue)),
+                    Span::styled(
+                        "Confirmation Code: ",
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(
+                        bubble.get_confirmation().to_string(),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("💡 ", Style::default().fg(Color::Yellow)),
+                    Span::styled(
+                        "Share QR Code or ticket with receiver",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+            ];
 
-        //     let details_block = Block::default()
-        //         .borders(Borders::ALL)
-        //         .border_set(border::ROUNDED)
-        //         .border_style(Style::default().fg(Color::White))
-        //         .title(" Transfer Details ")
-        //         .title_style(Style::default().fg(Color::White).bold());
+            let details_block = Block::default()
+                .borders(Borders::ALL)
+                .border_set(border::ROUNDED)
+                .border_style(Style::default().fg(Color::White))
+                .title(" Transfer Details ")
+                .title_style(Style::default().fg(Color::White).bold());
 
-        //     let details = Paragraph::new(details_content)
-        //         .block(details_block)
-        //         .wrap(Wrap { trim: true })
-        //         .alignment(Alignment::Left);
-        //     f.render_widget(details, qr_chunks[0]);
+            let details = Paragraph::new(details_content)
+                .block(details_block)
+                .wrap(Wrap { trim: true })
+                .alignment(Alignment::Left);
+            f.render_widget(details, qr_chunks[0]);
 
-        //     // QR Code on the right
-        //     render_qr_code_widget(
-        //         f,
-        //         &qr_data,
-        //         qr_chunks[1],
-        //         " Transfer QR Code ",
-        //         Color::Green,
-        //     )
-        //     .ok();
-        // } else {
-        //     // Fallback to regular details if no ticket/confirmation
-        //     let details_content = vec![
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("📤 ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Sending Files",
-        //                 Style::default().fg(Color::White).bold(),
-        //             ),
-        //         ]),
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Connection established with receiver",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Files are encrypted during transfer",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Transfer will complete automatically",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //     ];
+            // QR Code on the right
+            self.draw_qr_code(f, &qr_data, qr_chunks[1]);
+        }
+    }
 
-        //     let details_block = Block::default()
-        //         .borders(Borders::ALL)
-        //         .border_set(border::ROUNDED)
-        //         .border_style(Style::default().fg(Color::White))
-        //         .title(" Transfer Details ")
-        //         .title_style(Style::default().fg(Color::White).bold());
+    fn draw_qr_code(&self, f: &mut Frame, data: &str, area: Rect) {
+        match QrCode::new(data) {
+            Ok(code) => {
+                let code_image = code
+                    .render::<char>()
+                    .dark_color('■')
+                    .light_color('·')
+                    .quiet_zone(false)
+                    .build();
+                let code_image_lines: Vec<Line> = code_image
+                    .lines()
+                    .map(|line| {
+                        Line::from(vec![Span::styled(
+                            line,
+                            Style::default().fg(Color::White).bg(Color::Black),
+                        )])
+                    })
+                    .collect();
+                let qr_widget = Paragraph::new(code_image_lines)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Green))
+                            .title(" Transfer QR Code ")
+                            .title_style(
+                                Style::default().fg(Color::White).bold(),
+                            ),
+                    )
+                    .alignment(Alignment::Center);
 
-        //     let details = Paragraph::new(details_content)
-        //         .block(details_block)
-        //         .wrap(Wrap { trim: true })
-        //         .alignment(Alignment::Left);
+                f.render_widget(qr_widget, area);
+            }
+            Err(_) => {
+                let fallback_content = vec![
+                    Line::from(""),
+                    Line::from(vec![Span::styled(
+                        "QR Code Generation Failed",
+                        Style::default().fg(Color::Red),
+                    )]),
+                    Line::from(""),
+                    Line::from(vec![Span::styled(
+                        "Transfer Code:",
+                        Style::default().fg(Color::Yellow).bold(),
+                    )]),
+                    Line::from(vec![Span::styled(
+                        data,
+                        Style::default().fg(Color::White).bold(),
+                    )]),
+                    Line::from(""),
+                ];
 
-        //     f.render_widget(details, main_blocks[2]);
-        // }
+                let fallback_widget = Paragraph::new(fallback_content)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Green))
+                            .title("Transfer Code")
+                            .title_style(
+                                Style::default().fg(Color::White).bold(),
+                            ),
+                    )
+                    .alignment(Alignment::Center);
+
+                f.render_widget(fallback_widget, area);
+            }
+        }
     }
 
     fn draw_footer(&self, f: &mut Frame, area: ratatui::prelude::Rect) {

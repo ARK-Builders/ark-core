@@ -14,8 +14,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph},
 };
+use uuid::Uuid;
 
 pub struct ReceiveFilesProgressApp {
+    id: String,
     b: Arc<dyn AppBackend>,
 
     progress_pct: AtomicU32,
@@ -57,7 +59,6 @@ impl App for ReceiveFilesProgressApp {
         self.draw_progress(f, right_blocks[0]);
         self.draw_statistics(f, right_blocks[1]);
 
-        self.draw_info(f, blocks[2]);
         self.draw_footer(f, blocks[3]);
     }
 
@@ -75,7 +76,7 @@ impl App for ReceiveFilesProgressApp {
 
 impl ReceiveFilesSubscriber for ReceiveFilesProgressApp {
     fn get_id(&self) -> String {
-        todo!()
+        self.id.clone()
     }
 
     fn log(&self, message: String) {
@@ -100,6 +101,7 @@ impl ReceiveFilesSubscriber for ReceiveFilesProgressApp {
 impl ReceiveFilesProgressApp {
     pub fn new(b: Arc<dyn AppBackend>) -> Self {
         Self {
+            id: Uuid::new_v4().to_string(),
             b,
 
             progress_pct: AtomicU32::new(0),
@@ -300,152 +302,6 @@ impl ReceiveFilesProgressApp {
             .alignment(Alignment::Left);
 
         f.render_widget(stats, area);
-    }
-
-    fn draw_info(&self, f: &mut Frame, area: Rect) {
-        // Check if we have a ticket and confirmation to display QR code
-        // if let Some(bubble) = app
-        //     .send_files_bubble
-        //     .read()
-        //     .unwrap()
-        //     .as_ref(&self)
-        // {
-        //     let qr_data = format!(
-        //         "{} {}",
-        //         bubble.get_ticket(),
-        //         bubble.get_confirmation()
-        //     );
-
-        //     // Split the area for QR code and details
-        //     let qr_chunks = Layout::default()
-        //         .direction(Direction::Horizontal)
-        //         .constraints([
-        //             Constraint::Percentage(50), // Details
-        //             Constraint::Percentage(50), // QR Code
-        //         ])
-        //         .split(area);
-
-        //     // Details on the left
-        //     let details_content = vec![
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("📤 ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Sending Files",
-        //                 Style::default().fg(Color::White).bold(),
-        //             ),
-        //         ]),
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Connection established with receiver",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("🔑 ", Style::default().fg(Color::Blue)),
-        //             Span::styled(
-        //                 "Transfer Ticket: ",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //             Span::styled(
-        //                 bubble.get_ticket(),
-        //                 Style::default().fg(Color::Cyan),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("🔒 ", Style::default().fg(Color::Blue)),
-        //             Span::styled(
-        //                 "Confirmation Code: ",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //             Span::styled(
-        //                 bubble.get_confirmation().to_string(),
-        //                 Style::default().fg(Color::Cyan),
-        //             ),
-        //         ]),
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("💡 ", Style::default().fg(Color::Yellow)),
-        //             Span::styled(
-        //                 "Share QR Code or ticket with receiver",
-        //                 Style::default().fg(Color::Gray),
-        //             ),
-        //         ]),
-        //     ];
-
-        //     let details_block = Block::default()
-        //         .borders(Borders::ALL)
-        //         .border_set(border::ROUNDED)
-        //         .border_style(Style::default().fg(Color::White))
-        //         .title(" Transfer Details ")
-        //         .title_style(Style::default().fg(Color::White).bold());
-
-        //     let details = Paragraph::new(details_content)
-        //         .block(details_block)
-        //         .wrap(Wrap { trim: true })
-        //         .alignment(Alignment::Left);
-        //     f.render_widget(details, qr_chunks[0]);
-
-        //     // QR Code on the right
-        //     render_qr_code_widget(
-        //         f,
-        //         &qr_data,
-        //         qr_chunks[1],
-        //         " Transfer QR Code ",
-        //         Color::Green,
-        //     )
-        //     .ok();
-        // } else {
-        //     // Fallback to regular details if no ticket/confirmation
-        //     let details_content = vec![
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("📤 ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Sending Files",
-        //                 Style::default().fg(Color::White).bold(),
-        //             ),
-        //         ]),
-        //         Line::from(""),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Connection established with receiver",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Files are encrypted during transfer",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //         Line::from(vec![
-        //             Span::styled("✓ ", Style::default().fg(Color::Green)),
-        //             Span::styled(
-        //                 "Transfer will complete automatically",
-        //                 Style::default().fg(Color::White),
-        //             ),
-        //         ]),
-        //     ];
-
-        //     let details_block = Block::default()
-        //         .borders(Borders::ALL)
-        //         .border_set(border::ROUNDED)
-        //         .border_style(Style::default().fg(Color::White))
-        //         .title(" Transfer Details ")
-        //         .title_style(Style::default().fg(Color::White).bold());
-
-        //     let details = Paragraph::new(details_content)
-        //         .block(details_block)
-        //         .wrap(Wrap { trim: true })
-        //         .alignment(Alignment::Left);
-
-        //     f.render_widget(details, main_blocks[2]);
-        // }
     }
 
     fn draw_footer(&self, f: &mut Frame, area: Rect) {

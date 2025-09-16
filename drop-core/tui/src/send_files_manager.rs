@@ -6,19 +6,26 @@ use crate::AppSendFilesManager;
 
 pub struct MainAppSendFilesManager {
     send_files_bubble: Arc<RwLock<Option<Arc<SendFilesBubble>>>>,
-    send_files_sub: RwLock<Option<Arc<dyn SendFilesSubscriber>>>,
+    send_files_sub: Arc<RwLock<Option<Arc<dyn SendFilesSubscriber>>>>,
 }
 
 impl AppSendFilesManager for MainAppSendFilesManager {
     fn send_files(&self, req: arkdropx_sender::SendFilesRequest) {
-        let send_files_bub = self.send_files_bubble.clone();
+        let send_files_bubble = self.send_files_bubble.clone();
+        let send_files_sub = self.send_files_sub.clone();
+
         tokio::spawn(async move {
             let bubble = send_files(req).await;
             match bubble {
-                Ok(bub) => send_files_bub
-                    .write()
-                    .unwrap()
-                    .replace(Arc::new(bub)),
+                Ok(bub) => {
+                    let bub = Arc::new(bub);
+
+                    if let Some(sub) = send_files_sub.read().unwrap().clone() {
+                        bub.subscribe(sub);
+                    }
+
+                    send_files_bubble.write().unwrap().replace(bub)
+                }
                 Err(_) => todo!(),
             }
         });
@@ -36,7 +43,7 @@ impl MainAppSendFilesManager {
     pub fn new() -> Self {
         Self {
             send_files_bubble: Arc::new(RwLock::new(None)),
-            send_files_sub: RwLock::new(None),
+            send_files_sub: Arc::new(RwLock::new(None)),
         }
     }
 
