@@ -3,7 +3,6 @@ use crate::{
     BrowserMode, OpenFileBrowserRequest, Page, SortMode,
 };
 use arkdropx_receiver::{ReceiveFilesRequest, ReceiverProfile};
-use clipboard::{ClipboardContext, ClipboardProvider};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},
@@ -209,7 +208,9 @@ impl ReceiveFilesApp {
             KeyCode::Char(c) => {
                 if has_ctrl {
                     match c {
-                        'v' | 'V' => self.paste_clipboard(),
+                        'v' | 'V' => {
+                            self.set_status_message("Paste not available - type or use middle mouse button if supported");
+                        }
                         'a' | 'A' => self.move_cursor_home(),
                         'e' | 'E' => self.move_cursor_end(),
                         'u' | 'U' => self.clear_input(),
@@ -246,6 +247,9 @@ impl ReceiveFilesApp {
                 KeyCode::Char('c') | KeyCode::Char('C') => {
                     self.clear_all_fields();
                 }
+                KeyCode::Char('p') | KeyCode::Char('P') => {
+                    self.show_paste_instructions();
+                }
                 _ => {}
             }
         } else {
@@ -270,6 +274,21 @@ impl ReceiveFilesApp {
                 _ => {}
             }
         }
+    }
+
+    fn show_paste_instructions(&self) {
+        let current_field = self.get_selected_field();
+        let field_name = match current_field {
+            0 => "ticket",
+            1 => "confirmation code",
+            2 => "output directory",
+            _ => "field",
+        };
+
+        self.set_status_message(&format!(
+            "To paste {}: 1) Press Enter to edit, 2) Use terminal's paste (Ctrl+Shift+V or middle-click), 3) Press Enter to save",
+            field_name
+        ));
     }
 
     fn is_editing_field(&self) -> bool {
@@ -301,7 +320,7 @@ impl ReceiveFilesApp {
         };
 
         self.set_status_message(&format!(
-            "Editing {} - Enter to save, Esc to cancel",
+            "Editing {} - Enter to save, Esc to cancel, Ctrl+Shift+V to paste from terminal",
             field_name
         ));
     }
@@ -423,44 +442,6 @@ impl ReceiveFilesApp {
         self.input_buffer.write().unwrap().clear();
         self.cursor_position
             .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn paste_clipboard(&self) {
-        match ClipboardContext::new() {
-            Ok(mut ctx) => {
-                match ctx.get_contents() {
-                    Ok(clipboard_text) => {
-                        let mut buffer = self.input_buffer.write().unwrap();
-                        let cursor_pos = self
-                            .cursor_position
-                            .load(std::sync::atomic::Ordering::Relaxed);
-
-                        // Insert clipboard content at cursor position
-                        buffer.insert_str(cursor_pos, &clipboard_text);
-
-                        // Move cursor to end of pasted content
-                        let new_cursor_pos = cursor_pos + clipboard_text.len();
-                        self.cursor_position.store(
-                            new_cursor_pos,
-                            std::sync::atomic::Ordering::Relaxed,
-                        );
-
-                        self.set_status_message(&format!(
-                            "Pasted {} characters from clipboard",
-                            clipboard_text.len()
-                        ));
-                    }
-                    Err(_) => {
-                        self.set_status_message(
-                            "Failed to read from clipboard",
-                        );
-                    }
-                }
-            }
-            Err(_) => {
-                self.set_status_message("Clipboard not available");
-            }
-        }
     }
 
     fn delete_word_backward(&self) {
@@ -1214,6 +1195,16 @@ impl ReceiveFilesApp {
                 ]),
                 Line::from(vec![
                     Span::styled(
+                        "Ctrl+Shift+V",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(
+                        " - Paste from terminal clipboard",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled(
                         "Ctrl+A",
                         Style::default().fg(Color::Cyan).bold(),
                     ),
@@ -1253,6 +1244,14 @@ impl ReceiveFilesApp {
                         Style::default().fg(Color::Gray),
                     ),
                     Span::styled(
+                        "Ctrl+P",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(
+                        " - Paste help • ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled(
                         "Ctrl+C",
                         Style::default().fg(Color::Red).bold(),
                     ),
@@ -1284,6 +1283,16 @@ impl ReceiveFilesApp {
                     Span::styled("💡 ", Style::default().fg(Color::Cyan)),
                     Span::styled(
                         "Enter ticket, confirmation code, and output directory",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled(
+                        "Ctrl+P",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(
+                        " - Show paste instructions",
                         Style::default().fg(Color::Gray),
                     ),
                 ]),
