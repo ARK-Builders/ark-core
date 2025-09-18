@@ -1,6 +1,6 @@
 use crate::{
     App, AppBackend, AppFileBrowserSaveEvent, AppFileBrowserSubscriber,
-    BrowserMode, OpenFileBrowserRequest, Page, SortMode,
+    BrowserMode, ControlCapture, OpenFileBrowserRequest, Page, SortMode,
 };
 use arkdrop_common::FileData;
 use arkdropx_sender::{
@@ -28,7 +28,6 @@ use std::{
 enum TransferState {
     NoTransfer,
     OngoingTransfer,
-    PreparingNewTransfer,
 }
 
 #[derive(Clone, PartialEq)]
@@ -73,23 +72,19 @@ impl App for SendFilesApp {
         }
     }
 
-    fn handle_control(&self, ev: &Event) {
-        if let Event::Key(key) = ev {
-            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
-            let transfer_state = self.transfer_state.read().unwrap().clone();
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
+        let transfer_state = self.transfer_state.read().unwrap().clone();
+        match transfer_state {
+            TransferState::OngoingTransfer => {
+                return self.handle_ongoing_transfer_controls(ev);
+            }
+            _ => {
+                let is_editing = self.is_editing_path();
 
-            match transfer_state {
-                TransferState::OngoingTransfer => {
-                    self.handle_ongoing_transfer_controls(key.code, has_ctrl);
-                }
-                _ => {
-                    let is_editing = self.is_editing_path();
-
-                    if is_editing {
-                        self.handle_text_input_controls(key.code, has_ctrl);
-                    } else {
-                        self.handle_navigation_controls(key.code, has_ctrl);
-                    }
+                if is_editing {
+                    return self.handle_text_input_controls(ev);
+                } else {
+                    return self.handle_navigation_controls(ev);
                 }
             }
         }
@@ -151,18 +146,10 @@ impl SendFilesApp {
 
     fn handle_ongoing_transfer_controls(
         &self,
-        key_code: KeyCode,
-        has_ctrl: bool,
-    ) {
-        if has_ctrl {
-            match key_code {
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    self.b.get_navigation().go_back();
-                }
-                _ => {}
-            }
-        } else {
-            match key_code {
+        ev: &Event,
+    ) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            match key.code {
                 KeyCode::Enter => {
                     self.b
                         .get_navigation()
@@ -171,97 +158,124 @@ impl SendFilesApp {
                 KeyCode::Esc => {
                     self.b.get_navigation().go_back();
                 }
-                _ => {}
+                _ => return None,
             }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
     }
 
-    fn handle_text_input_controls(&self, key_code: KeyCode, has_ctrl: bool) {
-        match key_code {
-            KeyCode::Enter => {
-                self.finish_editing_path();
-            }
-            KeyCode::Esc => {
-                self.cancel_editing_path();
-            }
-            KeyCode::Backspace => {
-                self.handle_backspace();
-            }
-            KeyCode::Delete => {
-                self.handle_delete();
-            }
-            KeyCode::Left => {
-                self.move_cursor_left();
-            }
-            KeyCode::Right => {
-                self.move_cursor_right();
-            }
-            KeyCode::Home => {
-                self.move_cursor_home();
-            }
-            KeyCode::End => {
-                self.move_cursor_end();
-            }
-            KeyCode::Char(c) => {
-                if has_ctrl {
-                    match c {
-                        'a' | 'A' => self.move_cursor_home(),
-                        'e' | 'E' => self.move_cursor_end(),
-                        'u' | 'U' => self.clear_input(),
-                        'w' | 'W' => self.delete_word_backward(),
-                        'o' | 'O' => {
-                            self.cancel_editing_path();
-                            self.open_file_browser();
-                        }
-                        _ => {}
-                    }
-                } else {
-                    self.insert_char(c);
-                }
-            }
-            _ => {}
-        }
-    }
+    fn handle_text_input_controls(&self, ev: &Event) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
 
-    fn handle_navigation_controls(&self, key_code: KeyCode, has_ctrl: bool) {
-        if has_ctrl {
-            match key_code {
-                KeyCode::Char('s') | KeyCode::Char('S') => {
-                    self.send_files();
-                }
-                KeyCode::Char('o') | KeyCode::Char('O') => {
-                    self.open_file_browser();
-                }
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    self.clear_selected_files();
-                }
-                _ => {}
-            }
-        } else {
-            match key_code {
-                KeyCode::Up | KeyCode::BackTab => {
-                    self.navigate_up();
-                }
-                KeyCode::Down | KeyCode::Tab => {
-                    self.navigate_down();
-                }
+            match key.code {
                 KeyCode::Enter => {
-                    self.activate_current_field();
-                }
-                KeyCode::Delete => {
-                    self.remove_last_file();
+                    if has_ctrl {
+                        self.cancel_editing_path();
+                        self.open_file_browser();
+                    } else {
+                        self.finish_editing_path();
+                    }
                 }
                 KeyCode::Esc => {
-                    if self.is_processing() {
-                        self.set_status_message("Operation cancelled");
-                        self.set_processing(false);
+                    self.cancel_editing_path();
+                }
+                KeyCode::Backspace => {
+                    if has_ctrl {
+                        self.delete_word_backward()
                     } else {
-                        self.b.get_navigation().go_back();
+                        self.handle_backspace();
                     }
                 }
-                _ => {}
+                KeyCode::Delete => {
+                    if has_ctrl {
+                        self.delete_word_forward();
+                    } else {
+                        self.handle_delete();
+                    }
+                }
+                KeyCode::Left => {
+                    if has_ctrl {
+                        self.move_cursor_left_by_word();
+                    } else {
+                        self.move_cursor_left();
+                    }
+                }
+                KeyCode::Right => {
+                    if has_ctrl {
+                        self.move_cursor_right_by_word();
+                    } else {
+                        self.move_cursor_right();
+                    }
+                }
+                KeyCode::Home => {
+                    self.move_cursor_home();
+                }
+                KeyCode::End => {
+                    self.move_cursor_end();
+                }
+                KeyCode::Char(c) => {
+                    self.insert_char(c);
+                }
+                _ => return None,
             }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
+    }
+
+    fn handle_navigation_controls(&self, ev: &Event) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+
+            if has_ctrl {
+                match key.code {
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        self.send_files();
+                    }
+                    KeyCode::Char('o') | KeyCode::Char('O') => {
+                        self.open_file_browser();
+                    }
+                    KeyCode::Char('c') | KeyCode::Char('C') => {
+                        self.clear_selected_files();
+                    }
+                    _ => return None,
+                }
+            } else {
+                match key.code {
+                    KeyCode::Up | KeyCode::BackTab => {
+                        self.navigate_up();
+                    }
+                    KeyCode::Down | KeyCode::Tab => {
+                        self.navigate_down();
+                    }
+                    KeyCode::Enter => {
+                        self.activate_current_field();
+                    }
+                    KeyCode::Delete => {
+                        self.remove_last_file();
+                    }
+                    KeyCode::Esc => {
+                        if self.is_processing() {
+                            self.set_status_message("Operation cancelled");
+                            self.set_processing(false);
+                        } else {
+                            self.b.get_navigation().go_back();
+                        }
+                    }
+                    _ => return None,
+                }
+            }
+
+            return Some(ControlCapture::new(ev));
+        }
+
+        None
     }
 
     fn is_editing_path(&self) -> bool {
@@ -363,6 +377,61 @@ impl SendFilesApp {
         }
     }
 
+    fn move_cursor_left_by_word(&self) {
+        let buffer = self.path_input_buffer.read().unwrap();
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos == 0 {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Skip word characters backwards
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        self.path_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn move_cursor_right_by_word(&self) {
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let buffer = self.path_input_buffer.read().unwrap();
+        let last_pos = buffer.len() - 1;
+
+        if cursor_pos == last_pos {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace forward
+        while new_pos < last_pos && chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        // Skip word characters forward
+        while new_pos < last_pos && !chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        self.path_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn move_cursor_right(&self) {
         let buffer = self.path_input_buffer.read().unwrap();
         let cursor_pos = self
@@ -383,12 +452,6 @@ impl SendFilesApp {
         let buffer = self.path_input_buffer.read().unwrap();
         self.path_cursor_position
             .store(buffer.len(), std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn clear_input(&self) {
-        self.path_input_buffer.write().unwrap().clear();
-        self.path_cursor_position
-            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn delete_word_backward(&self) {
@@ -412,6 +475,36 @@ impl SendFilesApp {
         // Delete word characters backwards
         while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
             new_pos -= 1;
+        }
+
+        buffer.drain(new_pos..cursor_pos);
+        self.path_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn delete_word_forward(&self) {
+        let cursor_pos = self
+            .path_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let buffer = self.path_input_buffer.read().unwrap();
+        let last_pos = buffer.len() - 1;
+
+        if cursor_pos == last_pos {
+            return;
+        }
+
+        let mut buffer = self.path_input_buffer.write().unwrap();
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos < last_pos && chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        // Delete word characters backwards
+        while new_pos < last_pos && !chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
         }
 
         buffer.drain(new_pos..cursor_pos);

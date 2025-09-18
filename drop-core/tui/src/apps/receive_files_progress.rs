@@ -4,8 +4,9 @@ use std::{
     time::Instant,
 };
 
-use crate::{App, AppBackend};
+use crate::{App, AppBackend, ControlCapture};
 use arkdropx_receiver::ReceiveFilesSubscriber;
+use crossterm::event::KeyModifiers;
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode},
@@ -30,28 +31,22 @@ struct ProgressFile {
 
 #[derive(Clone, PartialEq)]
 enum FileTransferStatus {
-    Waiting,
     Receiving,
     Completed,
-    Failed,
 }
 
 impl FileTransferStatus {
     fn icon(&self) -> &'static str {
         match self {
-            FileTransferStatus::Waiting => "⏳",
             FileTransferStatus::Receiving => "📥",
             FileTransferStatus::Completed => "✅",
-            FileTransferStatus::Failed => "❌",
         }
     }
 
     fn color(&self) -> Color {
         match self {
-            FileTransferStatus::Waiting => Color::Yellow,
             FileTransferStatus::Receiving => Color::Blue,
             FileTransferStatus::Completed => Color::Green,
-            FileTransferStatus::Failed => Color::Red,
         }
     }
 }
@@ -100,15 +95,33 @@ impl App for ReceiveFilesProgressApp {
         self.draw_footer(f, blocks[3]);
     }
 
-    fn handle_control(&self, ev: &ratatui::crossterm::event::Event) {
+    fn handle_control(
+        &self,
+        ev: &ratatui::crossterm::event::Event,
+    ) -> Option<ControlCapture> {
         if let Event::Key(key) = ev {
-            match key.code {
-                KeyCode::Esc => {
-                    self.b.get_navigation().go_back();
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+
+            if has_ctrl {
+                match key.code {
+                    KeyCode::Char('c') | KeyCode::Char('C') => {
+                        self.b.get_receive_files_manager().cancel();
+                    }
+                    _ => return None,
                 }
-                _ => {}
+            } else {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.b.get_navigation().go_back();
+                    }
+                    _ => return None,
+                }
             }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
     }
 }
 
@@ -260,24 +273,6 @@ impl ReceiveFilesProgressApp {
             total_transfer_speed: RwLock::new(0.0),
             sender_name: RwLock::new("Unknown".to_string()),
             total_chunks_received: RwLock::new(0),
-        }
-    }
-
-    // Method to set file metadata (should be called when file info is
-    // available)
-    pub fn set_file_metadata(&self, id: String, name: String, total_size: u64) {
-        self.file_metadata.write().unwrap().insert(
-            id.clone(),
-            FileMetadata {
-                name: name.clone(),
-                total_size,
-            },
-        );
-
-        // Update existing file if it exists
-        if let Some(file) = self.files.write().unwrap().get_mut(&id) {
-            file.name = name;
-            file.total_size = total_size;
         }
     }
 
@@ -646,12 +641,6 @@ impl ReceiveFilesProgressApp {
                                 FileTransferStatus::Completed => {
                                     "Complete".to_string()
                                 }
-                                FileTransferStatus::Failed => {
-                                    "Failed".to_string()
-                                }
-                                FileTransferStatus::Waiting => {
-                                    "Waiting".to_string()
-                                }
                                 _ => "--".to_string(),
                             }
                         }
@@ -666,12 +655,6 @@ impl ReceiveFilesProgressApp {
                             match file.status {
                                 FileTransferStatus::Completed => {
                                     "Complete".to_string()
-                                }
-                                FileTransferStatus::Failed => {
-                                    "Failed".to_string()
-                                }
-                                FileTransferStatus::Waiting => {
-                                    "Waiting".to_string()
                                 }
                                 _ => "--".to_string(),
                             }

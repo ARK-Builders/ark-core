@@ -5,14 +5,25 @@ use arkdropx_sender::{SendFilesBubble, SendFilesSubscriber, send_files};
 use crate::AppSendFilesManager;
 
 pub struct MainAppSendFilesManager {
-    send_files_bubble: Arc<RwLock<Option<Arc<SendFilesBubble>>>>,
-    send_files_sub: Arc<RwLock<Option<Arc<dyn SendFilesSubscriber>>>>,
+    bubble: Arc<RwLock<Option<Arc<SendFilesBubble>>>>,
+    sub: Arc<RwLock<Option<Arc<dyn SendFilesSubscriber>>>>,
 }
 
 impl AppSendFilesManager for MainAppSendFilesManager {
+    fn cancel(&self) {
+        let curr_bubble = self.bubble.clone();
+
+        tokio::spawn(async move {
+            let taken_bubble = curr_bubble.write().unwrap().take();
+            if let Some(bub) = &taken_bubble {
+                let _ = bub.cancel().await;
+            }
+        });
+    }
+
     fn send_files(&self, req: arkdropx_sender::SendFilesRequest) {
-        let send_files_bubble = self.send_files_bubble.clone();
-        let send_files_sub = self.send_files_sub.clone();
+        let curr_sub = self.sub.clone();
+        let curr_bubble = self.bubble.clone();
 
         tokio::spawn(async move {
             let bubble = send_files(req).await;
@@ -20,11 +31,11 @@ impl AppSendFilesManager for MainAppSendFilesManager {
                 Ok(bub) => {
                     let bub = Arc::new(bub);
 
-                    if let Some(sub) = send_files_sub.read().unwrap().clone() {
+                    if let Some(sub) = curr_sub.read().unwrap().clone() {
                         bub.subscribe(sub);
                     }
 
-                    send_files_bubble.write().unwrap().replace(bub)
+                    curr_bubble.write().unwrap().replace(bub)
                 }
                 Err(_) => todo!(),
             }
@@ -34,7 +45,7 @@ impl AppSendFilesManager for MainAppSendFilesManager {
     fn get_send_files_bubble(
         &self,
     ) -> Option<std::sync::Arc<arkdropx_sender::SendFilesBubble>> {
-        let send_files_bubble = self.send_files_bubble.read().unwrap();
+        let send_files_bubble = self.bubble.read().unwrap();
         return send_files_bubble.clone();
     }
 }
@@ -42,12 +53,12 @@ impl AppSendFilesManager for MainAppSendFilesManager {
 impl MainAppSendFilesManager {
     pub fn new() -> Self {
         Self {
-            send_files_bubble: Arc::new(RwLock::new(None)),
-            send_files_sub: Arc::new(RwLock::new(None)),
+            bubble: Arc::new(RwLock::new(None)),
+            sub: Arc::new(RwLock::new(None)),
         }
     }
 
     pub fn set_send_files_subscriber(&self, sub: Arc<dyn SendFilesSubscriber>) {
-        self.send_files_sub.write().unwrap().replace(sub);
+        self.sub.write().unwrap().replace(sub);
     }
 }

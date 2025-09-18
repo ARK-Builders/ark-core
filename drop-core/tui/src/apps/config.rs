@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     App, AppBackend, AppFileBrowserSaveEvent, AppFileBrowserSubscriber,
-    BrowserMode, SortMode,
+    BrowserMode, ControlCapture, SortMode,
 };
 use arkdrop_common::{AppConfig, transform_to_base64};
 use ratatui::{
@@ -99,87 +99,13 @@ impl App for ConfigApp {
         self.draw_footer(f, blocks[2]);
     }
 
-    fn handle_control(&self, ev: &Event) {
-        if let Event::Key(key) = ev {
-            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
-            let is_editing = self.is_editing_name();
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
+        let is_editing_name = self.is_editing_name();
 
-            if is_editing {
-                // Handle text input mode for avatar name
-                match key.code {
-                    KeyCode::Enter => {
-                        self.finish_editing_name();
-                    }
-                    KeyCode::Esc => {
-                        self.cancel_editing_name();
-                    }
-                    KeyCode::Backspace => {
-                        self.handle_backspace();
-                    }
-                    KeyCode::Delete => {
-                        self.handle_delete();
-                    }
-                    KeyCode::Left => {
-                        self.move_cursor_left();
-                    }
-                    KeyCode::Right => {
-                        self.move_cursor_right();
-                    }
-                    KeyCode::Home => {
-                        self.move_cursor_home();
-                    }
-                    KeyCode::End => {
-                        self.move_cursor_end();
-                    }
-                    KeyCode::Char(c) => {
-                        if has_ctrl {
-                            match c {
-                                'a' | 'A' => self.move_cursor_home(),
-                                'e' | 'E' => self.move_cursor_end(),
-                                'u' | 'U' => self.clear_input(),
-                                'w' | 'W' => self.delete_word_backward(),
-                                _ => {}
-                            }
-                        } else {
-                            self.insert_char(c);
-                        }
-                    }
-                    _ => {}
-                }
-            } else {
-                // Handle normal navigation mode
-                if has_ctrl {
-                    match key.code {
-                        KeyCode::Char('s') | KeyCode::Char('S') => {
-                            self.save_configuration();
-                        }
-                        KeyCode::Char('r') | KeyCode::Char('R') => {
-                            self.reset_to_defaults();
-                        }
-                        KeyCode::Char('c') | KeyCode::Char('C') => {
-                            self.b.get_navigation().go_back();
-                        }
-                        _ => {}
-                    }
-                } else {
-                    match key.code {
-                        KeyCode::Up => self.navigate_up(),
-                        KeyCode::Down => self.navigate_down(),
-                        KeyCode::Enter | KeyCode::Char(' ') => {
-                            self.activate_current_field()
-                        }
-                        KeyCode::Esc => {
-                            if self.is_processing() {
-                                self.set_status_message("Operation cancelled");
-                                self.set_processing(false);
-                            } else {
-                                self.b.get_navigation().go_back();
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
+        if is_editing_name {
+            return self.handle_name_input_control(ev);
+        } else {
+            return self.handle_navigation_control(ev);
         }
     }
 }
@@ -265,6 +191,48 @@ impl ConfigApp {
         ]
     }
 
+    fn handle_navigation_control(&self, ev: &Event) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+
+            if has_ctrl {
+                match key.code {
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        self.save_configuration();
+                    }
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        self.reset_to_defaults();
+                    }
+                    KeyCode::Char('c') | KeyCode::Char('C') => {
+                        self.b.get_navigation().go_back();
+                    }
+                    _ => return None,
+                }
+            } else {
+                match key.code {
+                    KeyCode::Up => self.navigate_up(),
+                    KeyCode::Down => self.navigate_down(),
+                    KeyCode::Enter | KeyCode::Char(' ') => {
+                        self.activate_current_field()
+                    }
+                    KeyCode::Esc => {
+                        if self.is_processing() {
+                            self.set_status_message("Operation cancelled");
+                            self.set_processing(false);
+                        } else {
+                            self.b.get_navigation().go_back();
+                        }
+                    }
+                    _ => return None,
+                }
+            }
+
+            return Some(ControlCapture::new(ev));
+        }
+
+        None
+    }
+
     fn navigate_up(&self) {
         let fields = self.get_config_fields();
         let current = self
@@ -340,6 +308,63 @@ impl ConfigApp {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    fn handle_name_input_control(&self, ev: &Event) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+
+            match key.code {
+                KeyCode::Enter => {
+                    self.finish_editing_name();
+                }
+                KeyCode::Esc => {
+                    self.cancel_editing_name();
+                }
+                KeyCode::Backspace => {
+                    if has_ctrl {
+                        self.delete_word_backward()
+                    } else {
+                        self.handle_backspace();
+                    }
+                }
+                KeyCode::Delete => {
+                    if has_ctrl {
+                        self.delete_word_forward();
+                    } else {
+                        self.handle_delete();
+                    }
+                }
+                KeyCode::Left => {
+                    if has_ctrl {
+                        self.move_cursor_left_by_word();
+                    } else {
+                        self.move_cursor_left();
+                    }
+                }
+                KeyCode::Right => {
+                    if has_ctrl {
+                        self.move_cursor_right_by_word();
+                    } else {
+                        self.move_cursor_right();
+                    }
+                }
+                KeyCode::Home => {
+                    self.move_cursor_home();
+                }
+                KeyCode::End => {
+                    self.move_cursor_end();
+                }
+                KeyCode::Char(c) => {
+                    self.insert_char(c);
+                }
+                _ => return None,
+            }
+
+            return Some(ControlCapture::new(ev));
+        }
+
+        None
+    }
+
     fn finish_editing_name(&self) {
         let input_text = self.name_input_buffer.read().unwrap().clone();
         let trimmed_text = input_text.trim();
@@ -394,6 +419,64 @@ impl ConfigApp {
         }
     }
 
+    fn delete_word_backward(&self) {
+        let mut buffer = self.name_input_buffer.write().unwrap();
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos == 0 {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Delete word characters backwards
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        buffer.drain(new_pos..cursor_pos);
+        self.name_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn delete_word_forward(&self) {
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let buffer = self.name_input_buffer.read().unwrap();
+        let last_pos = buffer.len() - 1;
+
+        if cursor_pos == last_pos {
+            return;
+        }
+
+        let mut buffer = self.name_input_buffer.write().unwrap();
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos < last_pos && chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        // Delete word characters backwards
+        while new_pos < last_pos && !chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        buffer.drain(new_pos..cursor_pos);
+        self.name_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn handle_delete(&self) {
         let mut buffer = self.name_input_buffer.write().unwrap();
         let cursor_pos = self
@@ -413,6 +496,61 @@ impl ConfigApp {
             self.name_cursor_position
                 .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
         }
+    }
+
+    fn move_cursor_left_by_word(&self) {
+        let buffer = self.name_input_buffer.read().unwrap();
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos == 0 {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Skip word characters backwards
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        self.name_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn move_cursor_right_by_word(&self) {
+        let cursor_pos = self
+            .name_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let buffer = self.name_input_buffer.read().unwrap();
+        let last_pos = buffer.len() - 1;
+
+        if cursor_pos == last_pos {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace forward
+        while new_pos < last_pos && chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        // Skip word characters forward
+        while new_pos < last_pos && !chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        self.name_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn move_cursor_right(&self) {
@@ -435,42 +573,6 @@ impl ConfigApp {
         let buffer = self.name_input_buffer.read().unwrap();
         self.name_cursor_position
             .store(buffer.len(), std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn clear_input(&self) {
-        self.name_input_buffer.write().unwrap().clear();
-        self.name_cursor_position
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn delete_word_backward(&self) {
-        let mut buffer = self.name_input_buffer.write().unwrap();
-        let cursor_pos = self
-            .name_cursor_position
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        if cursor_pos == 0 {
-            return;
-        }
-
-        // Find the start of the current word
-        let mut new_pos = cursor_pos;
-        let chars: Vec<char> = buffer.chars().collect();
-
-        // Skip whitespace backwards
-        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
-            new_pos -= 1;
-        }
-
-        // Delete word characters backwards
-        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
-            new_pos -= 1;
-        }
-
-        // Remove the characters
-        buffer.drain(new_pos..cursor_pos);
-        self.name_cursor_position
-            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn open_avatar_browser(&self) {

@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use crate::{App, AppBackend, Page};
+use crate::{App, AppBackend, ControlCapture, Page};
 
 #[derive(Clone, PartialEq)]
 enum MenuItem {
@@ -57,12 +57,66 @@ impl App for HomeApp {
         self.draw_main_menu(f, blocks[1]);
     }
 
-    fn handle_control(&self, ev: &Event) {
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
         if let Event::Key(key) = ev {
             let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
 
-            self.handle_navigation_controls(key.code, has_ctrl);
+            if has_ctrl {
+                match key.code {
+                    KeyCode::Char('h') | KeyCode::Char('H') => {
+                        self.navigate_to_page(Page::Help);
+                    }
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        self.navigate_to_page(Page::SendFiles);
+                    }
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        self.navigate_to_page(Page::ReceiveFiles);
+                    }
+                    KeyCode::Char('c') | KeyCode::Char('C') => {
+                        self.navigate_to_page(Page::Config);
+                    }
+                    _ => return None,
+                }
+            } else {
+                match key.code {
+                    KeyCode::Up | KeyCode::BackTab => {
+                        self.navigate_up();
+                    }
+                    KeyCode::Down | KeyCode::Tab => {
+                        self.navigate_down();
+                    }
+                    KeyCode::Enter => {
+                        self.activate_current_item();
+                    }
+                    KeyCode::Char('1') => {
+                        self.select_item(0);
+                        self.activate_current_item();
+                    }
+                    KeyCode::Char('2') => {
+                        self.select_item(1);
+                        self.activate_current_item();
+                    }
+                    KeyCode::Char('3') => {
+                        self.select_item(2);
+                        self.activate_current_item();
+                    }
+                    KeyCode::Char('4') => {
+                        self.select_item(3);
+                        self.activate_current_item();
+                    }
+                    KeyCode::Esc => {
+                        self.set_status_message(
+                            "Press Ctrl+Q to quit application",
+                        );
+                    }
+                    _ => return None,
+                }
+            }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
     }
 }
 
@@ -79,61 +133,6 @@ impl HomeApp {
                 "Welcome to ARK Drop - Select an option to get started"
                     .to_string(),
             )),
-        }
-    }
-
-    fn handle_navigation_controls(&self, key_code: KeyCode, has_ctrl: bool) {
-        if has_ctrl {
-            match key_code {
-                KeyCode::Char('h') | KeyCode::Char('H') => {
-                    self.navigate_to_page(Page::Help);
-                }
-                KeyCode::Char('s') | KeyCode::Char('S') => {
-                    self.navigate_to_page(Page::SendFiles);
-                }
-                KeyCode::Char('r') | KeyCode::Char('R') => {
-                    self.navigate_to_page(Page::ReceiveFiles);
-                }
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    self.navigate_to_page(Page::Config);
-                }
-                KeyCode::Char('q') | KeyCode::Char('Q') => {
-                    self.shutdown_application();
-                }
-                _ => {}
-            }
-        } else {
-            match key_code {
-                KeyCode::Up | KeyCode::BackTab => {
-                    self.navigate_up();
-                }
-                KeyCode::Down | KeyCode::Tab => {
-                    self.navigate_down();
-                }
-                KeyCode::Enter => {
-                    self.activate_current_item();
-                }
-                KeyCode::Char('1') => {
-                    self.select_item(0);
-                    self.activate_current_item();
-                }
-                KeyCode::Char('2') => {
-                    self.select_item(1);
-                    self.activate_current_item();
-                }
-                KeyCode::Char('3') => {
-                    self.select_item(2);
-                    self.activate_current_item();
-                }
-                KeyCode::Char('4') => {
-                    self.select_item(3);
-                    self.activate_current_item();
-                }
-                KeyCode::Esc => {
-                    self.set_status_message("Press Ctrl+Q to quit application");
-                }
-                _ => {}
-            }
         }
     }
 
@@ -223,11 +222,6 @@ impl HomeApp {
     fn navigate_to_page(&self, page: Page) {
         self.set_status_message(&format!("Navigating to {:?}...", page));
         self.b.get_navigation().navigate_to(page);
-    }
-
-    fn shutdown_application(&self) {
-        self.set_status_message("Shutting down application...");
-        self.b.shutdown();
     }
 
     fn set_status_message(&self, message: &str) {

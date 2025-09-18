@@ -7,14 +7,22 @@ use arkdropx_receiver::{
 use crate::AppReceiveFilesManager;
 
 pub struct MainAppReceiveFilesManager {
-    receive_files_bubble: Arc<RwLock<Option<Arc<ReceiveFilesBubble>>>>,
-    receive_files_sub: Arc<RwLock<Option<Arc<dyn ReceiveFilesSubscriber>>>>,
+    bubble: Arc<RwLock<Option<Arc<ReceiveFilesBubble>>>>,
+    sub: Arc<RwLock<Option<Arc<dyn ReceiveFilesSubscriber>>>>,
 }
 
 impl AppReceiveFilesManager for MainAppReceiveFilesManager {
+    fn cancel(&self) {
+        let taken_bubble = self.bubble.write().unwrap().take();
+
+        if let Some(bub) = &taken_bubble {
+            bub.cancel();
+        }
+    }
+
     fn receive_files(&self, req: arkdropx_receiver::ReceiveFilesRequest) {
-        let receive_files_bubble = self.receive_files_bubble.clone();
-        let receive_files_sub = self.receive_files_sub.clone();
+        let curr_sub = self.sub.clone();
+        let curr_bubble = self.bubble.clone();
 
         tokio::spawn(async move {
             let bubble = receive_files(req).await;
@@ -22,12 +30,11 @@ impl AppReceiveFilesManager for MainAppReceiveFilesManager {
                 Ok(bub) => {
                     let bub = Arc::new(bub);
 
-                    if let Some(sub) = receive_files_sub.read().unwrap().clone()
-                    {
+                    if let Some(sub) = curr_sub.read().unwrap().clone() {
                         bub.subscribe(sub);
                     }
 
-                    receive_files_bubble.write().unwrap().replace(bub)
+                    curr_bubble.write().unwrap().replace(bub)
                 }
                 Err(_) => todo!(),
             }
@@ -37,16 +44,16 @@ impl AppReceiveFilesManager for MainAppReceiveFilesManager {
     fn get_receive_files_bubble(
         &self,
     ) -> Option<std::sync::Arc<arkdropx_receiver::ReceiveFilesBubble>> {
-        let receive_files_bubble = self.receive_files_bubble.read().unwrap();
-        return receive_files_bubble.clone();
+        let bubble = self.bubble.read().unwrap();
+        return bubble.clone();
     }
 }
 
 impl MainAppReceiveFilesManager {
     pub fn new() -> Self {
         Self {
-            receive_files_bubble: Arc::new(RwLock::new(None)),
-            receive_files_sub: Arc::new(RwLock::new(None)),
+            bubble: Arc::new(RwLock::new(None)),
+            sub: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -54,9 +61,6 @@ impl MainAppReceiveFilesManager {
         &self,
         sub: Arc<dyn ReceiveFilesSubscriber>,
     ) {
-        self.receive_files_sub
-            .write()
-            .unwrap()
-            .replace(sub);
+        self.sub.write().unwrap().replace(sub);
     }
 }

@@ -76,9 +76,19 @@ pub struct OpenFileBrowserRequest {
     pub sort: SortMode,
 }
 
+pub struct ControlCapture {
+    pub ev: Event,
+}
+
+impl ControlCapture {
+    pub fn new(ev: &Event) -> Self {
+        return Self { ev: ev.clone() };
+    }
+}
+
 pub trait App: Send + Sync {
     fn draw(&self, f: &mut Frame, area: Rect);
-    fn handle_control(&self, ev: &Event);
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture>;
 }
 
 pub trait AppNavigation: Send + Sync {
@@ -89,11 +99,13 @@ pub trait AppNavigation: Send + Sync {
 }
 
 pub trait AppSendFilesManager: Send + Sync {
+    fn cancel(&self);
     fn send_files(&self, req: SendFilesRequest);
     fn get_send_files_bubble(&self) -> Option<Arc<SendFilesBubble>>;
 }
 
 pub trait AppReceiveFilesManager: Send + Sync {
+    fn cancel(&self);
     fn receive_files(&self, req: ReceiveFilesRequest);
     fn get_receive_files_bubble(&self) -> Option<Arc<ReceiveFilesBubble>>;
 }
@@ -103,8 +115,6 @@ pub trait AppFileBrowserManager: Send + Sync {
 }
 
 pub trait AppBackend: Send + Sync {
-    fn shutdown(&self);
-
     fn get_send_files_manager(&self) -> Arc<dyn AppSendFilesManager>;
     fn get_receive_files_manager(&self) -> Arc<dyn AppReceiveFilesManager>;
     fn get_file_browser_manager(&self) -> Arc<dyn AppFileBrowserManager>;
@@ -249,7 +259,7 @@ pub fn run_tui() -> Result<()> {
             layout.handle_control(&ev);
         }
 
-        let should_finish = layout.is_finished() || backend.is_shutdown();
+        let should_finish = layout.is_finished();
         if should_finish {
             break;
         }

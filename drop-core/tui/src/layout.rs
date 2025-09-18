@@ -15,7 +15,7 @@ use ratatui::{
 
 use crate::{
     App, AppFileBrowser, AppFileBrowserManager, AppFileBrowserSubscriber,
-    AppNavigation, OpenFileBrowserRequest, Page,
+    AppNavigation, ControlCapture, OpenFileBrowserRequest, Page,
     utilities::helper_footer::{HelperFooterControl, create_helper_footer},
 };
 
@@ -59,14 +59,24 @@ impl App for LayoutApp {
         self.draw_footer(f, blocks[2]);
     }
 
-    fn handle_control(&self, ev: &Event) {
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
         let children = self.get_active_children_sort_by_control_index();
 
-        self.handle_global_event(ev);
+        let child_capture = children.iter().find_map(|c| {
+            let capture = c.app.handle_control(ev);
 
-        children
-            .iter()
-            .for_each(|c| c.app.handle_control(ev));
+            if capture.is_some() {
+                return Some(capture.unwrap());
+            }
+
+            None
+        });
+
+        if child_capture.is_none() {
+            self.handle_default_control(ev);
+        }
+
+        None
     }
 }
 
@@ -287,19 +297,15 @@ impl LayoutApp {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    fn handle_global_event(&self, ev: &Event) {
-        match ev {
-            Event::Key(key) => match key.code {
-                KeyCode::Char(c) => {
-                    let pressed_quit = c == 'q'
-                        || c == 'Q' && key.modifiers == KeyModifiers::CONTROL;
-                    if pressed_quit {
-                        self.finish();
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
+    fn handle_default_control(&self, ev: &Event) {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+            let pressed_esc = KeyCode::Esc == key.code;
+            let pressed_finish = pressed_esc && has_ctrl;
+
+            if pressed_finish {
+                self.finish();
+            }
         }
     }
 

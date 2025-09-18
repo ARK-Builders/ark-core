@@ -1,6 +1,6 @@
 use crate::{
     App, AppBackend, AppFileBrowserSaveEvent, AppFileBrowserSubscriber,
-    BrowserMode, OpenFileBrowserRequest, Page, SortMode,
+    BrowserMode, ControlCapture, OpenFileBrowserRequest, Page, SortMode,
 };
 use arkdropx_receiver::{ReceiveFilesRequest, ReceiverProfile};
 use ratatui::{
@@ -13,19 +13,15 @@ use ratatui::{
     widgets::{Block, Borders, ListState, Paragraph},
 };
 
-use std::{
-    path::PathBuf,
-    sync::{
-        Arc, RwLock,
-        atomic::{AtomicBool, AtomicUsize},
-    },
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicBool, AtomicUsize},
 };
 
 #[derive(Clone, PartialEq)]
 enum TransferState {
     NoTransfer,
     OngoingTransfer,
-    PreparingNewTransfer,
 }
 
 #[derive(Clone, PartialEq)]
@@ -48,13 +44,12 @@ pub struct ReceiveFilesApp {
     ticket_in: RwLock<String>,
     confirmation_in: RwLock<String>,
     out_dir_in: RwLock<String>,
-    selected_files_in: RwLock<Vec<PathBuf>>,
 
     // Text input state
     is_editing_field: Arc<AtomicBool>,
     current_editing_field: Arc<AtomicUsize>,
-    input_buffer: Arc<RwLock<String>>,
-    cursor_position: Arc<AtomicUsize>,
+    field_input_buffer: Arc<RwLock<String>>,
+    field_cursor_position: Arc<AtomicUsize>,
 
     // Status and feedback
     status_message: Arc<RwLock<String>>,
@@ -75,23 +70,19 @@ impl App for ReceiveFilesApp {
         }
     }
 
-    fn handle_control(&self, ev: &Event) {
-        if let Event::Key(key) = ev {
-            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
-            let transfer_state = self.transfer_state.read().unwrap().clone();
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
+        let transfer_state = self.transfer_state.read().unwrap().clone();
+        match transfer_state {
+            TransferState::OngoingTransfer => {
+                return self.handle_ongoing_transfer_controls(ev);
+            }
+            _ => {
+                let is_editing = self.is_editing_field();
 
-            match transfer_state {
-                TransferState::OngoingTransfer => {
-                    self.handle_ongoing_transfer_controls(key.code, has_ctrl);
-                }
-                _ => {
-                    let is_editing = self.is_editing_field();
-
-                    if is_editing {
-                        self.handle_text_input_controls(key.code, has_ctrl);
-                    } else {
-                        self.handle_navigation_controls(key.code, has_ctrl);
-                    }
+                if is_editing {
+                    return self.handle_text_input_controls(ev);
+                } else {
+                    return self.handle_navigation_controls(ev);
                 }
             }
         }
@@ -110,12 +101,12 @@ impl AppFileBrowserSubscriber for ReceiveFilesApp {
             .get_navigation()
             .replace_with(Page::ReceiveFiles);
 
-        if let Some(selected_path) = ev.selected_files.first() {
+        if let Some(selected_field) = ev.selected_files.first() {
             *self.out_dir_in.write().unwrap() =
-                selected_path.to_string_lossy().to_string();
+                selected_field.to_string_lossy().to_string();
             self.set_status_message(&format!(
                 "Output directory set: {}",
-                selected_path.display()
+                selected_field.display()
             ));
         }
     }
@@ -136,13 +127,12 @@ impl ReceiveFilesApp {
             ticket_in: RwLock::new(String::new()),
             confirmation_in: RwLock::new(String::new()),
             out_dir_in: RwLock::new(String::new()),
-            selected_files_in: RwLock::new(Vec::new()),
 
             // Text input state
             is_editing_field: Arc::new(AtomicBool::new(false)),
             current_editing_field: Arc::new(AtomicUsize::new(0)),
-            input_buffer: Arc::new(RwLock::new(String::new())),
-            cursor_position: Arc::new(AtomicUsize::new(0)),
+            field_input_buffer: Arc::new(RwLock::new(String::new())),
+            field_cursor_position: Arc::new(AtomicUsize::new(0)),
 
             // Status and feedback
             status_message: Arc::new(RwLock::new(
@@ -154,18 +144,10 @@ impl ReceiveFilesApp {
 
     fn handle_ongoing_transfer_controls(
         &self,
-        key_code: KeyCode,
-        has_ctrl: bool,
-    ) {
-        if has_ctrl {
-            match key_code {
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    self.b.get_navigation().go_back();
-                }
-                _ => {}
-            }
-        } else {
-            match key_code {
+        ev: &Event,
+    ) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            match key.code {
                 KeyCode::Enter => {
                     self.b
                         .get_navigation()
@@ -174,106 +156,130 @@ impl ReceiveFilesApp {
                 KeyCode::Esc => {
                     self.b.get_navigation().go_back();
                 }
-                _ => {}
+                _ => return None,
             }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
     }
 
-    fn handle_text_input_controls(&self, key_code: KeyCode, has_ctrl: bool) {
-        match key_code {
-            KeyCode::Enter => {
-                self.finish_editing_field();
-            }
-            KeyCode::Esc => {
-                self.cancel_editing_field();
-            }
-            KeyCode::Backspace => {
-                self.handle_backspace();
-            }
-            KeyCode::Delete => {
-                self.handle_delete();
-            }
-            KeyCode::Left => {
-                self.move_cursor_left();
-            }
-            KeyCode::Right => {
-                self.move_cursor_right();
-            }
-            KeyCode::Home => {
-                self.move_cursor_home();
-            }
-            KeyCode::End => {
-                self.move_cursor_end();
-            }
-            KeyCode::Char(c) => {
-                if has_ctrl {
-                    match c {
-                        'v' | 'V' => {
-                            self.set_status_message("Paste not available - type or use middle mouse button if supported");
-                        }
-                        'a' | 'A' => self.move_cursor_home(),
-                        'e' | 'E' => self.move_cursor_end(),
-                        'u' | 'U' => self.clear_input(),
-                        'w' | 'W' => self.delete_word_backward(),
-                        'o' | 'O' => {
-                            if self
-                                .current_editing_field
-                                .load(std::sync::atomic::Ordering::Relaxed)
-                                == 2
-                            {
-                                self.cancel_editing_field();
-                                self.open_dir_browser();
-                            }
-                        }
-                        _ => {}
-                    }
-                } else {
-                    self.insert_char(c);
-                }
-            }
-            _ => {}
-        }
-    }
+    fn handle_text_input_controls(&self, ev: &Event) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+            let field_idx = self.get_current_editing_field();
 
-    fn handle_navigation_controls(&self, key_code: KeyCode, has_ctrl: bool) {
-        if has_ctrl {
-            match key_code {
-                KeyCode::Char('r') | KeyCode::Char('R') => {
-                    self.receive_files();
-                }
-                KeyCode::Char('o') | KeyCode::Char('O') => {
-                    self.open_dir_browser();
-                }
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    self.clear_all_fields();
-                }
-                KeyCode::Char('p') | KeyCode::Char('P') => {
-                    self.show_paste_instructions();
-                }
-                _ => {}
-            }
-        } else {
-            match key_code {
-                KeyCode::Up | KeyCode::BackTab => {
-                    self.navigate_up();
-                }
-                KeyCode::Down | KeyCode::Tab => {
-                    self.navigate_down();
-                }
+            match key.code {
                 KeyCode::Enter => {
-                    self.activate_current_field();
+                    if field_idx == 2 {
+                        self.cancel_editing_field();
+                        self.open_dir_browser();
+                    } else {
+                        self.finish_editing_field();
+                    }
                 }
                 KeyCode::Esc => {
-                    if self.is_processing() {
-                        self.set_status_message("Operation cancelled");
-                        self.set_processing(false);
+                    self.cancel_editing_field();
+                }
+                KeyCode::Backspace => {
+                    if has_ctrl {
+                        self.delete_word_backward()
                     } else {
-                        self.b.get_navigation().go_back();
+                        self.handle_backspace();
                     }
                 }
-                _ => {}
+                KeyCode::Delete => {
+                    if has_ctrl {
+                        self.delete_word_forward();
+                    } else {
+                        self.handle_delete();
+                    }
+                }
+                KeyCode::Left => {
+                    if has_ctrl {
+                        self.move_cursor_left_by_word();
+                    } else {
+                        self.move_cursor_left();
+                    }
+                }
+                KeyCode::Right => {
+                    if has_ctrl {
+                        self.move_cursor_right_by_word();
+                    } else {
+                        self.move_cursor_right();
+                    }
+                }
+                KeyCode::Home => {
+                    self.move_cursor_home();
+                }
+                KeyCode::End => {
+                    self.move_cursor_end();
+                }
+                KeyCode::Char(c) => {
+                    self.insert_char(c);
+                }
+                _ => return None,
             }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
+    }
+
+    fn get_current_editing_field(&self) -> usize {
+        self.current_editing_field
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn handle_navigation_controls(&self, ev: &Event) -> Option<ControlCapture> {
+        if let Event::Key(key) = ev {
+            let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
+
+            if has_ctrl {
+                match key.code {
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        self.receive_files();
+                    }
+                    KeyCode::Char('o') | KeyCode::Char('O') => {
+                        self.open_dir_browser();
+                    }
+                    KeyCode::Char('c') | KeyCode::Char('C') => {
+                        self.clear_all_fields();
+                    }
+                    KeyCode::Char('p') | KeyCode::Char('P') => {
+                        self.show_paste_instructions();
+                    }
+                    _ => return None,
+                }
+            } else {
+                match key.code {
+                    KeyCode::Up | KeyCode::BackTab => {
+                        self.navigate_up();
+                    }
+                    KeyCode::Down | KeyCode::Tab => {
+                        self.navigate_down();
+                    }
+                    KeyCode::Enter => {
+                        self.activate_current_field();
+                    }
+                    KeyCode::Esc => {
+                        if self.is_processing() {
+                            self.set_status_message("Operation cancelled");
+                            self.set_processing(false);
+                        } else {
+                            self.b.get_navigation().go_back();
+                        }
+                    }
+                    _ => return None,
+                }
+            }
+
+            return Some(ControlCapture::new(ev));
+        }
+
+        None
     }
 
     fn show_paste_instructions(&self) {
@@ -296,23 +302,23 @@ impl ReceiveFilesApp {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    fn start_editing_field(&self, field_index: usize) {
-        let current_value = match field_index {
+    fn start_editing_field(&self, field_idx: usize) {
+        let current_value = match field_idx {
             0 => self.ticket_in.read().unwrap().clone(),
             1 => self.confirmation_in.read().unwrap().clone(),
             2 => self.out_dir_in.read().unwrap().clone(),
             _ => String::new(),
         };
 
-        *self.input_buffer.write().unwrap() = current_value.clone();
-        self.cursor_position
+        *self.field_input_buffer.write().unwrap() = current_value.clone();
+        self.field_cursor_position
             .store(current_value.len(), std::sync::atomic::Ordering::Relaxed);
         self.current_editing_field
-            .store(field_index, std::sync::atomic::Ordering::Relaxed);
+            .store(field_idx, std::sync::atomic::Ordering::Relaxed);
         self.is_editing_field
             .store(true, std::sync::atomic::Ordering::Relaxed);
 
-        let field_name = match field_index {
+        let field_name = match field_idx {
             0 => "ticket",
             1 => "confirmation code",
             2 => "output directory",
@@ -326,7 +332,7 @@ impl ReceiveFilesApp {
     }
 
     fn finish_editing_field(&self) {
-        let input_text = self.input_buffer.read().unwrap().clone();
+        let input_text = self.field_input_buffer.read().unwrap().clone();
         let trimmed_text = input_text.trim();
         let field_index = self
             .current_editing_field
@@ -372,33 +378,33 @@ impl ReceiveFilesApp {
     }
 
     fn insert_char(&self, c: char) {
-        let mut buffer = self.input_buffer.write().unwrap();
+        let mut buffer = self.field_input_buffer.write().unwrap();
         let cursor_pos = self
-            .cursor_position
+            .field_cursor_position
             .load(std::sync::atomic::Ordering::Relaxed);
 
         buffer.insert(cursor_pos, c);
-        self.cursor_position
+        self.field_cursor_position
             .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn handle_backspace(&self) {
-        let mut buffer = self.input_buffer.write().unwrap();
+        let mut buffer = self.field_input_buffer.write().unwrap();
         let cursor_pos = self
-            .cursor_position
+            .field_cursor_position
             .load(std::sync::atomic::Ordering::Relaxed);
 
         if cursor_pos > 0 {
             buffer.remove(cursor_pos - 1);
-            self.cursor_position
+            self.field_cursor_position
                 .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
     fn handle_delete(&self) {
-        let mut buffer = self.input_buffer.write().unwrap();
+        let mut buffer = self.field_input_buffer.write().unwrap();
         let cursor_pos = self
-            .cursor_position
+            .field_cursor_position
             .load(std::sync::atomic::Ordering::Relaxed);
 
         if cursor_pos < buffer.len() {
@@ -408,46 +414,95 @@ impl ReceiveFilesApp {
 
     fn move_cursor_left(&self) {
         let cursor_pos = self
-            .cursor_position
+            .field_cursor_position
             .load(std::sync::atomic::Ordering::Relaxed);
         if cursor_pos > 0 {
-            self.cursor_position
+            self.field_cursor_position
                 .store(cursor_pos - 1, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
-    fn move_cursor_right(&self) {
-        let buffer = self.input_buffer.read().unwrap();
+    fn move_cursor_left_by_word(&self) {
+        let buffer = self.field_input_buffer.read().unwrap();
         let cursor_pos = self
-            .cursor_position
+            .field_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        if cursor_pos == 0 {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        // Skip word characters backwards
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+
+        self.field_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn move_cursor_right(&self) {
+        let buffer = self.field_input_buffer.read().unwrap();
+        let cursor_pos = self
+            .field_cursor_position
             .load(std::sync::atomic::Ordering::Relaxed);
         if cursor_pos < buffer.len() {
-            self.cursor_position
+            self.field_cursor_position
                 .store(cursor_pos + 1, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
+    fn move_cursor_right_by_word(&self) {
+        let cursor_pos = self
+            .field_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let buffer = self.field_input_buffer.read().unwrap();
+        let last_pos = buffer.len() - 1;
+
+        if cursor_pos == last_pos {
+            return;
+        }
+
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace forward
+        while new_pos < last_pos && chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        // Skip word characters forward
+        while new_pos < last_pos && !chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        self.field_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn move_cursor_home(&self) {
-        self.cursor_position
+        self.field_cursor_position
             .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn move_cursor_end(&self) {
-        let buffer = self.input_buffer.read().unwrap();
-        self.cursor_position
+        let buffer = self.field_input_buffer.read().unwrap();
+        self.field_cursor_position
             .store(buffer.len(), std::sync::atomic::Ordering::Relaxed);
     }
 
-    fn clear_input(&self) {
-        self.input_buffer.write().unwrap().clear();
-        self.cursor_position
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
     fn delete_word_backward(&self) {
-        let mut buffer = self.input_buffer.write().unwrap();
+        let mut buffer = self.field_input_buffer.write().unwrap();
         let cursor_pos = self
-            .cursor_position
+            .field_cursor_position
             .load(std::sync::atomic::Ordering::Relaxed);
 
         if cursor_pos == 0 {
@@ -468,7 +523,37 @@ impl ReceiveFilesApp {
         }
 
         buffer.drain(new_pos..cursor_pos);
-        self.cursor_position
+        self.field_cursor_position
+            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn delete_word_forward(&self) {
+        let cursor_pos = self
+            .field_cursor_position
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let buffer = self.field_input_buffer.read().unwrap();
+        let last_pos = buffer.len() - 1;
+
+        if cursor_pos == last_pos {
+            return;
+        }
+
+        let mut buffer = self.field_input_buffer.write().unwrap();
+        let mut new_pos = cursor_pos;
+        let chars: Vec<char> = buffer.chars().collect();
+
+        // Skip whitespace backwards
+        while new_pos < last_pos && chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        // Delete word characters backwards
+        while new_pos < last_pos && !chars[new_pos + 1].is_whitespace() {
+            new_pos += 1;
+        }
+
+        buffer.drain(new_pos..cursor_pos);
+        self.field_cursor_position
             .store(new_pos, std::sync::atomic::Ordering::Relaxed);
     }
 
@@ -916,9 +1001,9 @@ impl ReceiveFilesApp {
         };
 
         let display_text = if is_editing {
-            let buffer = self.input_buffer.read().unwrap().clone();
+            let buffer = self.field_input_buffer.read().unwrap().clone();
             let cursor_pos = self
-                .cursor_position
+                .field_cursor_position
                 .load(std::sync::atomic::Ordering::Relaxed);
 
             if buffer.is_empty() {
@@ -1002,9 +1087,9 @@ impl ReceiveFilesApp {
         };
 
         let display_text = if is_editing {
-            let buffer = self.input_buffer.read().unwrap().clone();
+            let buffer = self.field_input_buffer.read().unwrap().clone();
             let cursor_pos = self
-                .cursor_position
+                .field_cursor_position
                 .load(std::sync::atomic::Ordering::Relaxed);
 
             if buffer.is_empty() {
@@ -1087,9 +1172,9 @@ impl ReceiveFilesApp {
         };
 
         let display_text = if is_editing {
-            let buffer = self.input_buffer.read().unwrap().clone();
+            let buffer = self.field_input_buffer.read().unwrap().clone();
             let cursor_pos = self
-                .cursor_position
+                .field_cursor_position
                 .load(std::sync::atomic::Ordering::Relaxed);
 
             if buffer.is_empty() {

@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-use crate::{App, AppBackend};
+use crate::{App, AppBackend, ControlCapture};
 
 pub struct HelpApp {
     b: Arc<dyn AppBackend>,
@@ -40,15 +40,19 @@ impl App for HelpApp {
         draw_right_content(f, content_blocks[1])
     }
 
-    fn handle_control(&self, ev: &Event) {
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
         if let Event::Key(key) = ev {
             match key.code {
                 KeyCode::Esc => {
                     self.b.get_navigation().go_back();
                 }
-                _ => {}
+                _ => return None,
             }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
     }
 }
 

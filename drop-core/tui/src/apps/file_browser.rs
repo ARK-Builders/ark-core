@@ -19,7 +19,7 @@ use std::{
 
 use crate::{
     App, AppBackend, AppFileBrowser, AppFileBrowserSaveEvent,
-    AppFileBrowserSubscriber, BrowserMode, SortMode,
+    AppFileBrowserSubscriber, BrowserMode, ControlCapture, SortMode,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,7 +64,7 @@ impl App for FileBrowserApp {
         self.draw_footer_with_help(f, blocks[2]);
     }
 
-    fn handle_control(&self, ev: &Event) {
+    fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
         if let Event::Key(key) = ev {
             let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
 
@@ -105,9 +105,13 @@ impl App for FileBrowserApp {
                         self.reset();
                     }
                 }
-                _ => {}
+                _ => return None,
             }
+
+            return Some(ControlCapture::new(ev));
         }
+
+        None
     }
 }
 
