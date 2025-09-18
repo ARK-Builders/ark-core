@@ -300,8 +300,9 @@ impl LayoutApp {
     fn handle_default_control(&self, ev: &Event) {
         if let Event::Key(key) = ev {
             let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
-            let pressed_esc = KeyCode::Esc == key.code;
-            let pressed_finish = pressed_esc && has_ctrl;
+            let pressed_q = KeyCode::Char('q') == key.code
+                || KeyCode::Char('Q') == key.code;
+            let pressed_finish = pressed_q && has_ctrl;
 
             if pressed_finish {
                 self.finish();
