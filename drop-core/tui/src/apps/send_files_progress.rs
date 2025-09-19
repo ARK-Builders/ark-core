@@ -406,6 +406,7 @@ impl SendFilesProgressApp {
         // Stats
         let elapsed_time = if let Some(start_time) =
             self.get_operation_start_time()
+            && progress_pct < 100.0
         {
             let elapsed = start_time.elapsed();
             format!("{}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
