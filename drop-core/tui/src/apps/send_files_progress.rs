@@ -6,6 +6,7 @@ use std::{
 use crate::{App, AppBackend, ControlCapture};
 use arkdropx_sender::SendFilesSubscriber;
 use crossterm::event::KeyModifiers;
+use qrcode::QrCode;
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode},
@@ -83,7 +84,7 @@ impl App for SendFilesProgressApp {
 
         self.draw_title(f, blocks[0]);
         self.draw_overall_progress(f, blocks[1]);
-        self.draw_files_list(f, blocks[2]);
+        self.draw_main_content(f, blocks[2]);
         self.draw_footer(f, blocks[3]);
     }
 
@@ -99,6 +100,7 @@ impl App for SendFilesProgressApp {
                     KeyCode::Char('c') | KeyCode::Char('C') => {
                         self.b.get_send_files_manager().cancel();
                         self.b.get_navigation().go_back();
+                        self.reset();
                     }
                     _ => return None,
                 }
@@ -224,6 +226,10 @@ impl SendFilesProgressApp {
             files: RwLock::new(Vec::new()),
             total_transfer_speed: RwLock::new(0.0),
         }
+    }
+
+    fn has_transfer_started(&self) -> bool {
+        self.get_operation_start_time().is_some()
     }
 
     fn set_title_text(&self, text: &str) {
@@ -464,6 +470,14 @@ impl SendFilesProgressApp {
         f.render_widget(stats, chunks[1]);
     }
 
+    fn draw_main_content(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
+        if self.has_transfer_started() {
+            self.draw_files_list(f, area);
+        } else {
+            self.draw_qr_code(f, area);
+        }
+    }
+
     fn draw_files_list(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
         let files = self.get_files();
 
@@ -583,6 +597,160 @@ impl SendFilesProgressApp {
         f.render_widget(files_list, area);
     }
 
+    fn draw_qr_code(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
+        let qr_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Blue))
+            .title(" Scan to Connect ")
+            .title_style(Style::default().fg(Color::White).bold());
+
+        if let Some(bubble) = self
+            .b
+            .get_send_files_manager()
+            .get_send_files_bubble()
+        {
+            let qr_data = format!(
+                "drop://receive?ticket={}&confirmation={}",
+                bubble.get_ticket(),
+                bubble.get_confirmation()
+            );
+
+            let qr_code = match QrCode::new(&qr_data) {
+                Ok(code) => code,
+                Err(_) => {
+                    self.draw_qr_error(f, area, qr_block);
+                    return;
+                }
+            };
+
+            // Calculate QR code display area (center the QR code)
+            let inner_area = qr_block.inner(area);
+            let qr_matrix = qr_code
+                .render::<char>()
+                .quiet_zone(false)
+                .module_dimensions(1, 1)
+                .build();
+
+            // Split QR code into lines for display
+            let qr_lines: Vec<Line> = qr_matrix
+                .lines()
+                .map(|line| {
+                    Line::from(vec![
+                        Span::styled(
+                            line.replace('█', "██").replace(' ', "  "), // Make blocks wider for better visibility
+                            Style::default().fg(Color::White).bg(Color::Black),
+                        )
+                    ])
+                })
+                .collect();
+
+            // Center the QR code vertically and horizontally
+            let qr_height = qr_lines.len() as u16;
+            let qr_width = qr_lines
+                .first()
+                .map_or(0, |line| line.width() as u16);
+
+            let vertical_padding =
+                (inner_area.height.saturating_sub(qr_height + 4)) / 2;
+            let horizontal_padding =
+                (inner_area.width.saturating_sub(qr_width)) / 2;
+
+            let mut content = vec![];
+
+            // Add vertical padding
+            for _ in 0..vertical_padding {
+                content.push(Line::from(""));
+            }
+
+            // Add QR code lines with horizontal centering
+            for qr_line in qr_lines {
+                let padding = " ".repeat(horizontal_padding as usize);
+                content.push(Line::from(vec![
+                    Span::raw(padding),
+                    qr_line.spans[0].clone(),
+                ]));
+            }
+
+            // Add ticket/confirmation text below QR code
+            content.push(Line::from(""));
+            content.push(Line::from(vec![Span::styled(
+                format!("Ticket: {}", bubble.get_ticket()),
+                Style::default().fg(Color::Cyan).bold(),
+            )]));
+            content.push(Line::from(vec![Span::styled(
+                format!("Confirmation: {}", bubble.get_confirmation()),
+                Style::default().fg(Color::Yellow).bold(),
+            )]));
+
+            let qr_widget = Paragraph::new(content)
+                .block(qr_block)
+                .alignment(Alignment::Center);
+
+            f.render_widget(qr_widget, area);
+        } else {
+            self.draw_qr_waiting(f, area, qr_block);
+        }
+    }
+
+    fn draw_qr_error(
+        &self,
+        f: &mut Frame,
+        area: ratatui::prelude::Rect,
+        block: Block,
+    ) {
+        let error_content = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("❌ ", Style::default().fg(Color::Red)),
+                Span::styled(
+                    "Failed to generate QR code",
+                    Style::default().fg(Color::Red).bold(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Please check connection details",
+                Style::default().fg(Color::Gray),
+            )]),
+        ];
+
+        let error_widget = Paragraph::new(error_content)
+            .block(block)
+            .alignment(Alignment::Center);
+
+        f.render_widget(error_widget, area);
+    }
+
+    fn draw_qr_waiting(
+        &self,
+        f: &mut Frame,
+        area: ratatui::prelude::Rect,
+        block: Block,
+    ) {
+        let waiting_content = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("⏳ ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "Preparing connection...",
+                    Style::default().fg(Color::Yellow).bold(),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "QR code will appear when ready",
+                Style::default().fg(Color::Gray),
+            )]),
+        ];
+
+        let waiting_widget = Paragraph::new(waiting_content)
+            .block(block)
+            .alignment(Alignment::Center);
+
+        f.render_widget(waiting_widget, area);
+    }
+
     fn draw_footer(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
         let progress_pct = self.get_progress_pct();
 
@@ -639,5 +807,10 @@ impl SendFilesProgressApp {
             .alignment(Alignment::Center);
 
         f.render_widget(footer, area);
+    }
+
+    fn reset(&self) {
+        *self.operation_start_time.write().unwrap() = None;
+        *self.files.write().unwrap() = Vec::new();
     }
 }

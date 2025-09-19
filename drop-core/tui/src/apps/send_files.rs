@@ -740,7 +740,7 @@ impl SendFilesApp {
             if let Some(bubble) = bubble {
                 (
                     format!(
-                        "Transfer Code: {} {}",
+                        "Ticket: {} • Confirmation: {}",
                         bubble.get_ticket(),
                         bubble.get_confirmation()
                     ),

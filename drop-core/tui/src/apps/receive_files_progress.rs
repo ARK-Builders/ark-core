@@ -104,6 +104,7 @@ impl App for ReceiveFilesProgressApp {
                     KeyCode::Char('c') | KeyCode::Char('C') => {
                         self.b.get_receive_files_manager().cancel();
                         self.b.get_navigation().go_back();
+                        self.reset();
                     }
                     _ => return None,
                 }
@@ -751,5 +752,10 @@ impl ReceiveFilesProgressApp {
                 }
             }
         }
+    }
+
+    fn reset(&self) {
+        *self.operation_start_time.write().unwrap() = None;
+        *self.files.write().unwrap() = HashMap::new();
     }
 }
