@@ -195,10 +195,8 @@ fn print_qr_to_console(data: &str) -> Result<()> {
     let code = QrCode::new(data)?;
     let image = code
         .render::<char>()
-        .dark_color('■')
-        .light_color(' ')
-        .module_dimensions(1, 1)
         .quiet_zone(false)
+        .module_dimensions(2, 1)
         .build();
 
     println!("QR Code for Transfer:");
@@ -856,11 +854,9 @@ pub async fn run_receive_files(
 
     if save_out {
         let mut config = AppConfig::load()?;
-        config
-            .set_out_dir(out_dir.clone())
-            .with_context(
-                || "Failed to save default output receive directory",
-            )?;
+        config.set_out_dir(out_dir.clone()).with_context(
+            || "Failed to save default output receive directory",
+        )?;
         println!(
             "💾 Saved '{}' as default output receive directory",
             out_dir.display()

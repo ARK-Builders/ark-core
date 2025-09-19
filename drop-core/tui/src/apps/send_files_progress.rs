@@ -624,8 +624,6 @@ impl SendFilesProgressApp {
                 }
             };
 
-            // Calculate QR code display area (center the QR code)
-            let inner_area = qr_block.inner(area);
             let qr_matrix = qr_code
                 .render::<char>()
                 .quiet_zone(false)
@@ -645,45 +643,7 @@ impl SendFilesProgressApp {
                 })
                 .collect();
 
-            // Center the QR code vertically and horizontally
-            let qr_height = qr_lines.len() as u16;
-            let qr_width = qr_lines
-                .first()
-                .map_or(0, |line| line.width() as u16);
-
-            let vertical_padding =
-                (inner_area.height.saturating_sub(qr_height + 4)) / 2;
-            let horizontal_padding =
-                (inner_area.width.saturating_sub(qr_width)) / 2;
-
-            let mut content = vec![];
-
-            // Add vertical padding
-            for _ in 0..vertical_padding {
-                content.push(Line::from(""));
-            }
-
-            // Add QR code lines with horizontal centering
-            for qr_line in qr_lines {
-                let padding = " ".repeat(horizontal_padding as usize);
-                content.push(Line::from(vec![
-                    Span::raw(padding),
-                    qr_line.spans[0].clone(),
-                ]));
-            }
-
-            // Add ticket/confirmation text below QR code
-            content.push(Line::from(""));
-            content.push(Line::from(vec![Span::styled(
-                format!("Ticket: {}", bubble.get_ticket()),
-                Style::default().fg(Color::Cyan).bold(),
-            )]));
-            content.push(Line::from(vec![Span::styled(
-                format!("Confirmation: {}", bubble.get_confirmation()),
-                Style::default().fg(Color::Yellow).bold(),
-            )]));
-
-            let qr_widget = Paragraph::new(content)
+            let qr_widget = Paragraph::new(qr_lines)
                 .block(qr_block)
                 .alignment(Alignment::Center);
 
