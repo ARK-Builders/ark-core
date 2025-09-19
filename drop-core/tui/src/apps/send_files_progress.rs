@@ -600,7 +600,7 @@ impl SendFilesProgressApp {
         {
             (
                 format!(
-                    "Transfer Code: {} {} • Press ESC to cancel",
+                    "Ticket: {} • Confirmation: {}",
                     bubble.get_ticket(),
                     bubble.get_confirmation()
                 ),
