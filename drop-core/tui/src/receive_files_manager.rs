@@ -34,9 +34,9 @@ impl AppReceiveFilesManager for MainAppReceiveFilesManager {
                         bub.subscribe(sub);
                     }
 
-                    curr_bubble.write().unwrap().replace(bub);
+                    let _ = bub.start();
 
-                    bub.start()
+                    curr_bubble.write().unwrap().replace(bub);
                 }
                 Err(_) => todo!(),
             }
