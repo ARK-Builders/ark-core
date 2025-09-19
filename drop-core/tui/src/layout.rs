@@ -350,24 +350,16 @@ impl LayoutApp {
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
             ])),
-            Page::SendFilesProgress => {
-                // TODO: info | set dynamic messages according to the transfer
-                // real-time progress/state
-                Some(create_helper_footer(vec![
-                    HelperFooterControl::new("ESC", "Back"),
-                    HelperFooterControl::new("CTRL-C", "Cancel"),
-                    HelperFooterControl::new("CTRL-Q", "Quit"),
-                ]))
-            }
-            Page::ReceiveFilesProgress => {
-                // TODO: info | set dynamic messages according to the transfer
-                // real-time progress/state
-                Some(create_helper_footer(vec![
-                    HelperFooterControl::new("ESC", "Back"),
-                    HelperFooterControl::new("CTRL-C", "Cancel"),
-                    HelperFooterControl::new("CTRL-Q", "Quit"),
-                ]))
-            }
+            Page::SendFilesProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-C", "Cancel"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
+            Page::ReceiveFilesProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-C", "Cancel"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
             Page::FileBrowser => None,
         };
 
