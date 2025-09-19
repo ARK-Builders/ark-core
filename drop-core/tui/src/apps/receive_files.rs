@@ -1,6 +1,6 @@
 use crate::{
-    App, AppBackend, AppFileBrowserSaveEvent, AppFileBrowserSubscriber,
-    BrowserMode, ControlCapture, OpenFileBrowserRequest, Page, SortMode,
+    App, AppBackend, BrowserMode, ControlCapture, OpenFileBrowserRequest, Page,
+    SortMode,
 };
 use arkdropx_receiver::{ReceiveFilesRequest, ReceiverProfile};
 use ratatui::{
@@ -46,7 +46,6 @@ pub struct ReceiveFilesApp {
     // Input fields
     ticket_in: RwLock<String>,
     confirmation_in: RwLock<String>,
-    out_dir_in: RwLock<String>,
 
     // Text input state
     is_editing_field: Arc<AtomicBool>,
@@ -91,29 +90,6 @@ impl App for ReceiveFilesApp {
     }
 }
 
-impl AppFileBrowserSubscriber for ReceiveFilesApp {
-    fn on_cancel(&self) {
-        self.b
-            .get_navigation()
-            .replace_with(Page::ReceiveFiles);
-    }
-
-    fn on_save(&self, ev: AppFileBrowserSaveEvent) {
-        self.b
-            .get_navigation()
-            .replace_with(Page::ReceiveFiles);
-
-        if let Some(selected_field) = ev.selected_files.first() {
-            *self.out_dir_in.write().unwrap() =
-                selected_field.to_string_lossy().to_string();
-            self.set_status_message(&format!(
-                "Output directory set: {}",
-                selected_field.display()
-            ));
-        }
-    }
-}
-
 impl ReceiveFilesApp {
     pub fn new(b: Arc<dyn AppBackend>) -> Self {
         let mut menu = ListState::default();
@@ -128,7 +104,6 @@ impl ReceiveFilesApp {
 
             ticket_in: RwLock::new(String::new()),
             confirmation_in: RwLock::new(String::new()),
-            out_dir_in: RwLock::new(String::new()),
 
             // Text input state
             is_editing_field: Arc::new(AtomicBool::new(false)),
@@ -298,7 +273,6 @@ impl ReceiveFilesApp {
         let current_value = match field_idx {
             0 => self.ticket_in.read().unwrap().clone(),
             1 => self.confirmation_in.read().unwrap().clone(),
-            2 => self.out_dir_in.read().unwrap().clone(),
             _ => String::new(),
         };
 
@@ -313,7 +287,6 @@ impl ReceiveFilesApp {
         let field_name = match field_idx {
             0 => "ticket",
             1 => "confirmation code",
-            2 => "output directory",
             _ => "field",
         };
 
@@ -346,14 +319,6 @@ impl ReceiveFilesApp {
                     self.set_status_message("Confirmation code cleared");
                 } else {
                     self.set_status_message("Confirmation code updated");
-                }
-            }
-            2 => {
-                *self.out_dir_in.write().unwrap() = trimmed_text.to_string();
-                if trimmed_text.is_empty() {
-                    self.set_status_message("Output directory cleared");
-                } else {
-                    self.set_status_message("Output directory updated");
                 }
             }
             _ => {}
@@ -636,7 +601,6 @@ impl ReceiveFilesApp {
     fn clear_all_fields(&self) {
         *self.ticket_in.write().unwrap() = String::new();
         *self.confirmation_in.write().unwrap() = String::new();
-        *self.out_dir_in.write().unwrap() = String::new();
         self.set_status_message("All fields cleared");
     }
 
@@ -701,14 +665,9 @@ impl ReceiveFilesApp {
         self.confirmation_in.read().unwrap().clone()
     }
 
-    fn get_out_dir_in(&self) -> String {
-        self.out_dir_in.read().unwrap().clone()
-    }
-
     fn can_receive(&self) -> bool {
         !self.get_ticket_in().is_empty()
             && !self.get_confirmation_in().is_empty()
-            && !self.get_out_dir_in().is_empty()
     }
 
     fn draw_ongoing_transfer_view(&self, f: &mut Frame, area: Rect) {
@@ -760,7 +719,6 @@ impl ReceiveFilesApp {
         self.draw_title(f, left_blocks[0]);
         self.draw_ticket_field(f, left_blocks[1]);
         self.draw_confirmation_field(f, left_blocks[2]);
-        self.draw_output_field(f, left_blocks[3]);
         self.draw_instructions(f, left_blocks[4]);
         self.draw_receive_button(f, right_blocks[0]);
     }
@@ -1138,101 +1096,6 @@ impl ReceiveFilesApp {
         f.render_widget(confirmation_field, area);
     }
 
-    fn draw_output_field(&self, f: &mut Frame<'_>, area: Rect) {
-        let is_focused = self.get_selected_field() == 2;
-        let is_editing = self.is_editing_field()
-            && self
-                .current_editing_field
-                .load(std::sync::atomic::Ordering::Relaxed)
-                == 2;
-        let out_dir_in = self.get_out_dir_in();
-
-        let output_style = if is_focused || is_editing {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::Gray)
-        };
-
-        let display_text = if is_editing {
-            let buffer = self.field_input_buffer.read().unwrap().clone();
-            let cursor_pos = self
-                .field_cursor_position
-                .load(std::sync::atomic::Ordering::Relaxed);
-
-            if buffer.is_empty() {
-                "│ (typing...)".to_string()
-            } else {
-                let mut display = buffer.clone();
-                if cursor_pos <= display.len() {
-                    display.insert(cursor_pos, '│');
-                }
-                display
-            }
-        } else if out_dir_in.is_empty() {
-            "/path/to/save/directory".to_string()
-        } else {
-            out_dir_in.clone()
-        };
-
-        let output_content = vec![
-            Line::from(vec![
-                Span::styled("📂 ", Style::default().fg(Color::Magenta)),
-                Span::styled(
-                    "Save Location:",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(
-                    if is_focused || is_editing {
-                        "▶ "
-                    } else {
-                        "  "
-                    },
-                    if is_focused || is_editing {
-                        Style::default().fg(Color::Yellow)
-                    } else {
-                        Style::default()
-                    },
-                ),
-                Span::styled(
-                    display_text,
-                    if is_editing {
-                        Style::default().fg(Color::White)
-                    } else if out_dir_in.is_empty() {
-                        Style::default().fg(Color::DarkGray).italic()
-                    } else {
-                        Style::default().fg(Color::White)
-                    },
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Enter", Style::default().fg(Color::Cyan).bold()),
-                Span::styled(" edit • ", Style::default().fg(Color::Gray)),
-                Span::styled(
-                    "Ctrl+O",
-                    Style::default().fg(Color::Green).bold(),
-                ),
-                Span::styled(" browse", Style::default().fg(Color::Gray)),
-            ]),
-        ];
-
-        let output_block = Block::default()
-            .borders(Borders::ALL)
-            .border_set(border::ROUNDED)
-            .border_style(output_style)
-            .title(" Output Directory ")
-            .title_style(Style::default().fg(Color::White).bold());
-
-        let output_field = Paragraph::new(output_content)
-            .block(output_block)
-            .alignment(Alignment::Left);
-
-        f.render_widget(output_field, area);
-    }
-
     fn draw_instructions(&self, f: &mut Frame<'_>, area: Rect) {
         let is_editing = self.is_editing_field();
         let can_receive = self.can_receive();
@@ -1390,7 +1253,7 @@ impl ReceiveFilesApp {
 
     fn draw_receive_button(&self, f: &mut Frame<'_>, area: Rect) {
         let is_focused = self.get_selected_field() == 3;
-        let out_dir_in = self.get_out_dir_in();
+        let out_dir_in = self.b.get_config().get_out_dir();
         let can_receive = self.can_receive();
 
         let receive_button_style = if is_focused && can_receive {
@@ -1440,16 +1303,8 @@ impl ReceiveFilesApp {
                 Style::default().fg(Color::Gray),
             )]),
             Line::from(vec![Span::styled(
-                if out_dir_in.is_empty() {
-                    "No directory selected"
-                } else {
-                    &out_dir_in
-                },
-                if out_dir_in.is_empty() {
-                    Style::default().fg(Color::DarkGray).italic()
-                } else {
-                    Style::default().fg(Color::Cyan).italic()
-                },
+                out_dir_in.to_string_lossy().to_string(),
+                Style::default().fg(Color::Cyan).italic(),
             )]),
         ];
 

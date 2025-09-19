@@ -172,7 +172,6 @@ pub fn run_tui() -> Result<()> {
 
     layout.set_file_browser(file_browser.clone());
     layout.file_browser_subscribe(Page::SendFiles, send_files.clone());
-    layout.file_browser_subscribe(Page::ReceiveFiles, receive_files.clone());
     layout.file_browser_subscribe(Page::Config, config.clone());
 
     backend.set_navigation(layout.clone());
