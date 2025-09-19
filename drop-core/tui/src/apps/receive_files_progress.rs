@@ -1,11 +1,13 @@
 use std::{
     collections::HashMap,
+    fs,
+    io::Write,
     sync::{Arc, RwLock, atomic::AtomicU32},
     time::Instant,
 };
 
 use crate::{App, AppBackend, ControlCapture};
-use arkdropx_receiver::ReceiveFilesSubscriber;
+use arkdropx_receiver::{ReceiveFilesConnectingEvent, ReceiveFilesSubscriber};
 use crossterm::event::KeyModifiers;
 use ratatui::{
     Frame,
@@ -21,16 +23,16 @@ use uuid::Uuid;
 #[derive(Clone)]
 struct ProgressFile {
     name: String,
-    total_size: u64,
+    len: u64,
     received: u64,
-    status: FileTransferStatus,
-    transfer_speed: f64, // bytes per second
     last_update: Instant,
-    last_chunk_size: u64, // Size of last received chunk for speed calculation
+    bytes_per_second: f64,
+    status: FileTransferStatus,
 }
 
 #[derive(Clone, PartialEq)]
 enum FileTransferStatus {
+    Waiting,
     Receiving,
     Completed,
 }
@@ -38,6 +40,7 @@ enum FileTransferStatus {
 impl FileTransferStatus {
     fn icon(&self) -> &'static str {
         match self {
+            FileTransferStatus::Waiting => "⏳",
             FileTransferStatus::Receiving => "📥",
             FileTransferStatus::Completed => "✅",
         }
@@ -45,6 +48,7 @@ impl FileTransferStatus {
 
     fn color(&self) -> Color {
         match self {
+            FileTransferStatus::Waiting => Color::Gray,
             FileTransferStatus::Receiving => Color::Blue,
             FileTransferStatus::Completed => Color::Green,
         }
@@ -64,16 +68,9 @@ pub struct ReceiveFilesProgressApp {
     log_text: RwLock<String>,
 
     files: RwLock<HashMap<String, ProgressFile>>,
-    file_metadata: RwLock<HashMap<String, FileMetadata>>, /* Store file metadata separately */
     total_transfer_speed: RwLock<f64>,
     sender_name: RwLock<String>,
     total_chunks_received: RwLock<u64>,
-}
-
-#[derive(Clone)]
-struct FileMetadata {
-    name: String,
-    total_size: u64,
 }
 
 impl App for ReceiveFilesProgressApp {
@@ -139,119 +136,24 @@ impl ReceiveFilesSubscriber for ReceiveFilesProgressApp {
         &self,
         event: arkdropx_receiver::ReceiveFilesReceivingEvent,
     ) {
-        let id = event.id;
-        let chunk_data = event.data;
-        let chunk_size = chunk_data.len() as u64;
-        let now = Instant::now();
-
-        // Increment total chunks received counter
-        *self.total_chunks_received.write().unwrap() += 1;
-
-        // Update or create file progress
-        let mut files = self.files.write().unwrap();
-        let file_metadata = self.file_metadata.read().unwrap();
-
-        // Get file metadata if available
-        let (file_name, total_size) =
-            if let Some(metadata) = file_metadata.get(&id) {
-                (metadata.name.clone(), metadata.total_size)
-            } else {
-                // If no metadata available, use ID as name and estimate size
-                (format!("File_{}", &id[..8]), 0)
-            };
-
-        if let Some(file) = files.get_mut(&id) {
-            // Update existing file progress
-            let time_diff = now.duration_since(file.last_update).as_secs_f64();
-
-            // Calculate transfer speed based on chunk size and time difference
-            if time_diff > 0.0 {
-                // Use exponential moving average for smoother speed calculation
-                let instant_speed = chunk_size as f64 / time_diff;
-                file.transfer_speed = if file.transfer_speed == 0.0 {
-                    instant_speed
-                } else {
-                    // 70% old speed + 30% new speed for smoothing
-                    file.transfer_speed * 0.7 + instant_speed * 0.3
-                };
-            }
-
-            file.received += chunk_size;
-            file.last_update = now;
-            file.last_chunk_size = chunk_size;
-
-            // Update status based on progress
-            if total_size > 0 && file.received >= total_size {
-                file.status = FileTransferStatus::Completed;
-            } else {
-                file.status = FileTransferStatus::Receiving;
-            }
-        } else {
-            // Create new file entry
-            files.insert(
-                id.clone(),
-                ProgressFile {
-                    name: file_name,
-                    total_size,
-                    received: chunk_size,
-                    status: if total_size > 0 && chunk_size >= total_size {
-                        FileTransferStatus::Completed
-                    } else {
-                        FileTransferStatus::Receiving
-                    },
-                    transfer_speed: 0.0, // Will be calculated on next chunk
-                    last_update: now,
-                    last_chunk_size: chunk_size,
-                },
-            );
-        }
-
-        // Calculate total transfer speed from all active files
-        let total_speed: f64 = files
-            .values()
-            .filter(|f| f.status == FileTransferStatus::Receiving)
-            .map(|f| f.transfer_speed)
-            .sum();
-        *self.total_transfer_speed.write().unwrap() = total_speed;
-
-        // Calculate overall progress
-        let total_files_size: u64 = files.values().map(|f| f.total_size).sum();
-        let total_received_size: u64 = files.values().map(|f| f.received).sum();
-
-        let progress_pct = if total_files_size > 0 {
-            ((total_received_size as f64 / total_files_size as f64) * 100.0)
-                .min(100.0)
-        } else {
-            // If no total size info, show progress based on active transfers
-            let completed_files = files
-                .values()
-                .filter(|f| f.status == FileTransferStatus::Completed)
-                .count();
-            let total_files = files.len();
-
-            if total_files > 0 {
-                (completed_files as f64 / total_files as f64) * 100.0
-            } else {
-                0.0
-            }
-        };
-
-        self.progress_pct
-            .store(progress_pct as u32, std::sync::atomic::Ordering::Relaxed);
+        self.increment_chunk_count();
+        self.update_file(&event);
+        self.refresh_total_transfer_speed();
+        self.refresh_overall_progress();
+        self.write_file_to_fs(&event);
     }
 
-    fn notify_connecting(
-        &self,
-        event: arkdropx_receiver::ReceiveFilesConnectingEvent,
-    ) {
-        let sender = event.sender;
-        let name = sender.name;
-
+    fn notify_connecting(&self, event: ReceiveFilesConnectingEvent) {
+        self.set_connecting_files(&event);
         self.set_now_as_operation_start_time();
         self.set_title_text("📥 Receiving Files");
-        self.set_block_title_text(format!("Connected to {}", name).as_str());
-        self.set_status_text(format!("Receiving Files from {}", name).as_str());
-        self.set_sender_name(name.as_str());
+        self.set_block_title_text(
+            format!("Connected to {}", &event.sender.name).as_str(),
+        );
+        self.set_status_text(
+            format!("Receiving Files from {}", &event.sender.name).as_str(),
+        );
+        self.set_sender_name(&event.sender.name.as_str());
     }
 }
 
@@ -270,11 +172,30 @@ impl ReceiveFilesProgressApp {
             log_text: RwLock::new("Initializing transfer...".to_string()),
 
             files: RwLock::new(HashMap::new()),
-            file_metadata: RwLock::new(HashMap::new()),
             total_transfer_speed: RwLock::new(0.0),
             sender_name: RwLock::new("Unknown".to_string()),
             total_chunks_received: RwLock::new(0),
         }
+    }
+
+    fn set_connecting_files(&self, ev: &ReceiveFilesConnectingEvent) {
+        let mut files = self.files.write().unwrap();
+
+        files.clear();
+
+        ev.files.iter().for_each(|f| {
+            files.insert(
+                f.id.clone(),
+                ProgressFile {
+                    name: f.name.clone(),
+                    status: FileTransferStatus::Waiting,
+                    len: f.len,
+                    received: 0,
+                    last_update: Instant::now(),
+                    bytes_per_second: 0.0,
+                },
+            );
+        });
     }
 
     fn set_title_text(&self, text: &str) {
@@ -428,7 +349,7 @@ impl ReceiveFilesProgressApp {
     ) {
         let progress_pct = self.get_progress_pct();
         let files = self.get_files();
-        let total_size: u64 = files.iter().map(|f| f.total_size).sum();
+        let total_size: u64 = files.iter().map(|f| f.len).sum();
         let total_received: u64 = files.iter().map(|f| f.received).sum();
         let transfer_speed = self.get_total_transfer_speed();
 
@@ -577,19 +498,8 @@ impl ReceiveFilesProgressApp {
         let file_items: Vec<ListItem> = files
             .iter()
             .map(|file| {
-                let progress_pct = if file.total_size > 0 {
-                    (file.received as f64 / file.total_size as f64) * 100.0
-                } else {
-                    // For files without known total size, show as receiving if
-                    // chunks are coming
-                    if file.status == FileTransferStatus::Receiving {
-                        50.0 // Show partial progress
-                    } else if file.status == FileTransferStatus::Completed {
-                        100.0
-                    } else {
-                        0.0
-                    }
-                };
+                let progress_pct =
+                    (file.received as f64 / file.len as f64) * 100.0;
 
                 // Create a mini progress bar using Unicode blocks
                 let progress_width = 20.0;
@@ -630,13 +540,13 @@ impl ReceiveFilesProgressApp {
                     ),
                 ]);
 
-                let detail_text = if file.total_size > 0 {
+                let detail_text = if file.len > 0 {
                     format!(
                         "{} / {} • {}",
                         self.format_bytes(file.received),
-                        self.format_bytes(file.total_size),
+                        self.format_bytes(file.len),
                         if file.status == FileTransferStatus::Receiving {
-                            self.format_speed(file.transfer_speed)
+                            self.format_speed(file.bytes_per_second)
                         } else {
                             match file.status {
                                 FileTransferStatus::Completed => {
@@ -651,7 +561,7 @@ impl ReceiveFilesProgressApp {
                         "{} received • {}",
                         self.format_bytes(file.received),
                         if file.status == FileTransferStatus::Receiving {
-                            self.format_speed(file.transfer_speed)
+                            self.format_speed(file.bytes_per_second)
                         } else {
                             match file.status {
                                 FileTransferStatus::Completed => {
@@ -743,5 +653,102 @@ impl ReceiveFilesProgressApp {
             .alignment(Alignment::Center);
 
         f.render_widget(footer, area);
+    }
+
+    fn increment_chunk_count(&self) {
+        *self.total_chunks_received.write().unwrap() += 1;
+    }
+
+    fn update_file(
+        &self,
+        event: &arkdropx_receiver::ReceiveFilesReceivingEvent,
+    ) {
+        let now = Instant::now();
+        let mut files = self.files.write().unwrap();
+
+        if let Some(file) = files.get_mut(&event.id) {
+            let chunk_size = event.data.len() as u64;
+
+            // Update existing file progress
+            let time_diff = now.duration_since(file.last_update).as_secs_f64();
+
+            // Calculate transfer speed based on chunk size and time difference
+            if time_diff > 0.0 {
+                // Use exponential moving average for smoother speed calculation
+                let instant_speed = chunk_size as f64 / time_diff;
+                file.bytes_per_second = if file.bytes_per_second == 0.0 {
+                    instant_speed
+                } else {
+                    // 70% old speed + 30% new speed for smoothing
+                    file.bytes_per_second * 0.7 + instant_speed * 0.3
+                };
+            }
+
+            file.received += chunk_size;
+            file.last_update = now;
+
+            // Update status based on progress
+            if file.received >= file.len {
+                file.status = FileTransferStatus::Completed;
+            } else {
+                file.status = FileTransferStatus::Receiving;
+            }
+        }
+    }
+
+    fn refresh_total_transfer_speed(&self) {
+        let total_speed: f64 = self
+            .files
+            .read()
+            .unwrap()
+            .values()
+            .filter(|f| f.status == FileTransferStatus::Receiving)
+            .map(|f| f.bytes_per_second)
+            .sum();
+        *self.total_transfer_speed.write().unwrap() = total_speed;
+    }
+
+    fn refresh_overall_progress(&self) {
+        let files = self.files.read().unwrap();
+        let total_files_size: u64 = files.values().map(|f| f.len).sum();
+        let total_received_size: u64 = files.values().map(|f| f.received).sum();
+
+        let progress_pct =
+            ((total_received_size as f64 / total_files_size as f64) * 100.0)
+                .min(100.0);
+
+        self.progress_pct
+            .store(progress_pct as u32, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn write_file_to_fs(
+        &self,
+        event: &arkdropx_receiver::ReceiveFilesReceivingEvent,
+    ) {
+        let config = self.b.get_config();
+        let files = self.files.read().unwrap();
+
+        if let Some(file) = files.get(&event.id) {
+            let file_path = config.get_out_dir().join(&file.name);
+
+            match fs::File::options()
+                .create(true)
+                .append(true)
+                .open(&file_path)
+            {
+                Ok(mut file_stream) => {
+                    if let Err(e) = file_stream.write_all(&event.data) {
+                        // TODO: error handling
+                        return;
+                    }
+                    if let Err(e) = file_stream.flush() {
+                        // TODO: error handling
+                    }
+                }
+                Err(e) => {
+                    // TODO: error handling
+                }
+            }
+        }
     }
 }

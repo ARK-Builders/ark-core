@@ -328,7 +328,8 @@ impl LayoutApp {
             Page::SendFiles => Some(create_helper_footer(vec![
                 HelperFooterControl::new("↑/↓", "Navigate"),
                 HelperFooterControl::new("Enter/Space", "Interact"),
-                HelperFooterControl::new("CTRL-Enter", "Send"),
+                HelperFooterControl::new("CTRL-S", "Send"),
+                HelperFooterControl::new("CTRL-C", "Clear"),
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
             ])),
