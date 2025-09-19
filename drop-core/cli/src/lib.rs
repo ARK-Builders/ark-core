@@ -198,7 +198,7 @@ fn print_qr_to_console(bubble: &SendFilesBubble) -> Result<()> {
         .module_dimensions(2, 1)
         .build();
 
-    println!("QR Code for Transfer:\n");
+    println!("\nQR Code for Transfer:");
     println!("{}", image);
     println!("🎫 Ticket: {ticket}");
     println!("🔒 Confirmation: {confirmation}\n");
