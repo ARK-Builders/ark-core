@@ -106,6 +106,7 @@ impl App for ReceiveFilesProgressApp {
                 match key.code {
                     KeyCode::Char('c') | KeyCode::Char('C') => {
                         self.b.get_receive_files_manager().cancel();
+                        self.b.get_navigation().go_back();
                     }
                     _ => return None,
                 }

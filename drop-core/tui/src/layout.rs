@@ -62,21 +62,15 @@ impl App for LayoutApp {
     fn handle_control(&self, ev: &Event) -> Option<ControlCapture> {
         let children = self.get_active_children_sort_by_control_index();
 
-        let child_capture = children.iter().find_map(|c| {
-            let capture = c.app.handle_control(ev);
-
-            if capture.is_some() {
-                return Some(capture.unwrap());
-            }
-
-            None
-        });
+        let child_capture = children
+            .iter()
+            .find_map(|c| c.app.handle_control(ev));
 
         if child_capture.is_none() {
-            self.handle_default_control(ev);
+            return self.handle_default_control(ev);
         }
 
-        None
+        child_capture
     }
 }
 
@@ -297,7 +291,7 @@ impl LayoutApp {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    fn handle_default_control(&self, ev: &Event) {
+    fn handle_default_control(&self, ev: &Event) -> Option<ControlCapture> {
         if let Event::Key(key) = ev {
             let has_ctrl = key.modifiers == KeyModifiers::CONTROL;
             let pressed_q = KeyCode::Char('q') == key.code
@@ -306,8 +300,12 @@ impl LayoutApp {
 
             if pressed_finish {
                 self.finish();
+
+                return Some(ControlCapture::new(ev));
             }
         }
+
+        None
     }
 
     fn finish(&self) {
@@ -356,6 +354,7 @@ impl LayoutApp {
                 // real-time progress/state
                 Some(create_helper_footer(vec![
                     HelperFooterControl::new("ESC", "Back"),
+                    HelperFooterControl::new("CTRL-C", "Cancel"),
                     HelperFooterControl::new("CTRL-Q", "Quit"),
                 ]))
             }
@@ -364,6 +363,7 @@ impl LayoutApp {
                 // real-time progress/state
                 Some(create_helper_footer(vec![
                     HelperFooterControl::new("ESC", "Back"),
+                    HelperFooterControl::new("CTRL-C", "Cancel"),
                     HelperFooterControl::new("CTRL-Q", "Quit"),
                 ]))
             }

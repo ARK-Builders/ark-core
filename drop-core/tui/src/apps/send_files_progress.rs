@@ -98,6 +98,7 @@ impl App for SendFilesProgressApp {
                 match key.code {
                     KeyCode::Char('c') | KeyCode::Char('C') => {
                         self.b.get_send_files_manager().cancel();
+                        self.b.get_navigation().go_back();
                     }
                     _ => return None,
                 }
