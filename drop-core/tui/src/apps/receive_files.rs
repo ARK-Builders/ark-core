@@ -56,7 +56,6 @@ pub struct ReceiveFilesApp {
 
     // Status and feedback
     status_message: Arc<RwLock<String>>,
-    is_processing: Arc<AtomicBool>,
 }
 
 impl App for ReceiveFilesApp {
@@ -141,7 +140,6 @@ impl ReceiveFilesApp {
             status_message: Arc::new(RwLock::new(
                 "Enter transfer details to receive files".to_string(),
             )),
-            is_processing: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -264,12 +262,7 @@ impl ReceiveFilesApp {
                         self.activate_current_field();
                     }
                     KeyCode::Esc => {
-                        if self.is_processing() {
-                            self.set_status_message("Operation cancelled");
-                            self.set_processing(false);
-                        } else {
-                            self.b.get_navigation().go_back();
-                        }
+                        self.b.get_navigation().go_back();
                     }
                     _ => return None,
                 }
@@ -660,7 +653,6 @@ impl ReceiveFilesApp {
 
     fn receive_files(&self) {
         if let Some(req) = self.make_receive_files_request() {
-            self.set_processing(true);
             self.set_status_message("Starting file reception...");
             self.b
                 .get_receive_files_manager()
@@ -695,16 +687,6 @@ impl ReceiveFilesApp {
 
     fn set_status_message(&self, message: &str) {
         *self.status_message.write().unwrap() = message.to_string();
-    }
-
-    fn set_processing(&self, processing: bool) {
-        self.is_processing
-            .store(processing, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn is_processing(&self) -> bool {
-        self.is_processing
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn get_status_message(&self) -> String {
