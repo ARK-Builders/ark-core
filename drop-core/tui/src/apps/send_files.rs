@@ -631,11 +631,13 @@ impl SendFilesApp {
             return None;
         }
 
+        let profile = self.b.get_config();
+
         Some(SendFilesRequest {
             files,
             profile: SenderProfile {
-                name: "tui-sender".to_string(),
-                avatar_b64: None,
+                name: profile.get_avatar_name(),
+                avatar_b64: profile.get_avatar_base64(),
             },
             config: SenderConfig::default(),
         })
