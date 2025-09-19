@@ -73,9 +73,9 @@ use arkdropx_receiver::{
     receive_files,
 };
 use arkdropx_sender::{
-    SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
-    SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
-    SenderProfile, send_files,
+    SendFilesBubble, SendFilesConnectingEvent, SendFilesRequest,
+    SendFilesSendingEvent, SendFilesSubscriber, SenderConfig, SenderFile,
+    SenderFileData, SenderProfile, send_files,
 };
 use clap::{Arg, ArgMatches, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -141,14 +141,8 @@ impl FileSender {
         let subscriber = FileSendSubscriber::new(verbose);
         bubble.subscribe(Arc::new(subscriber));
 
-        let ticket = bubble.get_ticket();
-        let confirmation = bubble.get_confirmation();
-        let qr_data = format!(
-            "drop://receive?ticket={ticket}&confirmation={confirmation}"
-        );
-
         println!("📦 Ready to send files!");
-        print_qr_to_console(&qr_data)?;
+        print_qr_to_console(&bubble)?;
         println!("⏳ Waiting for receiver... (Press Ctrl+C to cancel)");
 
         tokio::select! {
@@ -191,17 +185,23 @@ impl FileSender {
     }
 }
 
-fn print_qr_to_console(data: &str) -> Result<()> {
-    let code = QrCode::new(data)?;
+fn print_qr_to_console(bubble: &SendFilesBubble) -> Result<()> {
+    let ticket = bubble.get_ticket();
+    let confirmation = bubble.get_confirmation();
+    let data =
+        format!("drop://receive?ticket={ticket}&confirmation={confirmation}");
+
+    let code = QrCode::new(&data)?;
     let image = code
         .render::<char>()
         .quiet_zone(false)
         .module_dimensions(2, 1)
         .build();
 
-    println!("QR Code for Transfer:");
+    println!("QR Code for Transfer:\n");
     println!("{}", image);
-    println!("Transfer Code: {}", data);
+    println!("🎫 Ticket: {ticket}");
+    println!("🔒 Confirmation: {confirmation}\n");
 
     Ok(())
 }
