@@ -17,6 +17,7 @@ use ratatui::{
 };
 
 use std::{
+    ops::Deref,
     path::PathBuf,
     sync::{
         Arc, RwLock,
@@ -55,14 +56,13 @@ pub struct SendFilesApp {
 
     // Status and feedback
     status_message: Arc<RwLock<String>>,
-    is_processing: Arc<AtomicBool>,
 }
 
 impl App for SendFilesApp {
     fn draw(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let transfer_state = self.transfer_state.read().unwrap().clone();
+        self.refresh_transfer_state();
 
-        match transfer_state {
+        match self.get_transfer_state() {
             TransferState::OngoingTransfer => {
                 self.draw_ongoing_transfer_view(f, area);
             }
@@ -140,8 +140,11 @@ impl SendFilesApp {
             status_message: Arc::new(RwLock::new(
                 "Add files to send to another device".to_string(),
             )),
-            is_processing: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    fn get_transfer_state(&self) -> TransferState {
+        return self.transfer_state.read().unwrap().clone();
     }
 
     fn handle_ongoing_transfer_controls(
@@ -184,18 +187,10 @@ impl SendFilesApp {
                     self.cancel_editing_path();
                 }
                 KeyCode::Backspace => {
-                    if has_ctrl {
-                        self.delete_word_backward()
-                    } else {
-                        self.handle_backspace();
-                    }
+                    self.handle_backspace();
                 }
                 KeyCode::Delete => {
-                    if has_ctrl {
-                        self.delete_word_forward();
-                    } else {
-                        self.handle_delete();
-                    }
+                    self.handle_delete();
                 }
                 KeyCode::Left => {
                     if has_ctrl {
@@ -261,12 +256,7 @@ impl SendFilesApp {
                         self.remove_last_file();
                     }
                     KeyCode::Esc => {
-                        if self.is_processing() {
-                            self.set_status_message("Operation cancelled");
-                            self.set_processing(false);
-                        } else {
-                            self.b.get_navigation().go_back();
-                        }
+                        self.b.get_navigation().go_back();
                     }
                     _ => return None,
                 }
@@ -565,7 +555,7 @@ impl SendFilesApp {
         }
     }
 
-    fn update_transfer_state(&self) {
+    fn refresh_transfer_state(&self) {
         let has_ongoing_transfer = self
             .b
             .get_send_files_manager()
@@ -578,7 +568,11 @@ impl SendFilesApp {
             TransferState::NoTransfer
         };
 
-        *self.transfer_state.write().unwrap() = new_state;
+        let mut transfer_state = self.transfer_state.write().unwrap();
+
+        if transfer_state.deref() != &new_state {
+            *transfer_state = new_state;
+        }
     }
 
     fn add_file(&self, file: PathBuf) {
@@ -620,7 +614,6 @@ impl SendFilesApp {
 
     fn send_files(&self) {
         if let Some(req) = self.make_send_files_request() {
-            self.set_processing(true);
             self.set_status_message("Starting file transfer...");
             self.b.get_send_files_manager().send_files(req);
             self.b
@@ -676,16 +669,6 @@ impl SendFilesApp {
 
     fn set_status_message(&self, message: &str) {
         *self.status_message.write().unwrap() = message.to_string();
-    }
-
-    fn set_processing(&self, processing: bool) {
-        self.is_processing
-            .store(processing, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn is_processing(&self) -> bool {
-        self.is_processing
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn get_status_message(&self) -> String {
@@ -945,9 +928,6 @@ impl SendFilesApp {
     }
 
     fn draw_title(&self, f: &mut Frame<'_>, area: Rect) {
-        // Check for ongoing transfer on each draw
-        self.update_transfer_state();
-
         let title_content = vec![Line::from(vec![
             Span::styled("📤 ", Style::default().fg(Color::Green).bold()),
             Span::styled(

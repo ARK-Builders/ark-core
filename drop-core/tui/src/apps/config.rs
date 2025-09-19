@@ -320,18 +320,10 @@ impl ConfigApp {
                     self.cancel_editing_name();
                 }
                 KeyCode::Backspace => {
-                    if has_ctrl {
-                        self.delete_word_backward()
-                    } else {
-                        self.handle_backspace();
-                    }
+                    self.handle_backspace();
                 }
                 KeyCode::Delete => {
-                    if has_ctrl {
-                        self.delete_word_forward();
-                    } else {
-                        self.handle_delete();
-                    }
+                    self.handle_delete();
                 }
                 KeyCode::Left => {
                     if has_ctrl {

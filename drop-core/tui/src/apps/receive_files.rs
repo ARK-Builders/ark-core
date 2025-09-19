@@ -13,9 +13,12 @@ use ratatui::{
     widgets::{Block, Borders, ListState, Paragraph},
 };
 
-use std::sync::{
-    Arc, RwLock,
-    atomic::{AtomicBool, AtomicUsize},
+use std::{
+    ops::Deref,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicUsize},
+    },
 };
 
 #[derive(Clone, PartialEq)]
@@ -58,9 +61,9 @@ pub struct ReceiveFilesApp {
 
 impl App for ReceiveFilesApp {
     fn draw(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let transfer_state = self.transfer_state.read().unwrap().clone();
+        self.refresh_transfer_state();
 
-        match transfer_state {
+        match self.get_transfer_state() {
             TransferState::OngoingTransfer => {
                 self.draw_ongoing_transfer_view(f, area);
             }
@@ -142,6 +145,10 @@ impl ReceiveFilesApp {
         }
     }
 
+    fn get_transfer_state(&self) -> TransferState {
+        return self.transfer_state.read().unwrap().clone();
+    }
+
     fn handle_ongoing_transfer_controls(
         &self,
         ev: &Event,
@@ -172,7 +179,7 @@ impl ReceiveFilesApp {
 
             match key.code {
                 KeyCode::Enter => {
-                    if field_idx == 2 {
+                    if has_ctrl && field_idx == 2 {
                         self.cancel_editing_field();
                         self.open_dir_browser();
                     } else {
@@ -183,18 +190,10 @@ impl ReceiveFilesApp {
                     self.cancel_editing_field();
                 }
                 KeyCode::Backspace => {
-                    if has_ctrl {
-                        self.delete_word_backward()
-                    } else {
-                        self.handle_backspace();
-                    }
+                    self.handle_backspace();
                 }
                 KeyCode::Delete => {
-                    if has_ctrl {
-                        self.delete_word_forward();
-                    } else {
-                        self.handle_delete();
-                    }
+                    self.handle_delete();
                 }
                 KeyCode::Left => {
                     if has_ctrl {
@@ -621,7 +620,7 @@ impl ReceiveFilesApp {
         }
     }
 
-    fn update_transfer_state(&self) {
+    fn refresh_transfer_state(&self) {
         let has_ongoing_transfer = self
             .b
             .get_receive_files_manager()
@@ -634,7 +633,11 @@ impl ReceiveFilesApp {
             TransferState::NoTransfer
         };
 
-        *self.transfer_state.write().unwrap() = new_state;
+        let mut transfer_state = self.transfer_state.write().unwrap();
+
+        if transfer_state.deref() != &new_state {
+            *transfer_state = new_state;
+        }
     }
 
     fn clear_all_fields(&self) {
@@ -960,9 +963,6 @@ impl ReceiveFilesApp {
     }
 
     fn draw_title(&self, f: &mut Frame<'_>, area: Rect) {
-        // Check for ongoing transfer on each draw
-        self.update_transfer_state();
-
         let title_content = vec![Line::from(vec![
             Span::styled("📥 ", Style::default().fg(Color::Blue).bold()),
             Span::styled(
