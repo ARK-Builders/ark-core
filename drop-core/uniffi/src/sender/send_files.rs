@@ -3,25 +3,40 @@ use std::sync::Arc;
 use super::{SenderConfig, SenderFile, SenderFileDataAdapter, SenderProfile};
 use crate::DropError;
 
+/// Request to start a send session.
+///
+/// Provide sender metadata, the list of files, and optional tuning parameters.
+/// If `config` is None, defaults from the lower-level transport will be used.
 pub struct SendFilesRequest {
     pub profile: SenderProfile,
     pub files: Vec<SenderFile>,
     pub config: Option<SenderConfig>,
 }
 
+/// Handle to a running send session ("bubble").
+///
+/// This type wraps the underlying `dropx_sender::SendFilesBubble` and owns a
+/// dedicated Tokio runtime to drive async tasks. It exposes status accessors,
+/// subscription hooks, and cancellation.
 pub struct SendFilesBubble {
     inner: dropx_sender::SendFilesBubble,
     _runtime: tokio::runtime::Runtime,
 }
 impl SendFilesBubble {
+    /// Returns the ticket that the receiver must provide to connect.
     pub fn get_ticket(&self) -> String {
         return self.inner.get_ticket();
     }
 
+    /// Returns the short confirmation code required during pairing.
     pub fn get_confirmation(&self) -> u8 {
         return self.inner.get_confirmation();
     }
 
+    /// Cancel the session asynchronously.
+    ///
+    /// Errors are mapped into `DropError`. After cancellation, `is_finished()`
+    /// will eventually become true.
     pub async fn cancel(&self) -> Result<(), DropError> {
         return self
             .inner
@@ -30,24 +45,33 @@ impl SendFilesBubble {
             .map_err(|e| DropError::TODO(e.to_string()));
     }
 
+    /// True once all files are sent or the session has been canceled.
     pub fn is_finished(&self) -> bool {
         return self.inner.is_finished();
     }
 
+    /// True once a receiver has connected and handshake has completed.
     pub fn is_connected(&self) -> bool {
         return self.inner.is_connected();
     }
 
+    /// ISO-8601 timestamp for when the session was created.
     pub fn get_created_at(&self) -> String {
         return self.inner.get_created_at();
     }
 
+    /// Register an observer for logs and progress/connect events.
+    ///
+    /// The subscriber is adapted and passed to the underlying transport.
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
         return self.inner.subscribe(Arc::new(adapted_subscriber));
     }
 
+    /// Unregister a previously subscribed observer.
+    ///
+    /// Identity is determined by the subscriber's `get_id()`.
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
@@ -57,29 +81,40 @@ impl SendFilesBubble {
     }
 }
 
+/// Observer for send-side logs and events.
+///
+/// Implementers should provide a stable `get_id()` used for
+/// subscribe/unsubscribe identity. `log()` calls are only emitted in debug
+/// builds.
 pub trait SendFilesSubscriber: Send + Sync {
     fn get_id(&self) -> String;
     fn log(&self, message: String);
+    /// Periodic progress update while sending a file.
     fn notify_sending(&self, event: SendFilesSendingEvent);
+    /// Emitted when attempting to connect to the receiver.
     fn notify_connecting(&self, event: SendFilesConnectingEvent);
 }
 
+/// Progress information for a single file being sent.
 pub struct SendFilesSendingEvent {
     pub name: String,
     pub sent: u64,
     pub remaining: u64,
 }
 
+/// Connection information about the receiver.
 pub struct SendFilesConnectingEvent {
     pub receiver: SendFilesProfile,
 }
 
+/// Receiver identity preview available to the sender.
 pub struct SendFilesProfile {
     pub id: String,
     pub name: String,
     pub avatar_b64: Option<String>,
 }
 
+/// Adapter bridging this crate's subscriber trait to the lower-level one.
 struct SendFilesSubscriberAdapter {
     inner: Arc<dyn SendFilesSubscriber>,
 }
@@ -114,6 +149,11 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     }
 }
 
+/// Start a new send session and return its bubble.
+///
+/// Internally creates a dedicated Tokio runtime to drive async operations.
+/// The caller owns the returned bubble and should retain it for the session
+/// lifetime. Errors are mapped into `DropError`.
 pub async fn send_files(
     request: SendFilesRequest,
 ) -> Result<Arc<SendFilesBubble>, DropError> {
@@ -131,6 +171,11 @@ pub async fn send_files(
     }));
 }
 
+/// Convert the high-level request into the dropx_sender request format.
+///
+/// - Copies metadata and files.
+/// - Wraps `SenderFileData` with an adapter implementing the dropx trait.
+/// - Supplies default config if none was provided.
 fn create_adapted_request(
     request: SendFilesRequest,
 ) -> dropx_sender::SendFilesRequest {
@@ -151,7 +196,6 @@ fn create_adapted_request(
         .collect();
     let config = match request.config {
         Some(config) => dropx_sender::SenderConfig {
-            buffer_size: config.buffer_size,
             chunk_size: config.chunk_size,
             parallel_streams: config.parallel_streams,
         },
