@@ -7,7 +7,9 @@
 //! - Events and subscription mechanisms (see `receive_files` module) to observe
 //!   connection and per-chunk progress.
 //!
-//! Typical flow:
+//! Two modes of operation:
+//!
+//! ## Standard Mode (Receiver connects to Sender)
 //! 1. Build a `ReceiveFilesRequest` with a sender ticket, confirmation code,
 //!    your `ReceiverProfile`, and an optional `ReceiverConfig`.
 //! 2. Call `receive_files::receive_files` to obtain a `ReceiveFilesBubble`.
@@ -15,7 +17,16 @@
 //! 4. Start the transfer with `ReceiveFilesBubble::start()`.
 //! 5. Optionally cancel with `ReceiveFilesBubble::cancel()`.
 //! 6. When finished, the session is closed and resources cleaned up.
+//!
+//! ## QR-to-Receive Mode (Sender connects to Receiver)
+//! 1. Build a `ReadyToReceiveRequest` with your `ReceiverProfile` and config.
+//! 2. Call `ready_to_receive::ready_to_receive` to obtain a
+//!    `ReadyToReceiveBubble`.
+//! 3. Display the ticket and confirmation code (e.g., as QR code) for sender.
+//! 4. Subscribe to events to observe when sender connects and file reception.
+//! 5. Optionally cancel with `ReadyToReceiveBubble::cancel()`.
 
+pub mod ready_to_receive;
 mod receive_files;
 
 use std::{

@@ -3,7 +3,7 @@ use clap::{Arg, ArgMatches, Command};
 use drop_cli::{
     Profile, clear_default_receive_dir, get_default_receive_dir,
     run_receive_files, run_send_files, set_default_receive_dir,
-    suggested_default_receive_dir,
+    suggested_default_receive_dir, run_ready_to_receive, run_send_files_to,
 };
 use std::path::PathBuf;
 
@@ -51,6 +51,21 @@ fn build_cli() -> Command {
                         .value_parser(clap::value_parser!(PathBuf))
                 )
                 .arg(
+                    Arg::new("to-ticket")
+                        .long("to")
+                        .help("Send to a waiting receiver's ticket")
+                        .value_name("TICKET")
+                        .requires("to-confirmation")
+                )
+                .arg(
+                    Arg::new("to-confirmation")
+                        .long("confirmation")
+                        .short('c')
+                        .help("Receiver's confirmation code (use with --to)")
+                        .value_name("CODE")
+                        .requires("to-ticket")
+                )
+                .arg(
                     Arg::new("name")
                         .long("name")
                         .short('n')
@@ -75,15 +90,22 @@ fn build_cli() -> Command {
             Command::new("receive")
                 .about("Receive files from another user")
                 .arg(
+                    Arg::new("wait")
+                        .long("wait")
+                        .help("Generate QR code and wait for sender to connect")
+                        .action(clap::ArgAction::SetTrue)
+                        .conflicts_with_all(["ticket", "confirmation"])
+                )
+                .arg(
                     Arg::new("ticket")
-                        .help("Transfer ticket")
-                        .required(true)
+                        .help("Transfer ticket (from sender)")
+                        .required_unless_present("wait")
                         .index(1)
                 )
                 .arg(
                     Arg::new("confirmation")
-                        .help("Confirmation code")
-                        .required(true)
+                        .help("Confirmation code (from sender)")
+                        .required_unless_present("wait")
                         .index(2)
                 )
                 .arg(
@@ -153,9 +175,43 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
         .collect();
 
     let verbose: bool = matches.get_flag("verbose");
-
     let profile = build_profile(matches)?;
 
+    // Check if this is a send-to operation (--to flag)
+    if let Some(ticket) = matches.get_one::<String>("to-ticket") {
+        let confirmation = matches.get_one::<String>("to-confirmation").unwrap();
+        
+        println!("📤 Preparing to send {} file(s) to waiting receiver...", files.len());
+        for file in &files {
+            println!("   📄 {}", file.display());
+        }
+
+        if let Some(name) = profile.name.strip_prefix("drop-cli-") {
+            println!("👤 Sender name: {}", name);
+        } else {
+            println!("👤 Sender name: {}", profile.name);
+        }
+
+        if profile.avatar_b64.is_some() {
+            println!("🖼️  Avatar: Set");
+        }
+
+        let file_strings: Vec<String> = files
+            .into_iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+
+        return run_send_files_to(
+            file_strings,
+            ticket.clone(),
+            confirmation.clone(),
+            profile,
+            verbose,
+        )
+        .await;
+    }
+
+    // Regular send operation
     println!("📤 Preparing to send {} file(s)...", files.len());
     for file in &files {
         println!("   📄 {}", file.display());
@@ -180,15 +236,46 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
 }
 
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
+    let verbose = matches.get_flag("verbose");
+    let save_dir = matches.get_flag("save-dir");
+    let profile = build_profile(matches)?;
+
+    // Check if this is a ready-to-receive operation (--wait flag)
+    if matches.get_flag("wait") {
+        let output_dir = matches
+            .get_one::<PathBuf>("output")
+            .map(|p| p.to_string_lossy().to_string());
+
+        println!("📥 Preparing to receive files...");
+
+        if let Some(ref dir) = output_dir {
+            println!("📁 Output directory: {}", dir);
+        } else if let Some(default_dir) = get_default_receive_dir()? {
+            println!("📁 Using default directory: {}", default_dir);
+        } else {
+            let fallback = suggested_default_receive_dir();
+            println!("📁 Using default directory: {}", fallback.display());
+        }
+
+        if let Some(name) = profile.name.strip_prefix("drop-cli-") {
+            println!("👤 Receiver name: {}", name);
+        } else {
+            println!("👤 Receiver name: {}", profile.name);
+        }
+
+        if profile.avatar_b64.is_some() {
+            println!("🖼️  Avatar: Set");
+        }
+
+        return run_ready_to_receive(output_dir, profile, verbose, save_dir).await;
+    }
+
+    // Regular receive operation
     let output_dir = matches
         .get_one::<PathBuf>("output")
         .map(|p| p.to_string_lossy().to_string());
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
-    let verbose = matches.get_flag("verbose");
-    let save_dir = matches.get_flag("save-dir");
-
-    let profile = build_profile(matches)?;
 
     println!("📥 Preparing to receive files...");
 
