@@ -25,12 +25,12 @@ pub struct SendFilesBubble {
 impl SendFilesBubble {
     /// Returns the ticket that the receiver must provide to connect.
     pub fn get_ticket(&self) -> String {
-        return self.inner.get_ticket();
+        self.inner.get_ticket()
     }
 
     /// Returns the short confirmation code required during pairing.
     pub fn get_confirmation(&self) -> u8 {
-        return self.inner.get_confirmation();
+        self.inner.get_confirmation()
     }
 
     /// Cancel the session asynchronously.
@@ -47,17 +47,17 @@ impl SendFilesBubble {
 
     /// True once all files are sent or the session has been canceled.
     pub fn is_finished(&self) -> bool {
-        return self.inner.is_finished();
+        self.inner.is_finished()
     }
 
     /// True once a receiver has connected and handshake has completed.
     pub fn is_connected(&self) -> bool {
-        return self.inner.is_connected();
+        self.inner.is_connected()
     }
 
     /// ISO-8601 timestamp for when the session was created.
     pub fn get_created_at(&self) -> String {
-        return self.inner.get_created_at();
+        self.inner.get_created_at()
     }
 
     /// Register an observer for logs and progress/connect events.
@@ -66,7 +66,7 @@ impl SendFilesBubble {
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
-        return self.inner.subscribe(Arc::new(adapted_subscriber));
+        self.inner.subscribe(Arc::new(adapted_subscriber))
     }
 
     /// Unregister a previously subscribed observer.
@@ -75,9 +75,9 @@ impl SendFilesBubble {
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
-        return self
+        self
             .inner
-            .unsubscribe(Arc::new(adapted_subscriber));
+            .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
 
@@ -120,7 +120,7 @@ struct SendFilesSubscriberAdapter {
 }
 impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     fn get_id(&self) -> String {
-        return self.inner.get_id();
+        self.inner.get_id()
     }
 
     fn log(&self, message: String) {
@@ -129,15 +129,15 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     }
 
     fn notify_sending(&self, event: dropx_sender::SendFilesSendingEvent) {
-        return self.inner.notify_sending(SendFilesSendingEvent {
+        self.inner.notify_sending(SendFilesSendingEvent {
             name: event.name,
             sent: event.sent,
             remaining: event.remaining,
-        });
+        })
     }
 
     fn notify_connecting(&self, event: dropx_sender::SendFilesConnectingEvent) {
-        return self
+        self
             .inner
             .notify_connecting(SendFilesConnectingEvent {
                 receiver: SendFilesProfile {
@@ -145,7 +145,7 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
                     name: event.receiver.name,
                     avatar_b64: event.receiver.avatar_b64,
                 },
-            });
+            })
     }
 }
 
@@ -162,13 +162,13 @@ pub async fn send_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return dropx_sender::send_files(adapted_request).await;
+            dropx_sender::send_files(adapted_request).await
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
-    return Ok(Arc::new(SendFilesBubble {
+    Ok(Arc::new(SendFilesBubble {
         inner: bubble,
         _runtime: runtime,
-    }));
+    }))
 }
 
 /// Convert the high-level request into the dropx_sender request format.
@@ -188,10 +188,10 @@ fn create_adapted_request(
         .into_iter()
         .map(|f| {
             let data = SenderFileDataAdapter { inner: f.data };
-            return dropx_sender::SenderFile {
+            dropx_sender::SenderFile {
                 name: f.name,
                 data: Arc::new(data),
-            };
+            }
         })
         .collect();
     let config = match request.config {
@@ -201,9 +201,9 @@ fn create_adapted_request(
         },
         None => dropx_sender::SenderConfig::default(),
     };
-    return dropx_sender::SendFilesRequest {
+    dropx_sender::SendFilesRequest {
         profile,
         files,
         config,
-    };
+    }
 }
