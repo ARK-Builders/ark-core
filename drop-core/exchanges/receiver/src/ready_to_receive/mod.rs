@@ -236,7 +236,7 @@ impl ReadyToReceiveBubble {
 /// Example:
 /// ```rust no_run
 /// use std::sync::Arc;
-/// use arkdropx_receiver::{
+/// use dropx_receiver::{
 ///     ready_to_receive::*, ReceiverProfile,
 /// };
 ///

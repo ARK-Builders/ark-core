@@ -149,17 +149,9 @@ fn display_session_info(ticket: &str, confirmation: u8, role: &str) {
 ///   $HOME/.config/drop-cli/config.toml
 /// - macOS: $HOME/Library/Application Support/drop-cli/config.toml
 /// - Windows: %APPDATA%\drop-cli\config.toml
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct CliConfig {
     default_receive_dir: Option<String>,
-}
-
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            default_receive_dir: None,
-        }
-    }
 }
 
 impl CliConfig {
@@ -653,9 +645,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
     }
 
     fn notify_connecting(&self, event: SendFilesConnectingEvent) {
-        let _ = self
-            .mp
-            .println("Connected to receiver:".to_string());
+        let _ = self.mp.println("Connected to receiver:");
         let _ = self
             .mp
             .println(format!("   Name: {}", event.receiver.name));
@@ -814,9 +804,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     }
 
     fn notify_connecting(&self, event: ReceiveFilesConnectingEvent) {
-        let _ = self
-            .mp
-            .println("Connected to sender:".to_string());
+        let _ = self.mp.println("Connected to sender:");
         let _ = self
             .mp
             .println(format!("   Name: {}", event.sender.name));
@@ -1435,9 +1423,7 @@ impl ReadyToReceiveSubscriber for ReadyToReceiveSubscriberImpl {
     }
 
     fn notify_connecting(&self, event: ReadyToReceiveConnectingEvent) {
-        let _ = self
-            .mp
-            .println("Connected to sender:".to_string());
+        let _ = self.mp.println("Connected to sender:");
         let _ = self
             .mp
             .println(format!("   Name: {}", event.sender.name));
@@ -1557,9 +1543,7 @@ impl SendFilesToSubscriber for SendFilesToSubscriberImpl {
     }
 
     fn notify_connecting(&self, event: SendFilesToConnectingEvent) {
-        let _ = self
-            .mp
-            .println("Connected to receiver:".to_string());
+        let _ = self.mp.println("Connected to receiver:");
         let _ = self
             .mp
             .println(format!("   Name: {}", event.receiver.name));

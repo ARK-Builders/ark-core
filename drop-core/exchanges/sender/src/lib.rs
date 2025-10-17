@@ -74,6 +74,11 @@ pub trait SenderFileData: Send + Sync {
     /// Total length in bytes.
     fn len(&self) -> u64;
 
+    /// Returns true if the data has zero length.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Read a single byte if available.
     fn read(&self) -> Option<u8>;
 
@@ -90,15 +95,15 @@ struct SenderFileDataAdapter {
 }
 impl Data for SenderFileDataAdapter {
     fn len(&self) -> u64 {
-        return self.inner.len();
+        self.inner.len()
     }
 
     fn read(&self) -> Option<u8> {
-        return self.inner.read();
+        self.inner.read()
     }
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
-        return self.inner.read_chunk(size);
+        self.inner.read_chunk(size)
     }
 }
 

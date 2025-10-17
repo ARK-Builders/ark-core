@@ -35,6 +35,11 @@ pub trait Data: Send + Sync {
     /// the known total length at creation time.
     fn len(&self) -> u64;
 
+    /// Returns true if the data has zero length.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Reads the next byte from the current position.
     ///
     /// Returns:

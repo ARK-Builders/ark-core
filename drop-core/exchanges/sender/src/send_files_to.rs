@@ -351,13 +351,13 @@ impl Carrier {
             let subscribers = self.subscribers.clone();
 
             join_set.spawn(async move {
-                return Self::send_single_file(
+                Self::send_single_file(
                     &file,
                     chunk_size,
                     connection,
                     subscribers,
                 )
-                .await;
+                .await
             });
 
             if join_set.len() >= parallel_streams as usize
@@ -397,7 +397,7 @@ impl Carrier {
 
         let mut uni = connection.open_uni().await?;
 
-        Self::notify_progress(&file, sent, remaining, subscribers.clone());
+        Self::notify_progress(file, sent, remaining, subscribers.clone());
 
         loop {
             chunk_buffer.clear();
@@ -421,7 +421,7 @@ impl Carrier {
             sent += data_len;
             remaining = remaining.saturating_sub(data_len);
 
-            Self::notify_progress(&file, sent, remaining, subscribers.clone());
+            Self::notify_progress(file, sent, remaining, subscribers.clone());
         }
 
         uni.finish()?;
@@ -493,7 +493,7 @@ impl Carrier {
 /// Example:
 /// ```rust no_run
 /// use std::sync::Arc;
-/// use arkdropx_sender::{
+/// use dropx_sender::{
 ///     send_files_to::*, SenderProfile, SenderConfig, SenderFile,
 /// };
 ///

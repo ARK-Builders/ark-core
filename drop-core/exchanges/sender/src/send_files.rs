@@ -115,7 +115,7 @@ impl SendFilesBubble {
                 "is_finished: Transfer is finished, ensuring router shutdown"
                     .to_string(),
             );
-            let _ = self.router.shutdown();
+            std::mem::drop(self.router.shutdown());
         }
 
         is_finished

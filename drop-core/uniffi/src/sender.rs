@@ -32,6 +32,12 @@ pub struct SenderFile {
 pub trait SenderFileData: Send + Sync {
     /// Total number of bytes available.
     fn len(&self) -> u64;
+
+    /// Returns true if the data has zero length.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Read the next byte, or None at EOF.
     fn read(&self) -> Option<u8>;
     /// Read up to `size` bytes; fewer may be returned at EOF.
