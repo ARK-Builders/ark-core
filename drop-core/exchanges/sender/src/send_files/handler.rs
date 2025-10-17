@@ -111,14 +111,14 @@ impl SendFilesHandler {
         files: Vec<File>,
         config: SenderConfig,
     ) -> Self {
-        return Self {
+        Self {
             is_consumed: AtomicBool::new(false),
             is_finished: Arc::new(AtomicBool::new(false)),
             profile,
             files: files.clone(),
             config,
             subscribers: Arc::new(RwLock::new(HashMap::new())),
-        };
+        }
     }
 
     /// Returns true if a connection has already been accepted.
@@ -255,11 +255,11 @@ impl ProtocolHandler for SendFilesHandler {
 
         async move {
             let mut carrier = carrier;
-            if let Err(_) = carrier.greet().await {
+            if carrier.greet().await.is_err() {
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
-            if let Err(_) = carrier.send_files().await {
+            if carrier.send_files().await.is_err() {
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
@@ -401,23 +401,22 @@ impl Carrier {
             let subscribers = self.subscribers.clone();
 
             join_set.spawn(async move {
-                return Self::send_single_file(
+                Self::send_single_file(
                     &file,
                     chunk_size,
                     connection,
                     subscribers,
                 )
-                .await;
+                .await
             });
 
             // Limit concurrent streams to negotiated number
-            if join_set.len() >= parallel_streams as usize {
-                if let Some(result) = join_set.join_next().await {
-                    if let Err(err) = result? {
-                        self.log(format!("send_files: Stream failed: {}", err));
-                        return Err(err);
-                    }
-                }
+            if join_set.len() >= parallel_streams as usize
+                && let Some(result) = join_set.join_next().await
+                && let Err(err) = result?
+            {
+                self.log(format!("send_files: Stream failed: {}", err));
+                return Err(err);
             }
         }
 
@@ -430,7 +429,7 @@ impl Carrier {
         }
 
         self.log("send_files: All files transferred successfully".to_string());
-        return Ok(());
+        Ok(())
     }
 
     /// Streams a single file in JSON-framed chunks:
@@ -442,7 +441,7 @@ impl Carrier {
         connection: Connection,
         subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
     ) -> Result<()> {
-        let total_len = file.data.len() as u64;
+        let total_len = file.data.len();
         let mut sent = 0u64;
         let mut remaining = total_len;
         let mut chunk_buffer =
@@ -486,7 +485,7 @@ impl Carrier {
         uni.finish()?;
         uni.stopped().await?;
 
-        return Ok(());
+        Ok(())
     }
 
     /// Marks the handler as finished and closes the connection with a code and

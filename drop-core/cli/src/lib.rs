@@ -67,16 +67,77 @@ use base64::{Engine, engine::general_purpose};
 use dropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
     ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
+    ready_to_receive::{
+        ReadyToReceiveBubble, ReadyToReceiveConfig,
+        ReadyToReceiveConnectingEvent, ReadyToReceiveFile,
+        ReadyToReceiveReceivingEvent, ReadyToReceiveRequest,
+        ReadyToReceiveSubscriber, ready_to_receive,
+    },
     receive_files,
 };
 use dropx_sender::{
     SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
     SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
     SenderProfile, send_files,
+    send_files_to::{
+        SendFilesToBubble, SendFilesToConnectingEvent, SendFilesToRequest,
+        SendFilesToSendingEvent, SendFilesToSubscriber, send_files_to,
+    },
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+// ============================================================================
+// QR Code Generation and Display
+// ============================================================================
+
+/// Generate ASCII QR code for ticket and confirmation
+fn generate_qr_code(ticket: &str, confirmation: u8) -> Result<String> {
+    use qrcode::{QrCode, render::unicode};
+
+    let data = format!("{}:{}", ticket, confirmation);
+    let code =
+        QrCode::new(data.as_bytes()).context("Failed to generate QR code")?;
+
+    let image = code
+        .render::<unicode::Dense1x2>()
+        .dark_color(unicode::Dense1x2::Light)
+        .light_color(unicode::Dense1x2::Dark)
+        .build();
+
+    Ok(image)
+}
+
+/// Display QR code and credentials for a transfer session
+fn display_session_info(ticket: &str, confirmation: u8, role: &str) {
+    println!("\n========================================");
+    println!("ARK Drop - {}", role);
+    println!("========================================\n");
+
+    // Generate QR code
+    match generate_qr_code(ticket, confirmation) {
+        Ok(qr) => {
+            println!("{}\n", qr);
+        }
+        Err(e) => {
+            eprintln!("Warning: Could not generate QR code: {}", e);
+            println!("Ticket and confirmation are shown below:\n");
+        }
+    }
+
+    println!("Ticket: {}", ticket);
+    println!("Confirmation: {}", confirmation);
+    println!("\n========================================");
+    println!("Waiting for connection...");
+    println!("Press 'c' + Enter to enter peer's credentials instead");
+    println!("Press Ctrl+C to cancel");
+    println!("========================================\n");
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
 
 /// Configuration for the CLI application.
 ///
@@ -88,17 +149,9 @@ use uuid::Uuid;
 ///   $HOME/.config/drop-cli/config.toml
 /// - macOS: $HOME/Library/Application Support/drop-cli/config.toml
 /// - Windows: %APPDATA%\drop-cli\config.toml
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct CliConfig {
     default_receive_dir: Option<String>,
-}
-
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            default_receive_dir: None,
-        }
-    }
 }
 
 impl CliConfig {
@@ -328,23 +381,25 @@ impl FileSender {
         let subscriber = FileSendSubscriber::new(verbose);
         bubble.subscribe(Arc::new(subscriber));
 
-        println!("📦 Ready to send files!");
-        println!("🎫 Ticket: \"{}\"", bubble.get_ticket());
-        println!("🔑 Confirmation: \"{}\"", bubble.get_confirmation());
-        println!("⏳ Waiting for receiver... (Press Ctrl+C to cancel)");
+        // Display QR code and session info
+        display_session_info(
+            &bubble.get_ticket(),
+            bubble.get_confirmation(),
+            "Sender",
+        );
 
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                println!("🚫 Cancelling file transfer...");
+                println!("Cancelling file transfer...");
                 let _ = bubble.cancel().await;
-                println!("✅ Transfer cancelled");
+                println!("Transfer cancelled");
+                std::process::exit(0);
             }
             _ = wait_for_send_completion(&bubble) => {
-                println!("✅ All files sent successfully!");
+                println!("All files sent successfully!");
+                std::process::exit(0);
             }
         }
-
-        Ok(())
     }
 
     /// Converts file paths into SenderFile entries backed by FileData.
@@ -456,27 +511,27 @@ impl FileReceiver {
             FileReceiveSubscriber::new(receiving_path.clone(), verbose);
         bubble.subscribe(Arc::new(subscriber));
 
-        println!("📥 Starting file transfer...");
-        println!("📁 Files will be saved to: {}", receiving_path.display());
+        println!("Starting file transfer...");
+        println!("Files will be saved to: {}", receiving_path.display());
 
         bubble
             .start()
             .context("Failed to start file receiving")?;
 
-        println!("⏳ Receiving files... (Press Ctrl+C to cancel)");
+        println!("Receiving files... (Press Ctrl+C to cancel)");
 
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                println!("🚫 Cancelling file transfer...");
+                println!("Cancelling file transfer...");
                 bubble.cancel();
-                println!("✅ Transfer cancelled");
+                println!("Transfer cancelled");
+                std::process::exit(0);
             }
             _ = wait_for_receive_completion(&bubble) => {
-                println!("✅ All files received successfully!");
+                println!("All files received successfully!");
+                std::process::exit(0);
             }
         }
-
-        Ok(())
     }
 
     /// Returns a ReceiverProfile derived from this FileReceiver's Profile.
@@ -529,7 +584,7 @@ impl FileSendSubscriber {
         ProgressStyle::with_template(
             "{spinner:.green} {msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
         )
-        .unwrap()
+        .unwrap_or_else(|_| ProgressStyle::default_bar())
         .progress_chars("#>-")
     }
 }
@@ -541,13 +596,19 @@ impl SendFilesSubscriber for FileSendSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            let _ = self.mp.println(format!("🔍 {}", message));
+            let _ = self.mp.println(format!("[DEBUG] {}", message));
         }
     }
 
     fn notify_sending(&self, event: SendFilesSendingEvent) {
         // Get or create a progress bar for this file (by name)
-        let mut bars = self.bars.write().unwrap();
+        let mut bars = match self.bars.write() {
+            Ok(bars) => bars,
+            Err(e) => {
+                eprintln!("Error accessing progress bars: {}", e);
+                return;
+            }
+        };
         let pb = bars.entry(event.name.clone()).or_insert_with(|| {
             let total = event.sent + event.remaining;
             let pb = if total > 0 {
@@ -560,7 +621,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
                     ProgressStyle::with_template(
                         "{spinner:.green} {msg} {bytes} ({bytes_per_sec})",
                     )
-                    .unwrap(),
+                    .unwrap_or_else(|_| ProgressStyle::default_spinner()),
                 );
                 pb.enable_steady_tick(std::time::Duration::from_millis(100));
                 pb
@@ -577,22 +638,20 @@ impl SendFilesSubscriber for FileSendSubscriber {
         }
 
         if event.remaining == 0 {
-            pb.finish_with_message(format!("✅ Sent {}", event.name));
+            pb.finish_with_message(format!("[DONE] Sent {}", event.name));
         } else {
             pb.set_message(format!("Sending {}", event.name));
         }
     }
 
     fn notify_connecting(&self, event: SendFilesConnectingEvent) {
+        let _ = self.mp.println("Connected to receiver:");
         let _ = self
             .mp
-            .println("🔗 Connected to receiver:".to_string());
+            .println(format!("   Name: {}", event.receiver.name));
         let _ = self
             .mp
-            .println(format!("   📛 Name: {}", event.receiver.name));
-        let _ = self
-            .mp
-            .println(format!("   🆔 ID: {}", event.receiver.id));
+            .println(format!("   ID: {}", event.receiver.id));
     }
 }
 
@@ -604,6 +663,8 @@ struct FileReceiveSubscriber {
     mp: MultiProgress,
     bars: RwLock<HashMap<String, ProgressBar>>,
     received: RwLock<HashMap<String, u64>>,
+    // Cache file handles to avoid reopening on every chunk
+    file_handles: RwLock<HashMap<String, fs::File>>,
 }
 impl FileReceiveSubscriber {
     fn new(receiving_path: PathBuf, verbose: bool) -> Self {
@@ -615,6 +676,7 @@ impl FileReceiveSubscriber {
             mp: MultiProgress::new(),
             bars: RwLock::new(HashMap::new()),
             received: RwLock::new(HashMap::new()),
+            file_handles: RwLock::new(HashMap::new()),
         }
     }
 
@@ -622,7 +684,7 @@ impl FileReceiveSubscriber {
         ProgressStyle::with_template(
             "{spinner:.green} {msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
         )
-        .unwrap()
+        .unwrap_or_else(|_| ProgressStyle::default_bar())
         .progress_chars("#>-")
     }
 }
@@ -633,7 +695,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            let _ = self.mp.println(format!("🔍 {}", message));
+            let _ = self.mp.println(format!("[DEBUG] {}", message));
         }
     }
 
@@ -642,47 +704,52 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
         let files = match self.files.read() {
             Ok(files) => files,
             Err(e) => {
-                eprintln!("❌ Error accessing files list: {}", e);
+                eprintln!("[ERROR] Error accessing files list: {}", e);
                 return;
             }
         };
         let file = match files.iter().find(|f| f.id == event.id) {
             Some(file) => file,
             None => {
-                eprintln!("❌ File not found with ID: {}", event.id);
+                eprintln!("[ERROR] File not found with ID: {}", event.id);
                 return;
             }
         };
 
         // Create/find progress bar for this file
-        let mut bars = self.bars.write().unwrap();
-        let pb = bars.entry(event.id.clone()).or_insert_with(|| {
-            // Try to use total size if available; fallback to spinner
-            #[allow(unused_mut)]
-            let mut total_opt: Option<u64> = None;
-
-            if let Some(total) = total_opt {
-                let pb = self.mp.add(ProgressBar::new(total));
-                pb.set_style(Self::bar_style());
-                pb.set_message(format!("Receiving {}", file.name));
-                pb
-            } else {
-                let pb = self.mp.add(ProgressBar::new_spinner());
-                pb.set_style(
-                    ProgressStyle::with_template(
-                        "{spinner:.green} {msg} {bytes} ({bytes_per_sec})",
-                    )
-                    .unwrap(),
-                );
-                pb.enable_steady_tick(std::time::Duration::from_millis(100));
-                pb.set_message(format!("Receiving {}", file.name));
-                pb
+        let mut bars = match self.bars.write() {
+            Ok(bars) => bars,
+            Err(e) => {
+                eprintln!("[ERROR] Error accessing progress bars: {}", e);
+                return;
             }
+        };
+        let pb = bars.entry(event.id.clone()).or_insert_with(|| {
+            // Use spinner for receivers (file size not known initially)
+            let pb = self.mp.add(ProgressBar::new_spinner());
+            pb.set_style(
+                ProgressStyle::with_template(
+                    "{spinner:.green} {msg} {bytes} ({bytes_per_sec})",
+                )
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+            );
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            pb.set_message(format!("Receiving {}", file.name));
+            pb
         });
 
         // Update received byte count
         {
-            let mut recvd = self.received.write().unwrap();
+            let mut recvd = match self.received.write() {
+                Ok(recvd) => recvd,
+                Err(e) => {
+                    eprintln!(
+                        "[ERROR] Error accessing received bytes tracker: {}",
+                        e
+                    );
+                    return;
+                }
+            };
             let entry = recvd.entry(event.id.clone()).or_insert(0);
             *entry += event.data.len() as u64;
 
@@ -691,7 +758,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 pb.set_position(*entry);
                 if *entry >= len {
                     pb.finish_with_message(format!(
-                        "✅ Received {}",
+                        "[DONE] Received {}",
                         file.name
                     ));
                 }
@@ -702,43 +769,54 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 
         let file_path = self.receiving_path.join(&file.name);
 
-        match fs::File::options()
-            .create(true)
-            .append(true)
-            .open(&file_path)
-        {
-            Ok(mut file_stream) => {
-                if let Err(e) = file_stream.write_all(&event.data) {
-                    eprintln!("❌ Error writing to file {}: {}", file.name, e);
-                    return;
-                }
-                if let Err(e) = file_stream.flush() {
-                    eprintln!("❌ Error flushing file {}: {}", file.name, e);
-                    return;
-                }
-            }
+        // Get or create cached file handle
+        let mut file_handles = match self.file_handles.write() {
+            Ok(handles) => handles,
             Err(e) => {
-                eprintln!("❌ Error opening file {}: {}", file.name, e);
+                eprintln!("[ERROR] Error accessing file handles: {}", e);
+                return;
             }
+        };
+        let file_handle = file_handles
+            .entry(event.id.clone())
+            .or_insert_with(|| {
+                fs::File::options()
+                    .create(true)
+                    .append(true)
+                    .open(&file_path)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "Failed to open file {}: {}",
+                            file_path.display(),
+                            e
+                        )
+                    })
+            });
+
+        // Write to the cached file handle
+        if let Err(e) = file_handle.write_all(&event.data) {
+            eprintln!("[ERROR] Error writing to file {}: {}", file.name, e);
+            return;
+        }
+        if let Err(e) = file_handle.flush() {
+            eprintln!("[ERROR] Error flushing file {}: {}", file.name, e);
         }
     }
 
     fn notify_connecting(&self, event: ReceiveFilesConnectingEvent) {
+        let _ = self.mp.println("Connected to sender:");
         let _ = self
             .mp
-            .println("🔗 Connected to sender:".to_string());
+            .println(format!("   Name: {}", event.sender.name));
         let _ = self
             .mp
-            .println(format!("   📛 Name: {}", event.sender.name));
+            .println(format!("   ID: {}", event.sender.id));
         let _ = self
             .mp
-            .println(format!("   🆔 ID: {}", event.sender.id));
-        let _ = self
-            .mp
-            .println(format!("   📁 Files to receive: {}", event.files.len()));
+            .println(format!("   Files to receive: {}", event.files.len()));
 
         for f in &event.files {
-            let _ = self.mp.println(format!("     📄 {}", f.name));
+            let _ = self.mp.println(format!("     - {}", f.name));
         }
 
         // Keep the list of files and prepare bars if sizes are known
@@ -746,7 +824,16 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
             Ok(mut files) => {
                 files.extend(event.files.clone());
 
-                let mut bars = self.bars.write().unwrap();
+                let mut bars = match self.bars.write() {
+                    Ok(bars) => bars,
+                    Err(e) => {
+                        eprintln!(
+                            "[ERROR] Error accessing progress bars: {}",
+                            e
+                        );
+                        return;
+                    }
+                };
                 for f in &*files {
                     let pb = self.mp.add(ProgressBar::new(f.len));
                     pb.set_style(Self::bar_style());
@@ -755,7 +842,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 }
             }
             Err(e) => {
-                eprintln!("❌ Error updating files list: {}", e);
+                eprintln!("[ERROR] Error updating files list: {}", e);
             }
         }
     }
@@ -776,6 +863,8 @@ struct FileData {
     is_finished: AtomicBool,
     path: PathBuf,
     reader: RwLock<Option<std::fs::File>>,
+    // Dedicated file handle for positioned chunk reads
+    chunk_reader: std::sync::Mutex<Option<std::fs::File>>,
     size: u64,
     bytes_read: std::sync::atomic::AtomicU64,
 }
@@ -794,6 +883,7 @@ impl FileData {
             is_finished: AtomicBool::new(false),
             path,
             reader: RwLock::new(None),
+            chunk_reader: std::sync::Mutex::new(None),
             size: metadata.len(),
             bytes_read: std::sync::atomic::AtomicU64::new(0),
         })
@@ -818,14 +908,38 @@ impl SenderFileData for FileData {
             return None;
         }
 
-        if self.reader.read().unwrap().is_none() {
+        let is_reader_none = match self.reader.read() {
+            Ok(guard) => guard.is_none(),
+            Err(e) => {
+                eprintln!(
+                    "Error acquiring read lock for file {}: {}",
+                    self.path.display(),
+                    e
+                );
+                self.is_finished
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                return None;
+            }
+        };
+
+        if is_reader_none {
             match std::fs::File::open(&self.path) {
-                Ok(file) => {
-                    *self.reader.write().unwrap() = Some(file);
-                }
+                Ok(file) => match self.reader.write() {
+                    Ok(mut guard) => *guard = Some(file),
+                    Err(e) => {
+                        eprintln!(
+                            "Error acquiring write lock for file {}: {}",
+                            self.path.display(),
+                            e
+                        );
+                        self.is_finished
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        return None;
+                    }
+                },
                 Err(e) => {
                     eprintln!(
-                        "❌ Error opening file {}: {}",
+                        "[ERROR] Error opening file {}: {}",
                         self.path.display(),
                         e
                     );
@@ -837,7 +951,19 @@ impl SenderFileData for FileData {
         }
 
         // Read next byte
-        let mut reader = self.reader.write().unwrap();
+        let mut reader = match self.reader.write() {
+            Ok(guard) => guard,
+            Err(e) => {
+                eprintln!(
+                    "Error acquiring write lock for file {}: {}",
+                    self.path.display(),
+                    e
+                );
+                self.is_finished
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                return None;
+            }
+        };
         if let Some(file) = reader.as_mut() {
             let mut buffer = [0u8; 1];
             match file.read(&mut buffer) {
@@ -853,7 +979,7 @@ impl SenderFileData for FileData {
                 }
                 Err(e) => {
                     eprintln!(
-                        "❌ Error reading from file {}: {}",
+                        "[ERROR] Error reading from file {}: {}",
                         self.path.display(),
                         e
                     );
@@ -898,12 +1024,12 @@ impl SenderFileData for FileData {
         let remaining = self.size - current_position;
         let to_read = std::cmp::min(size, remaining) as usize;
 
-        // Open a new file handle for this read operation
-        let mut file = match std::fs::File::open(&self.path) {
-            Ok(file) => file,
+        // Get or create the cached file handle
+        let mut chunk_reader_guard = match self.chunk_reader.lock() {
+            Ok(guard) => guard,
             Err(e) => {
                 eprintln!(
-                    "❌ Error opening file {}: {}",
+                    "[ERROR] Error acquiring lock for file {}: {}",
                     self.path.display(),
                     e
                 );
@@ -912,10 +1038,32 @@ impl SenderFileData for FileData {
             }
         };
 
+        // Open file handle if not already open
+        if chunk_reader_guard.is_none() {
+            match std::fs::File::open(&self.path) {
+                Ok(file) => {
+                    *chunk_reader_guard = Some(file);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[ERROR] Error opening file {}: {}",
+                        self.path.display(),
+                        e
+                    );
+                    self.is_finished.store(true, Ordering::Release);
+                    return Vec::new();
+                }
+            }
+        }
+
+        let file = chunk_reader_guard
+            .as_mut()
+            .expect("File handle must exist after initialization");
+
         // Seek to the claimed position
         if let Err(e) = file.seek(SeekFrom::Start(current_position)) {
             eprintln!(
-                "❌ Error seeking to position {} in file {}: {}",
+                "[ERROR] Error seeking to position {} in file {}: {}",
                 current_position,
                 self.path.display(),
                 e
@@ -937,7 +1085,7 @@ impl SenderFileData for FileData {
             }
             Err(e) => {
                 eprintln!(
-                    "❌ Error reading chunk from file {}: {}",
+                    "[ERROR] Error reading chunk from file {}: {}",
                     self.path.display(),
                     e
                 );
@@ -1041,7 +1189,7 @@ pub async fn run_receive_files(
                     .with_context(
                         || "Failed to save default receive directory",
                     )?;
-                println!("💾 Saved '{}' as default receive directory", dir);
+                println!("Saved '{}' as default receive directory", dir);
             }
 
             path
@@ -1121,4 +1269,486 @@ pub fn clear_default_receive_dir() -> Result<()> {
     let mut config = CliConfig::load()?;
     config.default_receive_dir = None;
     config.save()
+}
+
+// QR-to-receive helper functions
+
+async fn wait_for_ready_to_receive_completion(bubble: &ReadyToReceiveBubble) {
+    loop {
+        if bubble.is_finished() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+async fn wait_for_send_files_to_completion(bubble: &SendFilesToBubble) {
+    loop {
+        if bubble.is_finished() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+struct ReadyToReceiveSubscriberImpl {
+    id: String,
+    receiving_path: PathBuf,
+    files: RwLock<Vec<ReadyToReceiveFile>>,
+    verbose: bool,
+    mp: MultiProgress,
+    bars: RwLock<HashMap<String, ProgressBar>>,
+    received: RwLock<HashMap<String, u64>>,
+    // Cache file handles to avoid reopening on every chunk
+    file_handles: RwLock<HashMap<String, fs::File>>,
+}
+
+impl ReadyToReceiveSubscriberImpl {
+    fn new(receiving_path: PathBuf, verbose: bool) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            receiving_path,
+            files: RwLock::new(Vec::new()),
+            verbose,
+            mp: MultiProgress::new(),
+            bars: RwLock::new(HashMap::new()),
+            received: RwLock::new(HashMap::new()),
+            file_handles: RwLock::new(HashMap::new()),
+        }
+    }
+
+    fn bar_style() -> ProgressStyle {
+        ProgressStyle::with_template(
+            "{spinner:.green} {msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+        )
+        .unwrap_or_else(|_| ProgressStyle::default_bar())
+        .progress_chars("#>-")
+    }
+}
+
+impl ReadyToReceiveSubscriber for ReadyToReceiveSubscriberImpl {
+    fn get_id(&self) -> String {
+        self.id.clone()
+    }
+
+    fn log(&self, message: String) {
+        if self.verbose {
+            let _ = self.mp.println(format!("[DEBUG] {}", message));
+        }
+    }
+
+    fn notify_receiving(&self, event: ReadyToReceiveReceivingEvent) {
+        let files = match self.files.read() {
+            Ok(files) => files,
+            Err(e) => {
+                eprintln!("[ERROR] Error accessing files list: {}", e);
+                return;
+            }
+        };
+        let file = match files.iter().find(|f| f.id == event.id) {
+            Some(file) => file,
+            None => {
+                eprintln!("[ERROR] File not found with ID: {}", event.id);
+                return;
+            }
+        };
+
+        let mut bars = match self.bars.write() {
+            Ok(bars) => bars,
+            Err(e) => {
+                eprintln!("Error accessing progress bars: {}", e);
+                return;
+            }
+        };
+        let pb = bars.entry(event.id.clone()).or_insert_with(|| {
+            let pb = self.mp.add(ProgressBar::new_spinner());
+            pb.set_style(
+                ProgressStyle::with_template(
+                    "{spinner:.green} {msg} {bytes} ({bytes_per_sec})",
+                )
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+            );
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            pb.set_message(format!("Receiving {}", file.name));
+            pb
+        });
+
+        {
+            let mut recvd = match self.received.write() {
+                Ok(recvd) => recvd,
+                Err(e) => {
+                    eprintln!("Error accessing received bytes tracker: {}", e);
+                    return;
+                }
+            };
+            let entry = recvd.entry(event.id.clone()).or_insert(0);
+            *entry += event.data.len() as u64;
+            pb.inc(event.data.len() as u64);
+        }
+
+        let file_path = self.receiving_path.join(&file.name);
+
+        // Get or create cached file handle
+        let mut file_handles = match self.file_handles.write() {
+            Ok(handles) => handles,
+            Err(e) => {
+                eprintln!("Error accessing file handles: {}", e);
+                return;
+            }
+        };
+        let file_handle = file_handles
+            .entry(event.id.clone())
+            .or_insert_with(|| {
+                fs::File::options()
+                    .create(true)
+                    .append(true)
+                    .open(&file_path)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "Failed to open file {}: {}",
+                            file_path.display(),
+                            e
+                        )
+                    })
+            });
+
+        // Write to the cached file handle
+        if let Err(e) = file_handle.write_all(&event.data) {
+            eprintln!("[ERROR] Error writing to file {}: {}", file.name, e);
+            return;
+        }
+        if let Err(e) = file_handle.flush() {
+            eprintln!("[ERROR] Error flushing file {}: {}", file.name, e);
+        }
+    }
+
+    fn notify_connecting(&self, event: ReadyToReceiveConnectingEvent) {
+        let _ = self.mp.println("Connected to sender:");
+        let _ = self
+            .mp
+            .println(format!("   Name: {}", event.sender.name));
+        let _ = self
+            .mp
+            .println(format!("   ID: {}", event.sender.id));
+        let _ = self
+            .mp
+            .println(format!("   Files to receive: {}", event.files.len()));
+
+        for f in &event.files {
+            let _ = self.mp.println(format!("     - {}", f.name));
+        }
+
+        match self.files.write() {
+            Ok(mut files) => {
+                files.extend(event.files.clone());
+
+                let mut bars = match self.bars.write() {
+                    Ok(bars) => bars,
+                    Err(e) => {
+                        eprintln!("Error accessing progress bars: {}", e);
+                        return;
+                    }
+                };
+                for f in &*files {
+                    let pb = self.mp.add(ProgressBar::new(f.len));
+                    pb.set_style(Self::bar_style());
+                    pb.set_message(format!("Receiving {}", f.name));
+                    bars.insert(f.id.clone(), pb);
+                }
+            }
+            Err(e) => {
+                eprintln!("[ERROR] Error updating files list: {}", e);
+            }
+        }
+    }
+}
+
+struct SendFilesToSubscriberImpl {
+    id: String,
+    verbose: bool,
+    mp: MultiProgress,
+    bars: RwLock<HashMap<String, ProgressBar>>,
+}
+
+impl SendFilesToSubscriberImpl {
+    fn new(verbose: bool) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            verbose,
+            mp: MultiProgress::new(),
+            bars: RwLock::new(HashMap::new()),
+        }
+    }
+
+    fn bar_style() -> ProgressStyle {
+        ProgressStyle::with_template(
+            "{spinner:.green} {msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+        )
+        .unwrap_or_else(|_| ProgressStyle::default_bar())
+        .progress_chars("#>-")
+    }
+}
+
+impl SendFilesToSubscriber for SendFilesToSubscriberImpl {
+    fn get_id(&self) -> String {
+        self.id.clone()
+    }
+
+    fn log(&self, message: String) {
+        if self.verbose {
+            let _ = self.mp.println(format!("[DEBUG] {}", message));
+        }
+    }
+
+    fn notify_sending(&self, event: SendFilesToSendingEvent) {
+        let mut bars = match self.bars.write() {
+            Ok(bars) => bars,
+            Err(e) => {
+                eprintln!("Error accessing progress bars: {}", e);
+                return;
+            }
+        };
+        let pb = bars.entry(event.name.clone()).or_insert_with(|| {
+            let total = event.sent + event.remaining;
+            let pb = if total > 0 {
+                let pb = self.mp.add(ProgressBar::new(total));
+                pb.set_style(Self::bar_style());
+                pb
+            } else {
+                let pb = self.mp.add(ProgressBar::new_spinner());
+                pb.set_style(
+                    ProgressStyle::with_template(
+                        "{spinner:.green} {msg} {bytes} ({bytes_per_sec})",
+                    )
+                    .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+                );
+                pb.enable_steady_tick(std::time::Duration::from_millis(100));
+                pb
+            };
+            pb.set_message(format!("Sending {}", event.name));
+            pb
+        });
+
+        let total = event.sent + event.remaining;
+        if total > 0 {
+            pb.set_length(total);
+            pb.set_position(event.sent);
+        }
+
+        if event.remaining == 0 {
+            pb.finish_with_message(format!("[DONE] Sent {}", event.name));
+        } else {
+            pb.set_message(format!("Sending {}", event.name));
+        }
+    }
+
+    fn notify_connecting(&self, event: SendFilesToConnectingEvent) {
+        let _ = self.mp.println("Connected to receiver:");
+        let _ = self
+            .mp
+            .println(format!("   Name: {}", event.receiver.name));
+        let _ = self
+            .mp
+            .println(format!("   ID: {}", event.receiver.id));
+    }
+}
+
+/// Run ready-to-receive operation (receiver initiates, generates QR code).
+///
+/// This function creates a receiving session that generates a ticket and
+/// confirmation code, prints them as a QR code and text, then waits for a
+/// sender to connect.
+///
+/// Parameters:
+/// - output_dir: Optional parent directory to store received files.
+/// - profile: The local user profile to present to the sender.
+/// - verbose: Enables transport logs and extra diagnostics.
+/// - save_dir: If true and `output_dir` is Some, saves it as the default.
+///
+/// Errors:
+/// - If the transfer setup or I/O fails.
+pub async fn run_ready_to_receive(
+    output_dir: Option<String>,
+    profile: Profile,
+    verbose: bool,
+    save_dir: bool,
+) -> Result<()> {
+    // Determine the output directory
+    let final_output_dir = match output_dir {
+        Some(dir) => {
+            let path = PathBuf::from(&dir);
+            if save_dir {
+                let mut config = CliConfig::load()?;
+                config
+                    .set_default_receive_dir(dir.clone())
+                    .with_context(
+                        || "Failed to save default receive directory",
+                    )?;
+                println!("Saved '{}' as default receive directory", dir);
+            }
+            path
+        }
+        None => {
+            let config = CliConfig::load()?;
+            match config.get_default_receive_dir() {
+                Some(default_dir) => PathBuf::from(default_dir),
+                None => default_receive_dir_fallback(),
+            }
+        }
+    };
+
+    // Create output directory if it doesn't exist
+    if !final_output_dir.exists() {
+        fs::create_dir_all(&final_output_dir).with_context(|| {
+            format!(
+                "Failed to create output directory: {}",
+                final_output_dir.display()
+            )
+        })?;
+    }
+
+    // Create unique subdirectory for this transfer
+    let receiving_path = final_output_dir.join(Uuid::new_v4().to_string());
+    fs::create_dir(&receiving_path).with_context(|| {
+        format!(
+            "Failed to create receiving directory: {}",
+            receiving_path.display()
+        )
+    })?;
+
+    let request = ReadyToReceiveRequest {
+        profile: ReceiverProfile {
+            name: profile.name.clone(),
+            avatar_b64: profile.avatar_b64.clone(),
+        },
+        config: ReadyToReceiveConfig::default(),
+    };
+
+    let bubble = ready_to_receive(request)
+        .await
+        .context("Failed to initiate ready-to-receive")?;
+
+    let ticket = bubble.get_ticket();
+    let confirmation = bubble.get_confirmation();
+
+    // Display QR code and session info
+    display_session_info(&ticket, confirmation, "Receiver");
+
+    println!("Files will be saved to: {}", receiving_path.display());
+
+    let subscriber =
+        ReadyToReceiveSubscriberImpl::new(receiving_path.clone(), verbose);
+    bubble.subscribe(Arc::new(subscriber));
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            println!("Cancelling file transfer...");
+            let _ = bubble.cancel().await;
+            println!("Transfer cancelled");
+            std::process::exit(0);
+        }
+        _ = wait_for_ready_to_receive_completion(&bubble) => {
+            println!("All files received successfully!");
+            std::process::exit(0);
+        }
+    }
+}
+
+/// Run send-files-to operation (sender connects to waiting receiver).
+///
+/// This function sends files to a receiver that has already initiated a
+/// ready-to-receive session and provided their ticket and confirmation code.
+///
+/// Parameters:
+/// - file_paths: Paths to regular files to be sent. Each path must exist.
+/// - ticket: The ticket provided by the waiting receiver.
+/// - confirmation: The numeric confirmation code.
+/// - profile: The local user profile to present to the receiver.
+/// - verbose: Enables transport logs and extra diagnostics.
+///
+/// Errors:
+/// - If any path is invalid or if the transport fails to initialize.
+pub async fn run_send_files_to(
+    file_paths: Vec<String>,
+    ticket: String,
+    confirmation: String,
+    profile: Profile,
+    verbose: bool,
+) -> Result<()> {
+    if file_paths.is_empty() {
+        return Err(anyhow!("Cannot send an empty list of files"));
+    }
+
+    let paths: Vec<PathBuf> = file_paths
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+
+    // Validate all files exist before starting
+    for path in &paths {
+        if !path.exists() {
+            return Err(anyhow!("File does not exist: {}", path.display()));
+        }
+        if !path.is_file() {
+            return Err(anyhow!("Path is not a file: {}", path.display()));
+        }
+    }
+
+    let confirmation_code = u8::from_str(&confirmation).with_context(|| {
+        format!("Invalid confirmation code: {}", confirmation)
+    })?;
+
+    // Create sender files
+    let mut files = Vec::new();
+    for path in paths {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| anyhow!("Invalid file name: {}", path.display()))?
+            .to_string();
+
+        let data = FileData::new(path)?;
+        files.push(SenderFile {
+            name,
+            data: Arc::new(data),
+        });
+    }
+
+    let request = SendFilesToRequest {
+        ticket,
+        confirmation: confirmation_code,
+        files,
+        profile: SenderProfile {
+            name: profile.name.clone(),
+            avatar_b64: profile.avatar_b64.clone(),
+        },
+        config: SenderConfig::default(),
+    };
+
+    let bubble = send_files_to(request)
+        .await
+        .context("Failed to initiate send-files-to")?;
+
+    let subscriber = SendFilesToSubscriberImpl::new(verbose);
+    bubble.subscribe(Arc::new(subscriber));
+
+    println!("Connecting to waiting receiver...");
+
+    bubble
+        .start()
+        .context("Failed to start send-files-to")?;
+
+    println!("Sending files... (Press Ctrl+C to cancel)");
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            println!("Cancelling file transfer...");
+            println!("Transfer cancelled");
+            std::process::exit(0);
+        }
+        _ = wait_for_send_files_to_completion(&bubble) => {
+            println!("All files sent successfully!");
+            std::process::exit(0);
+        }
+    }
 }

@@ -27,8 +27,9 @@ clap = { version = "4.0", features = ["derive"] }
 base64 = "0.21"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+qrcode = "0.14"
 
-dropx-receiver = { path = "../exchanges/receiver" }  
+dropx-receiver = { path = "../exchanges/receiver" }
 dropx-sender = { path = "../exchanges/sender" }
 indicatif = "0.18.0"
 

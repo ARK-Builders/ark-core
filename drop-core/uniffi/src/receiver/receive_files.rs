@@ -30,34 +30,31 @@ impl ReceiveFilesBubble {
     /// This method blocks on the internal runtime until setup finishes or an
     /// error is returned. On success, subscribers will receive chunks/events.
     pub fn start(&self) -> Result<(), DropError> {
-        return self
-            .runtime
-            .block_on(async {
-                return self.inner.start();
-            })
-            .map_err(|e| DropError::TODO(e.to_string()));
+        self.runtime
+            .block_on(async { self.inner.start() })
+            .map_err(|e| DropError::TODO(e.to_string()))
     }
 
     /// Cancel the session. No further progress will occur.
     pub fn cancel(&self) {
-        return self.inner.cancel();
+        self.inner.cancel()
     }
 
     /// True when the session has completed (successfully or not).
     pub fn is_finished(&self) -> bool {
-        return self.inner.is_finished();
+        self.inner.is_finished()
     }
 
     /// True if the session has been explicitly canceled.
     pub fn is_cancelled(&self) -> bool {
-        return self.inner.is_cancelled();
+        self.inner.is_cancelled()
     }
 
     /// Register an observer for logs, chunk payloads, and connection events.
     pub fn subscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
         let adapted_subscriber =
             ReceiveFilesSubscriberAdapter { inner: subscriber };
-        return self.inner.subscribe(Arc::new(adapted_subscriber));
+        self.inner.subscribe(Arc::new(adapted_subscriber))
     }
 
     /// Unregister a previously subscribed observer.
@@ -66,9 +63,8 @@ impl ReceiveFilesBubble {
     pub fn unsubscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
         let adapted_subscriber =
             ReceiveFilesSubscriberAdapter { inner: subscriber };
-        return self
-            .inner
-            .unsubscribe(Arc::new(adapted_subscriber));
+        self.inner
+            .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
 
@@ -120,7 +116,7 @@ struct ReceiveFilesSubscriberAdapter {
 }
 impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
     fn get_id(&self) -> String {
-        return self.inner.get_id();
+        self.inner.get_id()
     }
 
     fn log(&self, message: String) {
@@ -132,20 +128,18 @@ impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
         &self,
         event: dropx_receiver::ReceiveFilesReceivingEvent,
     ) {
-        return self
-            .inner
+        self.inner
             .notify_receiving(ReceiveFilesReceivingEvent {
                 id: event.id,
                 data: event.data,
-            });
+            })
     }
 
     fn notify_connecting(
         &self,
         event: dropx_receiver::ReceiveFilesConnectingEvent,
     ) {
-        return self
-            .inner
+        self.inner
             .notify_connecting(ReceiveFilesConnectingEvent {
                 sender: ReceiveFilesProfile {
                     id: event.sender.id,
@@ -161,7 +155,7 @@ impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
                         len: f.len,
                     })
                     .collect(),
-            });
+            })
     }
 }
 
@@ -178,13 +172,13 @@ pub async fn receive_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return dropx_receiver::receive_files(adapted_request).await;
+            dropx_receiver::receive_files(adapted_request).await
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
-    return Ok(Arc::new(ReceiveFilesBubble {
+    Ok(Arc::new(ReceiveFilesBubble {
         inner: bubble,
         runtime,
-    }));
+    }))
 }
 
 /// Convert the high-level request into the dropx_receiver request format.
@@ -204,10 +198,10 @@ fn create_adapted_request(
             chunk_size: c.chunk_size,
             parallel_streams: c.parallel_streams,
         });
-    return dropx_receiver::ReceiveFilesRequest {
+    dropx_receiver::ReceiveFilesRequest {
         profile,
         ticket: request.ticket,
         confirmation: request.confirmation,
         config,
-    };
+    }
 }

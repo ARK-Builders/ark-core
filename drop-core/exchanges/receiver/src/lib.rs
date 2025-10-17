@@ -7,7 +7,9 @@
 //! - Events and subscription mechanisms (see `receive_files` module) to observe
 //!   connection and per-chunk progress.
 //!
-//! Typical flow:
+//! Two modes of operation:
+//!
+//! ## Standard Mode (Receiver connects to Sender)
 //! 1. Build a `ReceiveFilesRequest` with a sender ticket, confirmation code,
 //!    your `ReceiverProfile`, and an optional `ReceiverConfig`.
 //! 2. Call `receive_files::receive_files` to obtain a `ReceiveFilesBubble`.
@@ -15,11 +17,20 @@
 //! 4. Start the transfer with `ReceiveFilesBubble::start()`.
 //! 5. Optionally cancel with `ReceiveFilesBubble::cancel()`.
 //! 6. When finished, the session is closed and resources cleaned up.
+//!
+//! ## QR-to-Receive Mode (Sender connects to Receiver)
+//! 1. Build a `ReadyToReceiveRequest` with your `ReceiverProfile` and config.
+//! 2. Call `ready_to_receive::ready_to_receive` to obtain a
+//!    `ReadyToReceiveBubble`.
+//! 3. Display the ticket and confirmation code (e.g., as QR code) for sender.
+//! 4. Subscribe to events to observe when sender connects and file reception.
+//! 5. Optionally cancel with `ReadyToReceiveBubble::cancel()`.
 
+pub mod ready_to_receive;
 mod receive_files;
 
 use std::{
-    io::{Bytes, Read},
+    io::{BufReader, Bytes, Read},
     sync::{RwLock, atomic::AtomicBool},
 };
 
@@ -125,16 +136,16 @@ pub struct ReceiverFile {
 pub struct ReceiverFileData {
     is_finished: AtomicBool,
     path: std::path::PathBuf,
-    reader: RwLock<Option<Bytes<std::fs::File>>>,
+    reader: RwLock<Option<Bytes<BufReader<std::fs::File>>>>,
 }
 impl ReceiverFileData {
     /// Create a new `ReceiverFileData` from a filesystem path.
     pub fn new(path: std::path::PathBuf) -> Self {
-        return Self {
+        Self {
             is_finished: AtomicBool::new(false),
             path,
             reader: RwLock::new(None),
-        };
+        }
     }
 
     /// Return the file length in bytes by counting the iterator.
@@ -143,8 +154,15 @@ impl ReceiverFileData {
     /// If possible, prefer using `std::fs::metadata(&path)?.len()` in your own
     /// code where you have direct access to the path.
     pub fn len(&self) -> u64 {
+        use std::io::BufReader;
         let file = std::fs::File::open(&self.path).unwrap();
-        return file.bytes().count() as u64;
+        BufReader::new(file).bytes().count() as u64
+    }
+
+    /// Returns true if the data has zero length.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Read the next byte from the file, returning `None` at EOF or after
@@ -153,6 +171,8 @@ impl ReceiverFileData {
     /// This initializes an internal iterator on first use and cleans it up
     /// when EOF is reached. Subsequent calls after completion return `None`.
     pub fn read(&self) -> Option<u8> {
+        use std::io::BufReader;
+
         if self
             .is_finished
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -161,7 +181,10 @@ impl ReceiverFileData {
         }
         if self.reader.read().unwrap().is_none() {
             let file = std::fs::File::open(&self.path).unwrap();
-            self.reader.write().unwrap().replace(file.bytes());
+            self.reader
+                .write()
+                .unwrap()
+                .replace(BufReader::new(file).bytes());
         }
         let next = self
             .reader
@@ -170,15 +193,14 @@ impl ReceiverFileData {
             .as_mut()
             .unwrap()
             .next();
-        if next.is_some() {
-            let read_result = next.unwrap();
-            if read_result.is_ok() {
-                return Some(read_result.unwrap());
-            }
+        if let Some(read_result) = next
+            && let Ok(byte) = read_result
+        {
+            return Some(byte);
         }
-        self.reader.write().unwrap().as_mut().take();
+        *self.reader.write().unwrap() = None;
         self.is_finished
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        return None;
+        None
     }
 }
