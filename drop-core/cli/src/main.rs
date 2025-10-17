@@ -2,10 +2,13 @@ use anyhow::{Context, Result, anyhow};
 use clap::{Arg, ArgMatches, Command};
 use drop_cli::{
     Profile, clear_default_receive_dir, get_default_receive_dir,
-    run_receive_files, run_send_files, set_default_receive_dir,
-    suggested_default_receive_dir, run_ready_to_receive, run_send_files_to,
+    run_ready_to_receive, run_receive_files, run_send_files, run_send_files_to,
+    set_default_receive_dir, suggested_default_receive_dir,
 };
 use std::path::PathBuf;
+use tokio::io::{AsyncBufReadExt, BufReader};
+
+mod handshake;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,7 +23,9 @@ async fn main() -> Result<()> {
             handle_config_command(sub_matches).await
         }
         _ => {
-            eprintln!("❌ Invalid command. Use --help for usage information.");
+            eprintln!(
+                "Error: Invalid command. Use --help for usage information."
+            );
             std::process::exit(1);
         }
     }
@@ -42,7 +47,7 @@ fn build_cli() -> Command {
         )
         .subcommand(
             Command::new("send")
-                .about("Send files to another user")
+                .about("Send files - generates QR code or accepts receiver's credentials")
                 .arg(
                     Arg::new("files")
                         .help("Files to send")
@@ -51,26 +56,11 @@ fn build_cli() -> Command {
                         .value_parser(clap::value_parser!(PathBuf))
                 )
                 .arg(
-                    Arg::new("to-ticket")
-                        .long("to")
-                        .help("Send to a waiting receiver's ticket")
-                        .value_name("TICKET")
-                        .requires("to-confirmation")
-                )
-                .arg(
-                    Arg::new("to-confirmation")
-                        .long("confirmation")
-                        .short('c')
-                        .help("Receiver's confirmation code (use with --to)")
-                        .value_name("CODE")
-                        .requires("to-ticket")
-                )
-                .arg(
                     Arg::new("name")
                         .long("name")
                         .short('n')
                         .help("Your display name")
-                        .default_value("drop-cli-sender")
+                        .default_value("arkdrop-sender")
                 )
                 .arg(
                     Arg::new("avatar")
@@ -88,26 +78,7 @@ fn build_cli() -> Command {
         )
         .subcommand(
             Command::new("receive")
-                .about("Receive files from another user")
-                .arg(
-                    Arg::new("wait")
-                        .long("wait")
-                        .help("Generate QR code and wait for sender to connect")
-                        .action(clap::ArgAction::SetTrue)
-                        .conflicts_with_all(["ticket", "confirmation"])
-                )
-                .arg(
-                    Arg::new("ticket")
-                        .help("Transfer ticket (from sender)")
-                        .required_unless_present("wait")
-                        .index(1)
-                )
-                .arg(
-                    Arg::new("confirmation")
-                        .help("Confirmation code (from sender)")
-                        .required_unless_present("wait")
-                        .index(2)
-                )
+                .about("Receive files - generates QR code or accepts sender's credentials")
                 .arg(
                     Arg::new("output")
                         .help("Output directory for received files (optional if default is set)")
@@ -127,7 +98,7 @@ fn build_cli() -> Command {
                         .long("name")
                         .short('n')
                         .help("Your display name")
-                        .default_value("drop-cli-receiver")
+                        .default_value("arkdrop-receiver")
                 )
                 .arg(
                     Arg::new("avatar")
@@ -177,62 +148,63 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
     let verbose: bool = matches.get_flag("verbose");
     let profile = build_profile(matches)?;
 
-    // Check if this is a send-to operation (--to flag)
-    if let Some(ticket) = matches.get_one::<String>("to-ticket") {
-        let confirmation = matches.get_one::<String>("to-confirmation").unwrap();
-        
-        println!("📤 Preparing to send {} file(s) to waiting receiver...", files.len());
-        for file in &files {
-            println!("   📄 {}", file.display());
-        }
-
-        if let Some(name) = profile.name.strip_prefix("drop-cli-") {
-            println!("👤 Sender name: {}", name);
-        } else {
-            println!("👤 Sender name: {}", profile.name);
-        }
-
-        if profile.avatar_b64.is_some() {
-            println!("🖼️  Avatar: Set");
-        }
-
-        let file_strings: Vec<String> = files
-            .into_iter()
-            .map(|p| p.to_string_lossy().to_string())
-            .collect();
-
-        return run_send_files_to(
-            file_strings,
-            ticket.clone(),
-            confirmation.clone(),
-            profile,
-            verbose,
-        )
-        .await;
-    }
-
-    // Regular send operation
-    println!("📤 Preparing to send {} file(s)...", files.len());
+    // Display info
+    println!("\nPreparing to send {} file(s):", files.len());
     for file in &files {
-        println!("   📄 {}", file.display());
+        println!("  - {}", file.display());
     }
-
-    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
-        println!("👤 Sender name: {}", name);
-    } else {
-        println!("👤 Sender name: {}", profile.name);
-    }
-
+    println!("Sender: {}", profile.name);
     if profile.avatar_b64.is_some() {
-        println!("🖼️  Avatar: Set");
+        println!("Avatar: Set");
     }
+    println!();
 
     let file_strings: Vec<String> = files
         .into_iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
-    run_send_files(file_strings, profile, verbose).await
+    // Start QR flow and listen for 'c' press concurrently
+    let qr_task = tokio::spawn({
+        let file_strings = file_strings.clone();
+        let profile = profile.clone();
+        async move { run_send_files(file_strings, profile, verbose).await }
+    });
+
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+    let mut input = String::new();
+
+    tokio::select! {
+        result = qr_task => {
+            // QR flow completed (peer connected and files sent)
+            match result {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(anyhow!("Task error: {}", e)),
+            }
+        }
+        _ = reader.read_line(&mut input) => {
+            // User pressed something - check if it's 'c'
+            if input.trim().eq_ignore_ascii_case("c") {
+                println!("\nSwitching to manual credential entry...\n");
+                // Get peer's credentials
+                let (ticket, confirmation) = handshake::prompt_for_credentials().await?;
+                // Send files to peer
+                run_send_files_to(
+                    file_strings,
+                    ticket,
+                    confirmation.to_string(),
+                    profile,
+                    verbose,
+                )
+                .await
+            } else {
+                // Ignore other input, keep waiting
+                Ok(())
+            }
+        }
+    }
 }
 
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
@@ -240,86 +212,80 @@ async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     let save_dir = matches.get_flag("save-dir");
     let profile = build_profile(matches)?;
 
-    // Check if this is a ready-to-receive operation (--wait flag)
-    if matches.get_flag("wait") {
-        let output_dir = matches
-            .get_one::<PathBuf>("output")
-            .map(|p| p.to_string_lossy().to_string());
-
-        println!("📥 Preparing to receive files...");
-
-        if let Some(ref dir) = output_dir {
-            println!("📁 Output directory: {}", dir);
-        } else if let Some(default_dir) = get_default_receive_dir()? {
-            println!("📁 Using default directory: {}", default_dir);
-        } else {
-            let fallback = suggested_default_receive_dir();
-            println!("📁 Using default directory: {}", fallback.display());
-        }
-
-        if let Some(name) = profile.name.strip_prefix("drop-cli-") {
-            println!("👤 Receiver name: {}", name);
-        } else {
-            println!("👤 Receiver name: {}", profile.name);
-        }
-
-        if profile.avatar_b64.is_some() {
-            println!("🖼️  Avatar: Set");
-        }
-
-        return run_ready_to_receive(output_dir, profile, verbose, save_dir).await;
-    }
-
-    // Regular receive operation
     let output_dir = matches
         .get_one::<PathBuf>("output")
         .map(|p| p.to_string_lossy().to_string());
-    let ticket = matches.get_one::<String>("ticket").unwrap();
-    let confirmation = matches.get_one::<String>("confirmation").unwrap();
 
-    println!("📥 Preparing to receive files...");
-
+    // Display info
+    println!("\nPreparing to receive files...");
     if let Some(ref dir) = output_dir {
-        println!("📁 Output directory: {}", dir);
+        println!("Output directory: {}", dir);
     } else if let Some(default_dir) = get_default_receive_dir()? {
-        println!("📁 Using default directory: {}", default_dir);
+        println!("Using default directory: {}", default_dir);
     } else {
         let fallback = suggested_default_receive_dir();
-        println!("📁 Using default directory: {}", fallback.display());
+        println!("Using default directory: {}", fallback.display());
     }
-
-    println!("🎫 Ticket: {}", ticket);
-    println!("🔑 Confirmation: {}", confirmation);
-
-    if let Some(name) = profile.name.strip_prefix("drop-cli-") {
-        println!("👤 Receiver name: {}", name);
-    } else {
-        println!("👤 Receiver name: {}", profile.name);
-    }
-
+    println!("Receiver: {}", profile.name);
     if profile.avatar_b64.is_some() {
-        println!("🖼️  Avatar: Set");
+        println!("Avatar: Set");
     }
+    println!();
 
-    run_receive_files(
-        output_dir,
-        ticket.clone(),
-        confirmation.clone(),
-        profile,
-        verbose,
-        save_dir,
-    )
-    .await
+    // Start QR flow and listen for 'c' press concurrently
+    let qr_task = tokio::spawn({
+        let output_dir = output_dir.clone();
+        let profile = profile.clone();
+        async move {
+            run_ready_to_receive(output_dir, profile, verbose, save_dir).await
+        }
+    });
+
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+    let mut input = String::new();
+
+    tokio::select! {
+        result = qr_task => {
+            // QR flow completed (peer connected and files received)
+            match result {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(anyhow!("Task error: {}", e)),
+            }
+        }
+        _ = reader.read_line(&mut input) => {
+            // User pressed something - check if it's 'c'
+            if input.trim().eq_ignore_ascii_case("c") {
+                println!("\nSwitching to manual credential entry...\n");
+                // Get peer's credentials
+                let (ticket, confirmation) = handshake::prompt_for_credentials().await?;
+                // Receive files from peer
+                run_receive_files(
+                    output_dir,
+                    ticket,
+                    confirmation.to_string(),
+                    profile,
+                    verbose,
+                    save_dir,
+                )
+                .await
+            } else {
+                // Ignore other input, keep waiting
+                Ok(())
+            }
+        }
+    }
 }
 
 async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
     match matches.subcommand() {
         Some(("show", _)) => match get_default_receive_dir()? {
             Some(dir) => {
-                println!("📁 Default receive directory: {}", dir);
+                println!("Default receive directory: {}", dir);
             }
             None => {
-                println!("📁 No default receive directory set");
+                println!("No default receive directory set");
             }
         },
         Some(("set-receive-dir", sub_matches)) => {
@@ -331,7 +297,7 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
             // Validate directory exists or can be created
             if !directory.exists() {
                 match std::fs::create_dir_all(directory) {
-                    Ok(_) => println!("📁 Created directory: {}", dir_str),
+                    Ok(_) => println!("Created directory: {}", dir_str),
                     Err(e) => {
                         return Err(anyhow!(
                             "Failed to create directory '{}': {}",
@@ -343,15 +309,15 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
             }
 
             set_default_receive_dir(dir_str.clone())?;
-            println!("✅ Set default receive directory to: {}", dir_str);
+            println!("Set default receive directory to: {}", dir_str);
         }
         Some(("clear-receive-dir", _)) => {
             clear_default_receive_dir()?;
-            println!("✅ Cleared default receive directory");
+            println!("Cleared default receive directory");
         }
         _ => {
             eprintln!(
-                "❌ Invalid config command. Use --help for usage information."
+                "Error: Invalid config command. Use --help for usage information."
             );
             std::process::exit(1);
         }
