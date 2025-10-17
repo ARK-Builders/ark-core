@@ -75,8 +75,7 @@ impl SendFilesBubble {
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
-        self
-            .inner
+        self.inner
             .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
@@ -137,8 +136,7 @@ impl dropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     }
 
     fn notify_connecting(&self, event: dropx_sender::SendFilesConnectingEvent) {
-        self
-            .inner
+        self.inner
             .notify_connecting(SendFilesConnectingEvent {
                 receiver: SendFilesProfile {
                     id: event.receiver.id,

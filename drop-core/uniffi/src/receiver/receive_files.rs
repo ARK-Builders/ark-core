@@ -30,11 +30,8 @@ impl ReceiveFilesBubble {
     /// This method blocks on the internal runtime until setup finishes or an
     /// error is returned. On success, subscribers will receive chunks/events.
     pub fn start(&self) -> Result<(), DropError> {
-        self
-            .runtime
-            .block_on(async {
-                self.inner.start()
-            })
+        self.runtime
+            .block_on(async { self.inner.start() })
             .map_err(|e| DropError::TODO(e.to_string()))
     }
 
@@ -66,8 +63,7 @@ impl ReceiveFilesBubble {
     pub fn unsubscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
         let adapted_subscriber =
             ReceiveFilesSubscriberAdapter { inner: subscriber };
-        self
-            .inner
+        self.inner
             .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
@@ -132,8 +128,7 @@ impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
         &self,
         event: dropx_receiver::ReceiveFilesReceivingEvent,
     ) {
-        self
-            .inner
+        self.inner
             .notify_receiving(ReceiveFilesReceivingEvent {
                 id: event.id,
                 data: event.data,
@@ -144,8 +139,7 @@ impl dropx_receiver::ReceiveFilesSubscriber for ReceiveFilesSubscriberAdapter {
         &self,
         event: dropx_receiver::ReceiveFilesConnectingEvent,
     ) {
-        self
-            .inner
+        self.inner
             .notify_connecting(ReceiveFilesConnectingEvent {
                 sender: ReceiveFilesProfile {
                     id: event.sender.id,
