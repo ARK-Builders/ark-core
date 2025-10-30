@@ -13,11 +13,15 @@ members = [
     "fs-index",
     "fs-storage",
     "dev-hash",
-    "drop-core/cli",
+    "drop-core/entities",
     "drop-core/exchanges/common",
     "drop-core/exchanges/sender",
     "drop-core/exchanges/receiver",
-    "drop-core/uniffi",
+    "drop-core/common",
+    "drop-core/cli",
+    "drop-core/tui",
+    "drop-core/main", 
+    "drop-core/uniffi", 
 ]
 
 default-members = [
@@ -34,10 +38,14 @@ default-members = [
     "fs-index",
     "fs-storage",
     "dev-hash",
-    "drop-core/cli",
+    "drop-core/entities",
     "drop-core/exchanges/common",
     "drop-core/exchanges/sender",
     "drop-core/exchanges/receiver",
+    "drop-core/common",
+    "drop-core/cli",
+    "drop-core/tui",
+    "drop-core/main",
     "drop-core/uniffi",
 ]
 

@@ -1,10 +1,10 @@
 [package]
-name = "drop-entities"
+name = "arkdrop-entities"
 version = "1.0.0"
 edition = "2024"
 
 [lib]
-name = "drop_entities"
+name = "arkdrop_entities"
 bench = false
 
 [dependencies]
