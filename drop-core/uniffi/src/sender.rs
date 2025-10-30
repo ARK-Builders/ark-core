@@ -32,20 +32,29 @@ pub struct SenderFile {
 pub trait SenderFileData: Send + Sync {
     /// Total number of bytes available.
     fn len(&self) -> u64;
+
+    /// Checks if the data is empty (length is 0).
+    fn is_empty(&self) -> bool;
+
     /// Read the next byte, or None at EOF.
     fn read(&self) -> Option<u8>;
+
     /// Read up to `size` bytes; fewer may be returned at EOF.
     fn read_chunk(&self, size: i32) -> Vec<u8>;
 }
 
 /// Adapter that bridges this crate's `SenderFileData` trait to the
-/// `dropx_sender::SenderFileData` trait expected by the lower-level crate.
+/// `arkdropx_sender::SenderFileData` trait expected by the lower-level crate.
 struct SenderFileDataAdapter {
     inner: Arc<dyn SenderFileData>,
 }
-impl dropx_sender::SenderFileData for SenderFileDataAdapter {
+impl arkdropx_sender::SenderFileData for SenderFileDataAdapter {
     fn len(&self) -> u64 {
         return self.inner.len();
+    }
+
+    fn is_empty(&self) -> bool {
+        return self.inner.is_empty();
     }
 
     fn read(&self) -> Option<u8> {
