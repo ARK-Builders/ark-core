@@ -411,64 +411,6 @@ impl ConfigApp {
         }
     }
 
-    fn delete_word_backward(&self) {
-        let mut buffer = self.name_input_buffer.write().unwrap();
-        let cursor_pos = self
-            .name_cursor_position
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        if cursor_pos == 0 {
-            return;
-        }
-
-        let mut new_pos = cursor_pos;
-        let chars: Vec<char> = buffer.chars().collect();
-
-        // Skip whitespace backwards
-        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
-            new_pos -= 1;
-        }
-
-        // Delete word characters backwards
-        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
-            new_pos -= 1;
-        }
-
-        buffer.drain(new_pos..cursor_pos);
-        self.name_cursor_position
-            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn delete_word_forward(&self) {
-        let cursor_pos = self
-            .name_cursor_position
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let buffer = self.name_input_buffer.read().unwrap();
-        let last_pos = buffer.len() - 1;
-
-        if cursor_pos == last_pos {
-            return;
-        }
-
-        let mut buffer = self.name_input_buffer.write().unwrap();
-        let mut new_pos = cursor_pos;
-        let chars: Vec<char> = buffer.chars().collect();
-
-        // Skip whitespace backwards
-        while new_pos < last_pos && chars[new_pos + 1].is_whitespace() {
-            new_pos += 1;
-        }
-
-        // Delete word characters backwards
-        while new_pos < last_pos && !chars[new_pos + 1].is_whitespace() {
-            new_pos += 1;
-        }
-
-        buffer.drain(new_pos..cursor_pos);
-        self.name_cursor_position
-            .store(new_pos, std::sync::atomic::Ordering::Relaxed);
-    }
-
     fn handle_delete(&self) {
         let mut buffer = self.name_input_buffer.write().unwrap();
         let cursor_pos = self
