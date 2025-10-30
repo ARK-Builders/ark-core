@@ -1,129 +1,92 @@
-use std::{path::Path, process::Command};
+use assert_cmd::cargo::cargo_bin_cmd;
+use predicates::prelude::{PredicateBooleanExt, predicate};
 use tempfile::TempDir;
 
 /// Test CLI binary exists and is executable
 #[test]
 fn test_cli_binary_exists() {
-    let output = Command::new("cargo")
-        .args(["build", "--bin", "arkdrop-cli"])
-        .output()
-        .expect("Failed to execute cargo build");
-
-    assert!(output.status.success(), "Failed to build CLI binary");
-
-    // Check that binary exists
-    let binary_path = Path::new("../../target/release/arkdrop-cli");
-    assert!(
-        binary_path.exists(),
-        "CLI binary not found at expected location"
-    );
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.arg("--version").assert().success();
 }
 
 /// Test CLI shows help information
 #[test]
 fn test_cli_help() {
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .arg("--help")
-        .output()
-        .expect("Failed to run CLI help");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("ARK Drop tool"));
-    assert!(stdout.contains("send"));
-    assert!(stdout.contains("receive"));
-    assert!(stdout.contains("config"));
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ARK Drop tool"))
+        .stdout(predicate::str::contains("send"))
+        .stdout(predicate::str::contains("receive"))
+        .stdout(predicate::str::contains("config"));
 }
 
 /// Test CLI version command
 #[test]
 fn test_cli_version() {
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .arg("--version")
-        .output()
-        .expect("Failed to run CLI version");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("1.0.0"));
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1.0.0"));
 }
 
 /// Test send command shows proper error for missing files
 #[test]
 fn test_send_missing_file() {
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["send", "nonexistent.txt"])
-        .output()
-        .expect("Failed to run send command");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // The CLI should either show an error about missing file or show help due
-    // to missing arguments
-    assert!(!output.status.success());
-    assert!(
-        stderr.contains("File does not exist")
-            || stderr.contains("required")
-            || stderr.contains("help")
-    );
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args(["send", "nonexistent.txt"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("File does not exist"));
 }
 
 /// Test receive command shows proper error for missing arguments
 #[test]
 fn test_receive_missing_args() {
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["receive"])
-        .output()
-        .expect("Failed to run receive command");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // Should show error about missing required arguments
-    assert!(!output.status.success());
-    assert!(
-        stderr.contains("required")
-            || stderr.contains("ticket")
-            || stderr.contains("confirmation")
-    );
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.arg("receive")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
 }
 
 /// Test config commands
 #[test]
 fn test_config_commands() {
     // Test config show
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["config", "show"])
-        .output()
-        .expect("Failed to run config show");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Should show either a directory or "No default receive directory set"
-    assert!(stdout.contains("directory") || stdout.contains("No default"));
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args(["config", "show"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("directory")
+                .or(predicate::str::contains("No default")),
+        );
 
     // Test setting and clearing receive directory
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let temp_path = temp_dir.path().to_str().unwrap();
 
     // Set receive directory
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["config", "set-receive-dir", temp_path])
-        .output()
-        .expect("Failed to set receive directory");
-
-    assert!(output.status.success(), "Failed to set receive directory");
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args(["config", "set-receive-dir", temp_path])
+        .assert()
+        .success();
 
     // Verify it was set
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["config", "show"])
-        .output()
-        .expect("Failed to show config");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(temp_path));
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args(["config", "show"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(temp_path));
 
     // Clear receive directory
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["config", "clear-receive-dir"])
-        .output()
-        .expect("Failed to clear receive directory");
-
-    assert!(output.status.success(), "Failed to clear receive directory");
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args(["config", "clear-receive-dir"])
+        .assert()
+        .success();
 }
 
 /// Test send command with valid files (should fail at connection stage)
@@ -136,22 +99,16 @@ fn test_send_valid_files() {
 
     // This should fail because there's no receiver, but it should validate the
     // file first
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["send", file_path.to_str().unwrap()])
-        .output()
-        .expect("Failed to run send command");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // Should show that it's preparing to send (file validation passed)
-    // but will fail at network/connection stage
-    assert!(
-        stdout.contains("Preparing to send")
-            || stdout.contains("file(s)")
-            || stderr.contains("ticket")
-            || stderr.contains("confirmation")
-    );
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args(["send", file_path.to_str().unwrap()])
+        .assert()
+        .code(predicate::ne(0))
+        .stdout(
+            predicate::str::contains("Preparing to send")
+                .or(predicate::str::contains("file(s)"))
+                .or(predicate::str::contains("ticket"))
+                .or(predicate::str::contains("confirmation")),
+        );
 }
 
 /// Test CLI handles file validation correctly
@@ -165,40 +122,29 @@ fn test_file_validation() {
         .expect("Failed to create valid file");
 
     // Test with valid file - should pass validation, fail at connection
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args([
-            "send",
-            "--name",
-            "test-sender",
-            valid_file.to_str().unwrap(),
-        ])
-        .output()
-        .expect("Failed to run send with valid file");
-
-    let combined_output = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Should mention preparing to send or show file info
-    assert!(
-        combined_output.contains("Preparing to send")
-            || combined_output.contains("valid.txt")
-            || combined_output.contains("Sender name")
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args([
+        "send",
+        "--name",
+        "test-sender",
+        valid_file.to_str().unwrap(),
+    ])
+    .assert()
+    .stdout(
+        predicate::str::contains("Preparing to send")
+            .or(predicate::str::contains("valid.txt"))
+            .or(predicate::str::contains("Sender name")),
     );
 
     // Test with nonexistent file - should fail validation
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args(["send", "--name", "test-sender", "nonexistent.txt"])
-        .output()
-        .expect("Failed to run send with invalid file");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("File does not exist") || stderr.contains("not found")
-    );
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args(["send", "--name", "test-sender", "nonexistent.txt"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("File does not exist")
+                .or(predicate::str::contains("not found")),
+        );
 }
 
 /// Test receive command parameter validation
@@ -208,31 +154,22 @@ fn test_receive_parameters() {
     let output_path = temp_dir.path().to_str().unwrap();
 
     // Test with all required parameters - should attempt connection and fail
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args([
-            "receive",
-            "test-ticket",
-            "123",
-            "--output",
-            output_path,
-            "--name",
-            "test-receiver",
-        ])
-        .output()
-        .expect("Failed to run receive command");
-
-    let combined_output = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Should show that it's preparing to receive or connection attempts
-    assert!(
-        combined_output.contains("Preparing to receive")
-            || combined_output.contains("test-ticket")
-            || combined_output.contains("Receiver name")
-            || combined_output.contains("Output directory")
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args([
+        "receive",
+        "test-ticket",
+        "123",
+        "--output",
+        output_path,
+        "--name",
+        "test-receiver",
+    ])
+    .assert()
+    .stdout(
+        predicate::str::contains("Preparing to receive")
+            .or(predicate::str::contains("test-ticket"))
+            .or(predicate::str::contains("Receiver name"))
+            .or(predicate::str::contains("Output directory")),
     );
 }
 
@@ -250,37 +187,36 @@ fn test_avatar_options() {
         .expect("Failed to create test file");
 
     // Test with avatar file
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args([
-            "send",
-            "--name",
-            "avatar-sender",
-            "--avatar",
-            avatar_file.to_str().unwrap(),
-            test_file.to_str().unwrap(),
-        ])
-        .output()
-        .expect("Failed to run send with avatar");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Should indicate avatar is set
-    assert!(stdout.contains("Avatar: Set") || stdout.contains("avatar-sender"));
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args([
+        "send",
+        "--name",
+        "avatar-sender",
+        "--avatar",
+        avatar_file.to_str().unwrap(),
+        test_file.to_str().unwrap(),
+    ])
+    .assert()
+    .stdout(
+        predicate::str::contains("Avatar: Set")
+            .or(predicate::str::contains("avatar-sender")),
+    );
 
     // Test with base64 avatar
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args([
-            "send",
-            "--name",
-            "b64-sender",
-            "--avatar-b64",
-            "dGVzdA==",
-            test_file.to_str().unwrap(),
-        ])
-        .output()
-        .expect("Failed to run send with base64 avatar");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Avatar: Set") || stdout.contains("b64-sender"));
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args([
+        "send",
+        "--name",
+        "b64-sender",
+        "--avatar-b64",
+        "dGVzdA==",
+        test_file.to_str().unwrap(),
+    ])
+    .assert()
+    .stdout(
+        predicate::str::contains("Avatar: Set")
+            .or(predicate::str::contains("b64-sender")),
+    );
 }
 
 /// Test verbose flag
@@ -291,26 +227,17 @@ fn test_verbose_flag() {
     std::fs::write(&test_file, "test content")
         .expect("Failed to create test file");
 
-    let output = Command::new("../../target/release/arkdrop-cli")
-        .args([
-            "send",
-            "--verbose",
-            "--name",
-            "verbose-sender",
-            test_file.to_str().unwrap(),
-        ])
-        .output()
-        .expect("Failed to run send with verbose flag");
-
-    // Verbose flag should not cause errors and should be accepted
-    let combined_output = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    assert!(
-        combined_output.contains("verbose-sender")
-            || combined_output.contains("Preparing to send")
+    let mut cmd = cargo_bin_cmd!("arkdrop-cli");
+    cmd.args([
+        "send",
+        "--verbose",
+        "--name",
+        "verbose-sender",
+        test_file.to_str().unwrap(),
+    ])
+    .assert()
+    .stdout(
+        predicate::str::contains("verbose-sender")
+            .or(predicate::str::contains("Preparing to send")),
     );
 }
