@@ -634,12 +634,10 @@ impl SendFilesProgressApp {
             let qr_lines: Vec<Line> = qr_matrix
                 .lines()
                 .map(|line| {
-                    Line::from(vec![
-                        Span::styled(
-                            line.replace('█', "██").replace(' ', "  "), // Make blocks wider for better visibility
-                            Style::default().fg(Color::White).bg(Color::Black),
-                        )
-                    ])
+                    Line::from(vec![Span::styled(
+                        line.replace('█', "██").replace(' ', "  "), // Make blocks wider for better visibility
+                        Style::default().fg(Color::White).bg(Color::Black),
+                    )])
                 })
                 .collect();
 
