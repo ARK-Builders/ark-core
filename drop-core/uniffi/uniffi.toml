@@ -1,3 +1,8 @@
 [bindings.kotlin]
 package_name = "dev.arkbuilders.drop"
 cdylib_name = "arkdrop_uniffi"
+
+[bindings.swift]
+module_name = "ArkDrop"
+cdylib_name = "arkdrop_uniffi"
+ffi_module_name = "arkdrop_uniffiFFI"

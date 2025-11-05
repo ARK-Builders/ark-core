@@ -1,0 +1,120 @@
+name: ARK Drop Swift Bindings Release
+
+on:
+  push:
+    paths:
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/uniffi/**"
+      - ".github/workflows/arkdrop-swift-bindings-release.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-darwin,aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: drop-core/uniffi
+
+      - name: Install Xcode Command Line Tools
+        run: |
+          xcode-select --install 2>/dev/null || true
+          xcode-select -p
+
+      - name: Generate Swift Bindings
+        working-directory: ./drop-core/uniffi/bindings/swift
+        run: |
+          chmod +x generate-bindings.sh
+          ./generate-bindings.sh
+
+      - name: Build XCFramework
+        working-directory: ./drop-core/uniffi/bindings/swift
+        run: |
+          chmod +x build-xcframework.sh
+          ./build-xcframework.sh
+
+      - name: Create Swift Package Archive
+        working-directory: ./drop-core/uniffi/bindings/swift
+        run: |
+          # Create a distributable package
+          mkdir -p ArkDrop-Swift-Package
+          cp -r arkdrop_uniffiFFI.xcframework ArkDrop-Swift-Package/
+          cp drop.swift ArkDrop-Swift-Package/
+          cp Package.swift ArkDrop-Swift-Package/
+          cp arkdrop_uniffiFFI.h ArkDrop-Swift-Package/
+
+          # Create a zip archive
+          zip -r ArkDrop-Swift-Package.zip ArkDrop-Swift-Package/
+
+          # Also create a checksum
+          shasum -a 256 ArkDrop-Swift-Package.zip > ArkDrop-Swift-Package.zip.sha256
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-bindings
+          path: |
+            drop-core/uniffi/bindings/swift/ArkDrop-Swift-Package.zip
+            drop-core/uniffi/bindings/swift/ArkDrop-Swift-Package.zip.sha256
+          retention-days: 30
+
+      - name: Create Release
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: swift-bindings-${{ github.run_id }}
+          name: Swift Bindings Release ${{ github.run_id }}
+          draft: false
+          prerelease: false
+          files: |
+            drop-core/uniffi/bindings/swift/ArkDrop-Swift-Package.zip
+            drop-core/uniffi/bindings/swift/ArkDrop-Swift-Package.zip.sha256
+          body: |
+            ## Swift Bindings for ARK Drop
+
+            This release contains the Swift bindings for ARK Drop, including:
+            - XCFramework for iOS (device and simulator) and macOS
+            - Swift source files
+            - Swift Package Manager configuration
+
+            ### Installation
+
+            #### Swift Package Manager
+
+            1. Download and extract `ArkDrop-Swift-Package.zip`
+            2. Add the package to your Xcode project or include it in your `Package.swift`:
+
+            ```swift
+            dependencies: [
+                .package(path: "path/to/ArkDrop-Swift-Package")
+            ]
+            ```
+
+            #### Manual Installation
+
+            1. Download `ArkDrop-Swift-Package.zip`
+            2. Extract and add `arkdrop_uniffiFFI.xcframework` to your Xcode project
+            3. Add `drop.swift` to your project sources
+
+            ### Verification
+
+            Verify the package integrity using the SHA256 checksum:
+            ```bash
+            shasum -a 256 -c ArkDrop-Swift-Package.zip.sha256
+            ```
+
+            Generated from commit: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -13,6 +13,11 @@ name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
 bench = false
 
+[[bin]]
+name = "uniffi-bindgen-swift"
+path = "uniffi-bindgen-swift.rs"
+bench = false
+
 [dependencies]
 arkdropx-sender = { path = "../exchanges/sender" }
 arkdropx-receiver = { path = "../exchanges/receiver" }

@@ -1,0 +1,20 @@
+# Build artifacts
+build/
+*.xcframework
+
+# Generated files from uniffi-bindgen
+*.swift
+*.h
+*.modulemap
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode
+xcuserdata/
+*.xcworkspace
+DerivedData/
+
+# macOS
+.DS_Store
