@@ -43,7 +43,7 @@
 //! let profile = Profile::default();
 //! // If you want to persist the directory, set save_out = true
 //! run_receive_files(
-//!     Some("/tmp/downloads".into()),
+//!     "/tmp/downloads".into(),
 //!     "TICKET_STRING".into(),
 //!     "7".into(),
 //!     profile,
@@ -830,7 +830,7 @@ pub async fn run_send_files(
 /// use arkdrop_cli::{run_receive_files, arkdrop_common::Profile};
 /// # async fn demo() -> anyhow::Result<()> {
 /// run_receive_files(
-///     Some("/tmp/downloads".into()),
+///     "/tmp/downloads".into(),
 ///     "TICKET".into(),
 ///     "3".into(),
 ///     Profile::default(),
