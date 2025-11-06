@@ -28,7 +28,8 @@
 //!
 //! Send files
 //! ```no_run
-//! use arkdrop_cli::{run_send_files, arkdrop_common::Profile};
+//! use arkdrop_cli::{run_send_files};
+//! use arkdrop_common::Profile;
 //! # async fn demo() -> anyhow::Result<()> {
 //! let profile = Profile::new("Alice".into(), None);
 //! run_send_files(vec!["/path/file1.bin".into(), "/path/file2.jpg".into()], profile, true).await?;
@@ -38,7 +39,8 @@
 //!
 //! Receive files
 //! ```no_run
-//! use arkdrop_cli::{run_receive_files, arkdrop_common::Profile};
+//! use arkdrop_cli::{run_receive_files};
+//! use arkdrop_common::Profile;
 //! # async fn demo() -> anyhow::Result<()> {
 //! let profile = Profile::default();
 //! // If you want to persist the directory, set save_out = true
@@ -787,9 +789,10 @@ impl SenderFileData for FileData {
 ///
 /// Example:
 /// ```no_run
-/// use arkdrop_cli::{run_send_files, arkdrop_common::Profile};
+/// use arkdrop_cli::{run_send_files};
+/// use arkdrop_common::Profile;
 /// # async fn demo() -> anyhow::Result<()> {
-/// run_send_files(vec!["/tmp/a.bin".into()], arkdrop_common::Profile::default(), false).await?;
+/// run_send_files(vec!["/tmp/a.bin".into()], Profile::default(), false).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -827,7 +830,8 @@ pub async fn run_send_files(
 ///
 /// Example:
 /// ```no_run
-/// use arkdrop_cli::{run_receive_files, arkdrop_common::Profile};
+/// use arkdrop_cli::{run_receive_files};
+/// use arkdrop_common::Profile;
 /// # async fn demo() -> anyhow::Result<()> {
 /// run_receive_files(
 ///     "/tmp/downloads".into(),
