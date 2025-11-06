@@ -19,17 +19,48 @@ cd "$UNIFFI_DIR"
 
 # Build for iOS device (arm64)
 echo "Building for iOS (aarch64-apple-ios)..."
-cargo build --release --target aarch64-apple-ios
+cargo build --lib --release --target aarch64-apple-ios
+echo "Checking output..."
+ls -lh "$UNIFFI_DIR/target/aarch64-apple-ios/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-ios"
 
 # Build for iOS Simulator (x86_64 and arm64)
 echo "Building for iOS Simulator..."
-cargo build --release --target x86_64-apple-ios
-cargo build --release --target aarch64-apple-ios-sim
+cargo build --lib --release --target x86_64-apple-ios
+echo "Checking output..."
+ls -lh "$UNIFFI_DIR/target/x86_64-apple-ios/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for x86_64-apple-ios"
+
+cargo build --lib --release --target aarch64-apple-ios-sim
+echo "Checking output..."
+ls -lh "$UNIFFI_DIR/target/aarch64-apple-ios-sim/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-ios-sim"
 
 # Build for macOS (x86_64 and arm64)
 echo "Building for macOS..."
-cargo build --release --target x86_64-apple-darwin
-cargo build --release --target aarch64-apple-darwin
+cargo build --lib --release --target x86_64-apple-darwin
+echo "Checking output..."
+ls -lh "$UNIFFI_DIR/target/x86_64-apple-darwin/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for x86_64-apple-darwin"
+
+cargo build --lib --release --target aarch64-apple-darwin
+echo "Checking output..."
+ls -lh "$UNIFFI_DIR/target/aarch64-apple-darwin/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-darwin"
+
+# Verify all required libraries exist before proceeding
+echo ""
+echo "Verifying all libraries are built..."
+for target_lib in \
+    "$UNIFFI_DIR/target/aarch64-apple-ios/release/libarkdrop_uniffi.a" \
+    "$UNIFFI_DIR/target/x86_64-apple-ios/release/libarkdrop_uniffi.a" \
+    "$UNIFFI_DIR/target/aarch64-apple-ios-sim/release/libarkdrop_uniffi.a" \
+    "$UNIFFI_DIR/target/x86_64-apple-darwin/release/libarkdrop_uniffi.a" \
+    "$UNIFFI_DIR/target/aarch64-apple-darwin/release/libarkdrop_uniffi.a"; do
+    if [ ! -f "$target_lib" ]; then
+        echo "ERROR: Required library not found: $target_lib"
+        echo "Build may have failed. Please check the cargo build output above."
+        exit 1
+    else
+        echo "✓ Found: $target_lib"
+    fi
+done
+echo ""
 
 # Create fat libraries
 echo "Creating universal libraries..."
