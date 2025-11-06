@@ -643,7 +643,7 @@ pub struct ReceiveFilesFile {
 ///         println!("chunk for {}: {} bytes", e.id, e.data.len());
 ///     }
 ///     fn notify_connecting(&self, e: ReceiveFilesConnectingEvent) {
-///         println!("sender: {}, files: {e}".sender.name, e.files.len());
+///         println!("sender: {}, files: {e}", sender.name, e.files.len());
 ///     }
 /// }
 ///
