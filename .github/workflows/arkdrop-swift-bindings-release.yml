@@ -24,6 +24,19 @@ jobs:
         with:
           targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-darwin,aarch64-apple-darwin
 
+      - name: Verify Rust targets
+        run: |
+          rustup target list --installed
+          echo "Verifying targets are installed..."
+          for target in aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim x86_64-apple-darwin aarch64-apple-darwin; do
+            if rustup target list --installed | grep -q "$target"; then
+              echo "✓ $target is installed"
+            else
+              echo "✗ $target is NOT installed"
+              rustup target add "$target"
+            fi
+          done
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: drop-core/uniffi
@@ -44,6 +57,8 @@ jobs:
         run: |
           chmod +x build-xcframework.sh
           ./build-xcframework.sh
+        env:
+          RUST_BACKTRACE: 1
 
       - name: Create Swift Package Archive
         working-directory: ./drop-core/uniffi/bindings/swift
