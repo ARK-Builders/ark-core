@@ -5,6 +5,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UNIFFI_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+WORKSPACE_ROOT="$(cd "$UNIFFI_DIR/../.." && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
 XCFRAMEWORK_NAME="arkdrop_uniffiFFI.xcframework"
 
@@ -19,39 +20,57 @@ cd "$UNIFFI_DIR"
 
 # Build for iOS device (arm64)
 echo "Building for iOS (aarch64-apple-ios)..."
-cargo build --lib --release --target aarch64-apple-ios
+if ! cargo rustc --lib --release --target aarch64-apple-ios --crate-type staticlib; then
+    echo "ERROR: Failed to build for aarch64-apple-ios"
+    echo "This target may not be compatible with the current dependencies."
+    exit 1
+fi
 echo "Checking output..."
-ls -lh "$UNIFFI_DIR/target/aarch64-apple-ios/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-ios"
+ls -lh "$WORKSPACE_ROOT/target/aarch64-apple-ios/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-ios"
 
 # Build for iOS Simulator (x86_64 and arm64)
-echo "Building for iOS Simulator..."
-cargo build --lib --release --target x86_64-apple-ios
+echo "Building for iOS Simulator (x86_64)..."
+if ! cargo rustc --lib --release --target x86_64-apple-ios --crate-type staticlib; then
+    echo "ERROR: Failed to build for x86_64-apple-ios"
+    exit 1
+fi
 echo "Checking output..."
-ls -lh "$UNIFFI_DIR/target/x86_64-apple-ios/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for x86_64-apple-ios"
+ls -lh "$WORKSPACE_ROOT/target/x86_64-apple-ios/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for x86_64-apple-ios"
 
-cargo build --lib --release --target aarch64-apple-ios-sim
+echo "Building for iOS Simulator (aarch64)..."
+if ! cargo rustc --lib --release --target aarch64-apple-ios-sim --crate-type staticlib; then
+    echo "ERROR: Failed to build for aarch64-apple-ios-sim"
+    exit 1
+fi
 echo "Checking output..."
-ls -lh "$UNIFFI_DIR/target/aarch64-apple-ios-sim/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-ios-sim"
+ls -lh "$WORKSPACE_ROOT/target/aarch64-apple-ios-sim/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-ios-sim"
 
 # Build for macOS (x86_64 and arm64)
-echo "Building for macOS..."
-cargo build --lib --release --target x86_64-apple-darwin
+echo "Building for macOS (x86_64)..."
+if ! cargo rustc --lib --release --target x86_64-apple-darwin --crate-type staticlib; then
+    echo "ERROR: Failed to build for x86_64-apple-darwin"
+    exit 1
+fi
 echo "Checking output..."
-ls -lh "$UNIFFI_DIR/target/x86_64-apple-darwin/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for x86_64-apple-darwin"
+ls -lh "$WORKSPACE_ROOT/target/x86_64-apple-darwin/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for x86_64-apple-darwin"
 
-cargo build --lib --release --target aarch64-apple-darwin
+echo "Building for macOS (aarch64)..."
+if ! cargo rustc --lib --release --target aarch64-apple-darwin --crate-type staticlib; then
+    echo "ERROR: Failed to build for aarch64-apple-darwin"
+    exit 1
+fi
 echo "Checking output..."
-ls -lh "$UNIFFI_DIR/target/aarch64-apple-darwin/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-darwin"
+ls -lh "$WORKSPACE_ROOT/target/aarch64-apple-darwin/release/" | grep libarkdrop_uniffi || echo "Warning: No library found for aarch64-apple-darwin"
 
 # Verify all required libraries exist before proceeding
 echo ""
 echo "Verifying all libraries are built..."
 for target_lib in \
-    "$UNIFFI_DIR/target/aarch64-apple-ios/release/libarkdrop_uniffi.a" \
-    "$UNIFFI_DIR/target/x86_64-apple-ios/release/libarkdrop_uniffi.a" \
-    "$UNIFFI_DIR/target/aarch64-apple-ios-sim/release/libarkdrop_uniffi.a" \
-    "$UNIFFI_DIR/target/x86_64-apple-darwin/release/libarkdrop_uniffi.a" \
-    "$UNIFFI_DIR/target/aarch64-apple-darwin/release/libarkdrop_uniffi.a"; do
+    "$WORKSPACE_ROOT/target/aarch64-apple-ios/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/x86_64-apple-ios/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/aarch64-apple-ios-sim/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/x86_64-apple-darwin/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/aarch64-apple-darwin/release/libarkdrop_uniffi.a"; do
     if [ ! -f "$target_lib" ]; then
         echo "ERROR: Required library not found: $target_lib"
         echo "Build may have failed. Please check the cargo build output above."
@@ -68,18 +87,18 @@ mkdir -p "$BUILD_DIR/ios-simulator"
 mkdir -p "$BUILD_DIR/macos"
 
 lipo -create \
-    "$UNIFFI_DIR/target/x86_64-apple-ios/release/libarkdrop_uniffi.a" \
-    "$UNIFFI_DIR/target/aarch64-apple-ios-sim/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/x86_64-apple-ios/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/aarch64-apple-ios-sim/release/libarkdrop_uniffi.a" \
     -output "$BUILD_DIR/ios-simulator/libarkdrop_uniffi.a"
 
 lipo -create \
-    "$UNIFFI_DIR/target/x86_64-apple-darwin/release/libarkdrop_uniffi.a" \
-    "$UNIFFI_DIR/target/aarch64-apple-darwin/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/x86_64-apple-darwin/release/libarkdrop_uniffi.a" \
+    "$WORKSPACE_ROOT/target/aarch64-apple-darwin/release/libarkdrop_uniffi.a" \
     -output "$BUILD_DIR/macos/libarkdrop_uniffi.a"
 
 # Copy iOS device library
 mkdir -p "$BUILD_DIR/ios"
-cp "$UNIFFI_DIR/target/aarch64-apple-ios/release/libarkdrop_uniffi.a" "$BUILD_DIR/ios/"
+cp "$WORKSPACE_ROOT/target/aarch64-apple-ios/release/libarkdrop_uniffi.a" "$BUILD_DIR/ios/"
 
 # Copy headers and modulemap to each platform directory
 for platform_dir in "$BUILD_DIR/ios" "$BUILD_DIR/ios-simulator" "$BUILD_DIR/macos"; do
