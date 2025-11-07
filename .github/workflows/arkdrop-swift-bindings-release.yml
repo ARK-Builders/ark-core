@@ -65,9 +65,18 @@ jobs:
         run: |
           # Create a distributable package
           mkdir -p ArkDrop-Swift-Package
+          mkdir -p ArkDrop-Swift-Package/Sources/ArkDrop
+
+          # Copy XCFramework
           cp -r arkdrop_uniffiFFI.xcframework ArkDrop-Swift-Package/
-          cp ArkDrop.swift ArkDrop-Swift-Package/
+
+          # Copy Swift source to Sources directory
+          cp ArkDrop.swift ArkDrop-Swift-Package/Sources/ArkDrop/
+
+          # Copy Package.swift
           cp Package.swift ArkDrop-Swift-Package/
+
+          # Copy header for reference
           cp arkdrop_uniffiFFI.h ArkDrop-Swift-Package/
 
           # Create a zip archive
