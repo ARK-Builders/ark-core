@@ -14,12 +14,8 @@ echo "Output directory: $OUTPUT_DIR"
 
 cd "$UNIFFI_DIR"
 
-# Generate Swift bindings
-echo "Running: cargo run --bin uniffi-bindgen generate ./src/drop.udl --language swift --out-dir $OUTPUT_DIR"
-if ! cargo run --bin uniffi-bindgen generate \
-    ./src/drop.udl \
-    --language swift \
-    --out-dir "$OUTPUT_DIR"; then
+echo "Running: cargo run --bin uniffi-bindgen-swift"
+if ! cargo run --bin uniffi-bindgen-swift -- --out-dir "$OUTPUT_DIR"; then
     echo "ERROR: Failed to generate Swift bindings"
     exit 1
 fi
@@ -28,7 +24,6 @@ echo ""
 echo "Listing output directory contents:"
 ls -la "$OUTPUT_DIR" | grep -E '\.(swift|h|modulemap)' || echo "Warning: No binding files found"
 
-# Rename modulemap to module.modulemap (required for XCFramework)
 if [ -f "$OUTPUT_DIR/arkdrop_uniffiFFI.modulemap" ]; then
     mv "$OUTPUT_DIR/arkdrop_uniffiFFI.modulemap" "$OUTPUT_DIR/module.modulemap"
     echo "Renamed modulemap to module.modulemap"
