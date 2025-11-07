@@ -3,9 +3,10 @@ build/
 *.xcframework
 
 # Generated files from uniffi-bindgen
-*.swift
-*.h
-*.modulemap
+ArkDrop.swift
+arkdrop_uniffiFFI.h
+module.modulemap
+arkdrop_uniffiFFI.modulemap
 
 # Swift Package Manager
 .build/
