@@ -38,7 +38,7 @@ fi
 echo ""
 echo "Verifying generated files..."
 for required_file in \
-    "$OUTPUT_DIR/drop.swift" \
+    "$OUTPUT_DIR/ArkDrop.swift" \
     "$OUTPUT_DIR/arkdrop_uniffiFFI.h" \
     "$OUTPUT_DIR/module.modulemap"; do
     if [ ! -f "$required_file" ]; then
