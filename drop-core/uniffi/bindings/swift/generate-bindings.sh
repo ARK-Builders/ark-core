@@ -15,10 +15,18 @@ echo "Output directory: $OUTPUT_DIR"
 cd "$UNIFFI_DIR"
 
 # Generate Swift bindings
-cargo run --bin uniffi-bindgen generate \
+echo "Running: cargo run --bin uniffi-bindgen generate ./src/drop.udl --language swift --out-dir $OUTPUT_DIR"
+if ! cargo run --bin uniffi-bindgen generate \
     ./src/drop.udl \
     --language swift \
-    --out-dir "$OUTPUT_DIR"
+    --out-dir "$OUTPUT_DIR"; then
+    echo "ERROR: Failed to generate Swift bindings"
+    exit 1
+fi
+
+echo ""
+echo "Listing output directory contents:"
+ls -la "$OUTPUT_DIR" | grep -E '\.(swift|h|modulemap)' || echo "Warning: No binding files found"
 
 # Rename modulemap to module.modulemap (required for XCFramework)
 if [ -f "$OUTPUT_DIR/arkdrop_uniffiFFI.modulemap" ]; then
@@ -26,6 +34,20 @@ if [ -f "$OUTPUT_DIR/arkdrop_uniffiFFI.modulemap" ]; then
     echo "Renamed modulemap to module.modulemap"
 fi
 
+# Verify required files exist
+echo ""
+echo "Verifying generated files..."
+for required_file in \
+    "$OUTPUT_DIR/drop.swift" \
+    "$OUTPUT_DIR/arkdrop_uniffiFFI.h" \
+    "$OUTPUT_DIR/module.modulemap"; do
+    if [ ! -f "$required_file" ]; then
+        echo "ERROR: Required file not generated: $required_file"
+        exit 1
+    else
+        echo "✓ Found: $required_file"
+    fi
+done
+
+echo ""
 echo "Swift bindings generated successfully!"
-echo "Generated files:"
-ls -la "$OUTPUT_DIR"/*.swift "$OUTPUT_DIR"/*.modulemap 2>/dev/null || true
