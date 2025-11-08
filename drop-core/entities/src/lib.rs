@@ -12,7 +12,7 @@
 //! use std::sync::{Arc, Mutex};
 //!
 //! // Bring items into scope when used from your crate:
-//! // use drop_entities::{Data, File, Profile};
+//! // use arkdrop_entities::{Data, File, Profile};
 //!
 //! // A simple in-memory Data implementation with a protected cursor.
 //! struct InMemoryData {
@@ -25,7 +25,7 @@
 //!     }
 //! }
 //! // Implement the trait from this crate for the type above.
-//! impl drop_entities::Data for InMemoryData {
+//! impl arkdrop_entities::Data for InMemoryData {
 //!     fn len(&self) -> u64 { self.buf.len() as u64 }
 //!     fn read(&self) -> Option<u8> {
 //!         let mut p = self.pos.lock().unwrap();
@@ -46,7 +46,7 @@
 //!
 //! // Construct a File backed by the in-memory data.
 //! let data = Arc::new(InMemoryData::new(b"hello"));
-//! let file = drop_entities::File {
+//! let file = arkdrop_entities::File {
 //!     id: "file-1".into(),
 //!     name: "greeting.txt".into(),
 //!     data: data.clone(),
@@ -58,7 +58,7 @@
 //! assert_eq!(file.data.read_chunk(2), b"he".to_vec());
 //!
 //! // A simple profile
-//! let profile = drop_entities::Profile { id: "42".into(), name: "Ada".into(), avatar_b64: None };
+//! let profile = arkdrop_entities::Profile { id: "42".into(), name: "Ada".into(), avatar_b64: None };
 //! assert_eq!(profile.name, "Ada");
 //! ```
 

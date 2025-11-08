@@ -1,10 +1,10 @@
 [package]
-name = "dropx-common"
+name = "arkdropx-common"
 version = "1.0.0"
 edition = "2024"
 
 [lib]
-name = "dropx_common"
+name = "arkdropx_common"
 bench = false
 
 [dependencies]

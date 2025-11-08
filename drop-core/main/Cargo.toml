@@ -1,0 +1,18 @@
+[package]
+name = "arkdrop"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+bench = false
+name = "arkdrop"
+path = "src/main.rs"
+
+[dependencies]
+arkdrop-common = { path = "../common" }
+arkdrop-cli = { path = "../cli" }  
+arkdrop-tui = { path = "../tui" }
+
+clap = "4.5.47"
+tokio = "1.47.1"
+anyhow = "1.0.99"

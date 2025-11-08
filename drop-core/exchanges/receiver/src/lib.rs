@@ -18,11 +18,6 @@
 
 mod receive_files;
 
-use std::{
-    io::{Bytes, Read},
-    sync::{RwLock, atomic::AtomicBool},
-};
-
 pub use receive_files::*;
 
 /// Identity and presentation for the receiving peer.
@@ -90,95 +85,5 @@ impl ReceiverConfig {
             chunk_size: 1024 * 64, // 64KB chunks
             parallel_streams: 2,   // 2 parallel streams
         }
-    }
-}
-
-/// Metadata and data carrier representing a file being received.
-///
-/// Note: Depending on your flow, you may receive file data via events
-/// (see `receive_files` module) rather than pulling bytes directly from this
-/// structure.
-#[derive(Debug)]
-pub struct ReceiverFile {
-    /// Unique, sender-provided file identifier.
-    pub id: String,
-    /// Human-readable file name (as provided by sender).
-    pub name: String,
-    /// Backing data accessor for byte-wise reads.
-    pub data: ReceiverFileData,
-}
-
-/// Backing data abstraction for a locally stored file used by the receiver.
-///
-/// This type supports:
-/// - Lazy initialization of a byte iterator over the file.
-/// - Byte-wise `read()` until EOF, returning `None` when complete.
-/// - A simple `is_finished` flag to short-circuit further reads after EOF.
-///
-/// Caveats:
-/// - `len()` currently counts bytes by iterating the file; this is O(n) and
-///   re-reads the file. Prefer using file metadata for length if available.
-/// - `read()` is not optimized for high-throughput stream reads; it is intended
-///   for simple scenarios and examples. Use buffered I/O where performance
-///   matters.
-#[derive(Debug)]
-pub struct ReceiverFileData {
-    is_finished: AtomicBool,
-    path: std::path::PathBuf,
-    reader: RwLock<Option<Bytes<std::fs::File>>>,
-}
-impl ReceiverFileData {
-    /// Create a new `ReceiverFileData` from a filesystem path.
-    pub fn new(path: std::path::PathBuf) -> Self {
-        return Self {
-            is_finished: AtomicBool::new(false),
-            path,
-            reader: RwLock::new(None),
-        };
-    }
-
-    /// Return the file length in bytes by counting the iterator.
-    ///
-    /// Note: This reads the entire file to count bytes and is therefore O(n).
-    /// If possible, prefer using `std::fs::metadata(&path)?.len()` in your own
-    /// code where you have direct access to the path.
-    pub fn len(&self) -> u64 {
-        let file = std::fs::File::open(&self.path).unwrap();
-        return file.bytes().count() as u64;
-    }
-
-    /// Read the next byte from the file, returning `None` at EOF or after
-    /// the stream has been marked finished.
-    ///
-    /// This initializes an internal iterator on first use and cleans it up
-    /// when EOF is reached. Subsequent calls after completion return `None`.
-    pub fn read(&self) -> Option<u8> {
-        if self
-            .is_finished
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return None;
-        }
-        if self.reader.read().unwrap().is_none() {
-            let file = std::fs::File::open(&self.path).unwrap();
-            self.reader.write().unwrap().replace(file.bytes());
-        }
-        let next = self
-            .reader
-            .write()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .next();
-        if next.is_some() {
-            let read_result = next.unwrap();
-            if read_result.is_ok() {
-                return Some(read_result.unwrap());
-            }
-        }
-        self.reader.write().unwrap().as_mut().take();
-        self.is_finished
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        return None;
     }
 }
