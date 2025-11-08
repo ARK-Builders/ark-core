@@ -46,14 +46,6 @@ jobs:
           xcode-select --install 2>/dev/null || true
           xcode-select -p
 
-      - name: Build Library (for binding generation)
-        working-directory: ./drop-core/uniffi
-        run: |
-          echo "Building debug library for Swift binding generation..."
-          cargo build --lib
-          echo "Verifying library was built..."
-          ls -lh target/debug/libarkdrop_uniffi.* || echo "Warning: Library not found"
-
       - name: Generate Swift Bindings
         working-directory: ./drop-core/uniffi/bindings/swift
         run: |

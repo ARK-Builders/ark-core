@@ -6,22 +6,28 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UNIFFI_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+WORKSPACE_ROOT="$(cd "$UNIFFI_DIR/../.." && pwd)"
 OUTPUT_DIR="$SCRIPT_DIR"
 
 echo "Generating Swift bindings..."
+echo "Workspace root: $WORKSPACE_ROOT"
 echo "UniFFI directory: $UNIFFI_DIR"
 echo "Output directory: $OUTPUT_DIR"
 
 cd "$UNIFFI_DIR"
 
 echo "Building library for binding generation..."
-cargo build --lib
+cargo build --lib --release
 
-LIBRARY_PATH="$UNIFFI_DIR/target/debug/libarkdrop_uniffi.a"
+LIBRARY_PATH="$WORKSPACE_ROOT/target/release/libarkdrop_uniffi.a"
 if [ ! -f "$LIBRARY_PATH" ]; then
     echo "ERROR: Library not found at $LIBRARY_PATH"
+    echo "Looking for library in target directory..."
+    find "$WORKSPACE_ROOT/target" -name "libarkdrop_uniffi.*" || true
     exit 1
 fi
+
+echo "Using library: $LIBRARY_PATH"
 
 echo "Generating Swift sources..."
 if ! cargo run --bin uniffi-bindgen-swift -- --swift-sources "$LIBRARY_PATH" "$OUTPUT_DIR"; then
