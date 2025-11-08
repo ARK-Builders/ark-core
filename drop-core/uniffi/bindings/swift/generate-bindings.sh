@@ -14,19 +14,31 @@ echo "Output directory: $OUTPUT_DIR"
 
 cd "$UNIFFI_DIR"
 
-echo "Running: cargo run --bin uniffi-bindgen-swift"
-if ! cargo run --bin uniffi-bindgen-swift -- \
-    "$UNIFFI_DIR/target/debug/libarkdrop_uniffi.a" \
-    "$OUTPUT_DIR"; then
-    echo "ERROR: Failed to generate Swift bindings"
-    echo "Attempting to build the library first..."
-    cargo build --lib
-    if ! cargo run --bin uniffi-bindgen-swift -- \
-        "$UNIFFI_DIR/target/debug/libarkdrop_uniffi.a" \
-        "$OUTPUT_DIR"; then
-        echo "ERROR: Failed to generate Swift bindings after building library"
-        exit 1
-    fi
+echo "Building library for binding generation..."
+cargo build --lib
+
+LIBRARY_PATH="$UNIFFI_DIR/target/debug/libarkdrop_uniffi.a"
+if [ ! -f "$LIBRARY_PATH" ]; then
+    echo "ERROR: Library not found at $LIBRARY_PATH"
+    exit 1
+fi
+
+echo "Generating Swift sources..."
+if ! cargo run --bin uniffi-bindgen-swift -- --swift-sources "$LIBRARY_PATH" "$OUTPUT_DIR"; then
+    echo "ERROR: Failed to generate Swift sources"
+    exit 1
+fi
+
+echo "Generating C headers..."
+if ! cargo run --bin uniffi-bindgen-swift -- --headers "$LIBRARY_PATH" "$OUTPUT_DIR"; then
+    echo "ERROR: Failed to generate headers"
+    exit 1
+fi
+
+echo "Generating modulemap..."
+if ! cargo run --bin uniffi-bindgen-swift -- --modulemap "$LIBRARY_PATH" "$OUTPUT_DIR"; then
+    echo "ERROR: Failed to generate modulemap"
+    exit 1
 fi
 
 echo ""
