@@ -51,8 +51,8 @@ echo ""
 echo "Listing output directory contents:"
 ls -la "$OUTPUT_DIR" | grep -E '\.(swift|h|modulemap)' || echo "Warning: No binding files found"
 
-if [ -f "$OUTPUT_DIR/arkdrop_uniffiFFI.modulemap" ]; then
-    mv "$OUTPUT_DIR/arkdrop_uniffiFFI.modulemap" "$OUTPUT_DIR/module.modulemap"
+if [ -f "$OUTPUT_DIR/arkdrop_uniffi.modulemap" ]; then
+    mv "$OUTPUT_DIR/arkdrop_uniffi.modulemap" "$OUTPUT_DIR/module.modulemap"
     echo "Renamed modulemap to module.modulemap"
 fi
 
