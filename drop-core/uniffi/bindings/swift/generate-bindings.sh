@@ -15,9 +15,18 @@ echo "Output directory: $OUTPUT_DIR"
 cd "$UNIFFI_DIR"
 
 echo "Running: cargo run --bin uniffi-bindgen-swift"
-if ! cargo run --bin uniffi-bindgen-swift -- --out-dir "$OUTPUT_DIR"; then
+if ! cargo run --bin uniffi-bindgen-swift -- \
+    "$UNIFFI_DIR/target/debug/libarkdrop_uniffi.a" \
+    "$OUTPUT_DIR"; then
     echo "ERROR: Failed to generate Swift bindings"
-    exit 1
+    echo "Attempting to build the library first..."
+    cargo build --lib
+    if ! cargo run --bin uniffi-bindgen-swift -- \
+        "$UNIFFI_DIR/target/debug/libarkdrop_uniffi.a" \
+        "$OUTPUT_DIR"; then
+        echo "ERROR: Failed to generate Swift bindings after building library"
+        exit 1
+    fi
 fi
 
 echo ""
