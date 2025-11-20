@@ -1,4 +1,4 @@
-//! drop-cli library
+//! arkdrop_cli library
 //!
 //! High-level send/receive helpers and UI for the DropX transfer crates.
 //!
@@ -8,7 +8,7 @@
 //!   handling.
 //! - CLI-friendly helpers for configuration and selecting the receive
 //!   directory.
-//! - Public async functions to drive sending and receiving from a CLI or app.
+//! - Public async functions to drive sending and receiving from another peer.
 //!
 //! Concepts
 //! - Ticket: A short string that identifies an in-progress transfer session.
@@ -21,14 +21,15 @@
 //!
 //! Configuration
 //! - Stores a default receive directory in:
-//!   $XDG_CONFIG_HOME/drop-cli/config.toml or
-//!   $HOME/.config/drop-cli/config.toml if XDG_CONFIG_HOME is not set.
+//!   $XDG_CONFIG_HOME/arkdrop_cli/config.toml or
+//!   $HOME/.config/arkdrop_cli/config.toml if XDG_CONFIG_HOME is not set.
 //!
 //! Examples
 //!
 //! Send files
 //! ```no_run
-//! use drop_cli::{run_send_files, Profile};
+//! use arkdrop_cli::{run_send_files};
+//! use arkdrop_common::Profile;
 //! # async fn demo() -> anyhow::Result<()> {
 //! let profile = Profile::new("Alice".into(), None);
 //! run_send_files(vec!["/path/file1.bin".into(), "/path/file2.jpg".into()], profile, true).await?;
@@ -38,24 +39,25 @@
 //!
 //! Receive files
 //! ```no_run
-//! use drop_cli::{run_receive_files, Profile};
+//! use arkdrop_cli::{run_receive_files};
+//! use arkdrop_common::Profile;
 //! # async fn demo() -> anyhow::Result<()> {
 //! let profile = Profile::default();
-//! // If you want to persist the directory, set save_dir = true
+//! // If you want to persist the directory, set save_out = true
 //! run_receive_files(
-//!     Some("/tmp/downloads".into()),
+//!     "/tmp/downloads".into(),
 //!     "TICKET_STRING".into(),
 //!     "7".into(),
 //!     profile,
 //!     true,   // verbose
-//!     false,  // save_dir
+//!     false,  // save_out
 //! ).await?;
 //! # Ok(())
 //! # }
 //! ```
 use std::{
     collections::HashMap,
-    env, fs,
+    fs,
     io::Write,
     path::PathBuf,
     str::FromStr,
@@ -63,225 +65,38 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use base64::{Engine, engine::general_purpose};
-use dropx_receiver::{
+use arkdrop_common::{
+    AppConfig, Profile, clear_default_out_dir, get_default_out_dir,
+    set_default_out_dir,
+};
+use arkdropx_receiver::{
     ReceiveFilesConnectingEvent, ReceiveFilesFile, ReceiveFilesReceivingEvent,
     ReceiveFilesRequest, ReceiveFilesSubscriber, ReceiverProfile,
     receive_files,
 };
-use dropx_sender::{
-    SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
-    SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
-    SenderProfile, send_files,
+use arkdropx_sender::{
+    SendFilesBubble, SendFilesConnectingEvent, SendFilesRequest,
+    SendFilesSendingEvent, SendFilesSubscriber, SenderConfig, SenderFile,
+    SenderFileData, SenderProfile, send_files,
 };
+use clap::{Arg, ArgMatches, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use serde::{Deserialize, Serialize};
+use qrcode::QrCode;
 use uuid::Uuid;
 
-/// Configuration for the CLI application.
+/// File sender with error handling and progress tracking.
 ///
-/// This structure is persisted to TOML and stores user preferences for the CLI
-/// usage, such as the default directory to save received files.
-///
-/// Storage location:
-/// - Linux: $XDG_CONFIG_HOME/drop-cli/config.toml or
-///   $HOME/.config/drop-cli/config.toml
-/// - macOS: $HOME/Library/Application Support/drop-cli/config.toml
-/// - Windows: %APPDATA%\drop-cli\config.toml
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CliConfig {
-    default_receive_dir: Option<String>,
-}
-
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            default_receive_dir: None,
-        }
-    }
-}
-
-impl CliConfig {
-    /// Returns the configuration directory path, creating a path under the
-    /// user's platform-appropriate config directory.
-    fn config_dir() -> Result<PathBuf> {
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(appdata) = env::var("APPDATA") {
-                return Ok(PathBuf::from(appdata).join("drop-cli"));
-            }
-            // Fallback if APPDATA isn't set (rare)
-            if let Ok(userprofile) = env::var("USERPROFILE") {
-                return Ok(PathBuf::from(userprofile)
-                    .join(".config")
-                    .join("drop-cli"));
-            }
-            return Err(anyhow!(
-                "Unable to determine config directory (missing APPDATA/USERPROFILE)"
-            ));
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            if let Ok(home) = env::var("HOME") {
-                return Ok(PathBuf::from(home)
-                    .join("Library")
-                    .join("Application Support")
-                    .join("drop-cli"));
-            }
-            return Err(anyhow!(
-                "Unable to determine config directory (missing HOME)"
-            ));
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            let config_dir = if let Ok(xdg_config_home) =
-                env::var("XDG_CONFIG_HOME")
-            {
-                PathBuf::from(xdg_config_home)
-            } else if let Ok(home) = env::var("HOME") {
-                PathBuf::from(home).join(".config")
-            } else {
-                return Err(anyhow!(
-                    "Unable to determine config directory (missing XDG_CONFIG_HOME/HOME)"
-                ));
-            };
-            Ok(config_dir.join("drop-cli"))
-        }
-    }
-
-    /// Returns the full config file path.
-    fn config_file() -> Result<PathBuf> {
-        Ok(Self::config_dir()?.join("config.toml"))
-    }
-
-    /// Loads the configuration from disk. If the file does not exist,
-    /// returns a default configuration.
-    fn load() -> Result<Self> {
-        let config_file = Self::config_file()?;
-
-        if !config_file.exists() {
-            return Ok(Self::default());
-        }
-
-        let config_content =
-            fs::read_to_string(&config_file).with_context(|| {
-                format!("Failed to read config file: {}", config_file.display())
-            })?;
-
-        let config: CliConfig = toml::from_str(&config_content)
-            .with_context(|| "Failed to parse config file")?;
-
-        Ok(config)
-    }
-
-    /// Saves the current configuration to disk, creating the directory if
-    /// needed.
-    fn save(&self) -> Result<()> {
-        let config_dir = Self::config_dir()?;
-        let config_file = Self::config_file()?;
-
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).with_context(|| {
-                format!(
-                    "Failed to create config directory: {}",
-                    config_dir.display()
-                )
-            })?;
-        }
-
-        let config_content = toml::to_string_pretty(self)
-            .with_context(|| "Failed to serialize config")?;
-
-        fs::write(&config_file, config_content).with_context(|| {
-            format!("Failed to write config file: {}", config_file.display())
-        })?;
-
-        Ok(())
-    }
-
-    /// Updates and persists the default receive directory.
-    fn set_default_receive_dir(&mut self, dir: String) -> Result<()> {
-        self.default_receive_dir = Some(dir);
-        self.save()
-    }
-
-    /// Returns the saved default receive directory, if any.
-    fn get_default_receive_dir(&self) -> Option<&String> {
-        self.default_receive_dir.as_ref()
-    }
-}
-
-/// Profile for the CLI application.
-///
-/// This profile is sent to peers during a transfer to help identify the user.
-/// You can set a display name and an optional avatar as a base64-encoded image.
-#[derive(Debug, Clone)]
-pub struct Profile {
-    /// Display name shown to peers.
-    pub name: String,
-    /// Optional base64-encoded avatar image data.
-    pub avatar_b64: Option<String>,
-}
-
-impl Default for Profile {
-    fn default() -> Self {
-        Self {
-            name: "drop-cli".to_string(),
-            avatar_b64: None,
-        }
-    }
-}
-
-impl Profile {
-    /// Create a new profile with a custom name and optional base64 avatar.
-    ///
-    /// Example:
-    /// ```no_run
-    /// use drop_cli::Profile;
-    /// let p = Profile::new("Alice".into(), None);
-    /// ```
-    pub fn new(name: String, avatar_b64: Option<String>) -> Self {
-        Self { name, avatar_b64 }
-    }
-
-    /// Load avatar from a file path and encode it as base64.
-    ///
-    /// Returns an updated Profile on success.
-    ///
-    /// Errors:
-    /// - If the file cannot be read or encoded.
-    pub fn with_avatar_file(mut self, avatar_path: &str) -> Result<Self> {
-        let avatar_data = fs::read(avatar_path).with_context(|| {
-            format!("Failed to read avatar file: {}", avatar_path)
-        })?;
-
-        self.avatar_b64 = Some(general_purpose::STANDARD.encode(&avatar_data));
-        Ok(self)
-    }
-
-    /// Set an avatar from a base64-encoded string and return the updated
-    /// profile.
-    pub fn with_avatar_b64(mut self, avatar_b64: String) -> Self {
-        self.avatar_b64 = Some(avatar_b64);
-        self
-    }
-}
-
-/// Enhanced file sender with error handling and progress tracking.
-///
-/// Wraps the lower-level dropx_sender API and provides:
+/// Wraps the lower-level arkdropx_sender API and provides:
 /// - Validation for input paths.
 /// - Subscription to transfer events with progress bars.
 /// - Clean cancellation via Ctrl+C.
-pub struct FileSender {
+struct FileSender {
     profile: Profile,
 }
 
 impl FileSender {
     /// Create a new FileSender with the given profile.
-    pub fn new(profile: Profile) -> Self {
+    fn new(profile: Profile) -> Self {
         Self { profile }
     }
 
@@ -296,7 +111,7 @@ impl FileSender {
     /// Errors:
     /// - If any provided path is missing or not a regular file.
     /// - If the underlying sender fails to initialize or run.
-    pub async fn send_files(
+    async fn send_files(
         &self,
         file_paths: Vec<PathBuf>,
         verbose: bool,
@@ -317,7 +132,7 @@ impl FileSender {
 
         let request = SendFilesRequest {
             files: self.create_sender_files(file_paths)?,
-            profile: self.get_sender_profile(),
+            profile: self.create_sender_profile(),
             config: SenderConfig::default(),
         };
 
@@ -329,8 +144,7 @@ impl FileSender {
         bubble.subscribe(Arc::new(subscriber));
 
         println!("📦 Ready to send files!");
-        println!("🎫 Ticket: \"{}\"", bubble.get_ticket());
-        println!("🔑 Confirmation: \"{}\"", bubble.get_confirmation());
+        print_qr_to_console(&bubble)?;
         println!("⏳ Waiting for receiver... (Press Ctrl+C to cancel)");
 
         tokio::select! {
@@ -347,34 +161,25 @@ impl FileSender {
         Ok(())
     }
 
-    /// Converts file paths into SenderFile entries backed by FileData.
     fn create_sender_files(
         &self,
         paths: Vec<PathBuf>,
     ) -> Result<Vec<SenderFile>> {
-        let mut files = Vec::new();
+        let mut sender_files = Vec::new();
 
         for path in paths {
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .ok_or_else(|| {
-                    anyhow!("Invalid file name: {}", path.display())
-                })?
-                .to_string();
-
-            let data = FileData::new(path)?;
-            files.push(SenderFile {
-                name,
+            let data = FileData::new(path.clone())?;
+            sender_files.push(SenderFile {
+                name: path.to_string_lossy().to_string(),
                 data: Arc::new(data),
             });
         }
 
-        Ok(files)
+        Ok(sender_files)
     }
 
     /// Returns a SenderProfile derived from this FileSender's Profile.
-    fn get_sender_profile(&self) -> SenderProfile {
+    fn create_sender_profile(&self) -> SenderProfile {
         SenderProfile {
             name: self.profile.name.clone(),
             avatar_b64: self.profile.avatar_b64.clone(),
@@ -382,31 +187,61 @@ impl FileSender {
     }
 }
 
+fn print_qr_to_console(bubble: &SendFilesBubble) -> Result<()> {
+    let ticket = bubble.get_ticket();
+    let confirmation = bubble.get_confirmation();
+    let data =
+        format!("drop://receive?ticket={ticket}&confirmation={confirmation}");
+
+    let code = QrCode::new(&data)?;
+    let image = code
+        .render::<char>()
+        .quiet_zone(false)
+        .module_dimensions(2, 1)
+        .build();
+
+    println!("\nQR Code for Transfer:");
+    println!("{}", image);
+    println!("🎫 Ticket: {ticket}");
+    println!("🔒 Confirmation: {confirmation}\n");
+
+    Ok(())
+}
+
+async fn wait_for_send_completion(bubble: &arkdropx_sender::SendFilesBubble) {
+    loop {
+        if bubble.is_finished() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    }
+}
+
 /// Enhanced file receiver with error handling and progress tracking.
 ///
-/// Wraps the lower-level dropx_receiver API and provides:
+/// Wraps the lower-level arkdropx_receiver API and provides:
 /// - Output directory management (unique subdir per transfer).
 /// - Subscription to events with per-file progress bars.
 /// - Clean cancellation via Ctrl+C.
-pub struct FileReceiver {
+struct FileReceiver {
     profile: Profile,
 }
 
 impl FileReceiver {
     /// Create a new FileReceiver with the given profile.
-    pub fn new(profile: Profile) -> Self {
+    fn new(profile: Profile) -> Self {
         Self { profile }
     }
 
     /// Receive files into the provided output directory.
     ///
     /// Behavior:
-    /// - Creates a unique subfolder for the session inside `output_dir`.
+    /// - Creates a unique subfolder for the session inside `out_dir`.
     /// - Shows per-file progress bars for known file sizes.
     /// - Cancels cleanly on Ctrl+C.
     ///
     /// Parameters:
-    /// - output_dir: Parent directory where the unique session folder will be
+    /// - out_dir: Parent directory where the unique session folder will be
     ///   created.
     /// - ticket: The ticket provided by the sender.
     /// - confirmation: The numeric confirmation code.
@@ -415,25 +250,25 @@ impl FileReceiver {
     /// Errors:
     /// - If directories cannot be created or written.
     /// - If the underlying receiver fails to initialize or run.
-    pub async fn receive_files(
+    async fn receive_files(
         &self,
-        output_dir: PathBuf,
+        out_dir: PathBuf,
         ticket: String,
         confirmation: u8,
         verbose: bool,
     ) -> Result<()> {
         // Create output directory if it doesn't exist
-        if !output_dir.exists() {
-            fs::create_dir_all(&output_dir).with_context(|| {
+        if !out_dir.exists() {
+            fs::create_dir_all(&out_dir).with_context(|| {
                 format!(
                     "Failed to create output directory: {}",
-                    output_dir.display()
+                    out_dir.display()
                 )
             })?;
         }
 
         // Create unique subdirectory for this transfer
-        let receiving_path = output_dir.join(Uuid::new_v4().to_string());
+        let receiving_path = out_dir.join(Uuid::new_v4().to_string());
         fs::create_dir(&receiving_path).with_context(|| {
             format!(
                 "Failed to create receiving directory: {}",
@@ -488,17 +323,8 @@ impl FileReceiver {
     }
 }
 
-async fn wait_for_send_completion(bubble: &dropx_sender::SendFilesBubble) {
-    loop {
-        if bubble.is_finished() {
-            break;
-        }
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    }
-}
-
 async fn wait_for_receive_completion(
-    bubble: &dropx_receiver::ReceiveFilesBubble,
+    bubble: &arkdropx_receiver::ReceiveFilesBubble,
 ) {
     loop {
         if bubble.is_finished() {
@@ -541,7 +367,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            let _ = self.mp.println(format!("🔍 {}", message));
+            let _ = self.mp.println(format!("🔍 {message}"));
         }
     }
 
@@ -584,9 +410,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
     }
 
     fn notify_connecting(&self, event: SendFilesConnectingEvent) {
-        let _ = self
-            .mp
-            .println("🔗 Connected to receiver:".to_string());
+        let _ = self.mp.println("🔗 Connected to receiver:");
         let _ = self
             .mp
             .println(format!("   📛 Name: {}", event.receiver.name));
@@ -633,7 +457,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 
     fn log(&self, message: String) {
         if self.verbose {
-            let _ = self.mp.println(format!("🔍 {}", message));
+            let _ = self.mp.println(format!("🔍 {message}"));
         }
     }
 
@@ -642,7 +466,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
         let files = match self.files.read() {
             Ok(files) => files,
             Err(e) => {
-                eprintln!("❌ Error accessing files list: {}", e);
+                eprintln!("❌ Error accessing files list: {e}");
                 return;
             }
         };
@@ -714,7 +538,6 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 }
                 if let Err(e) = file_stream.flush() {
                     eprintln!("❌ Error flushing file {}: {}", file.name, e);
-                    return;
                 }
             }
             Err(e) => {
@@ -724,9 +547,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
     }
 
     fn notify_connecting(&self, event: ReceiveFilesConnectingEvent) {
-        let _ = self
-            .mp
-            .println("🔗 Connected to sender:".to_string());
+        let _ = self.mp.println("🔗 Connected to sender:");
         let _ = self
             .mp
             .println(format!("   📛 Name: {}", event.sender.name));
@@ -755,7 +576,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 }
             }
             Err(e) => {
-                eprintln!("❌ Error updating files list: {}", e);
+                eprintln!("❌ Error updating files list: {e}");
             }
         }
     }
@@ -772,7 +593,7 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
 /// Notes:
 /// - Errors are logged and will mark the stream as finished to prevent
 ///   stalling.
-struct FileData {
+pub struct FileData {
     is_finished: AtomicBool,
     path: PathBuf,
     reader: RwLock<Option<std::fs::File>>,
@@ -785,7 +606,7 @@ impl FileData {
     ///
     /// Errors:
     /// - If the file's metadata cannot be read.
-    fn new(path: PathBuf) -> Result<Self> {
+    pub fn new(path: PathBuf) -> Result<Self> {
         let metadata = fs::metadata(&path).with_context(|| {
             format!("Failed to get metadata for file: {}", path.display())
         })?;
@@ -804,6 +625,11 @@ impl SenderFileData for FileData {
     /// Returns the total file size in bytes.
     fn len(&self) -> u64 {
         self.size
+    }
+
+    /// Checks if the data is empty (length is 0).
+    fn is_empty(&self) -> bool {
+        self.size == 0
     }
 
     /// Reads a single byte, falling back to EOF (None) at end of file or on
@@ -963,7 +789,8 @@ impl SenderFileData for FileData {
 ///
 /// Example:
 /// ```no_run
-/// use drop_cli::{run_send_files, Profile};
+/// use arkdrop_cli::{run_send_files};
+/// use arkdrop_common::Profile;
 /// # async fn demo() -> anyhow::Result<()> {
 /// run_send_files(vec!["/tmp/a.bin".into()], Profile::default(), false).await?;
 /// # Ok(())
@@ -984,18 +811,18 @@ pub async fn run_send_files(
 
 /// Run a receive operation, optionally persisting the chosen output directory.
 ///
-/// If `output_dir` is None, a previously saved default directory is used.
+/// If `out_dir` is None, a previously saved default directory is used.
 /// If no saved default exists, a sensible fallback is chosen:
-/// - $HOME/Downloads/Drop if HOME is set
+/// - $HOME/Downloads/ARK-Drop if HOME is set
 /// - or the current directory (.) otherwise
 ///
 /// Parameters:
-/// - output_dir: Optional parent directory to store the received files.
+/// - out_dir: Optional parent directory to store the received files.
 /// - ticket: Ticket string provided by the sender.
 /// - confirmation: Numeric confirmation code as a string (parsed to u8).
 /// - profile: The local user profile to present to the sender.
 /// - verbose: Enables transport logs and extra diagnostics.
-/// - save_dir: If true and `output_dir` is Some, saves it as the default.
+/// - save_out: If true and `out_dir` is Some, saves it as the default.
 ///
 /// Errors:
 /// - If the confirmation code is invalid.
@@ -1003,10 +830,11 @@ pub async fn run_send_files(
 ///
 /// Example:
 /// ```no_run
-/// use drop_cli::{run_receive_files, Profile};
+/// use arkdrop_cli::{run_receive_files};
+/// use arkdrop_common::Profile;
 /// # async fn demo() -> anyhow::Result<()> {
 /// run_receive_files(
-///     Some("/tmp/downloads".into()),
+///     "/tmp/downloads".into(),
 ///     "TICKET".into(),
 ///     "3".into(),
 ///     Profile::default(),
@@ -1017,108 +845,339 @@ pub async fn run_send_files(
 /// # }
 /// ```
 pub async fn run_receive_files(
-    output_dir: Option<String>,
+    out_dir: PathBuf,
     ticket: String,
     confirmation: String,
     profile: Profile,
     verbose: bool,
-    save_dir: bool,
+    save_out: bool,
 ) -> Result<()> {
     let confirmation_code = u8::from_str(&confirmation).with_context(|| {
-        format!("Invalid confirmation code: {}", confirmation)
+        format!("Invalid confirmation code: {confirmation}")
     })?;
 
-    // Determine the output directory
-    let final_output_dir = match output_dir {
-        Some(dir) => {
-            let path = PathBuf::from(&dir);
-
-            // Save this directory as default if requested
-            if save_dir {
-                let mut config = CliConfig::load()?;
-                config
-                    .set_default_receive_dir(dir.clone())
-                    .with_context(
-                        || "Failed to save default receive directory",
-                    )?;
-                println!("💾 Saved '{}' as default receive directory", dir);
-            }
-
-            path
-        }
-        None => {
-            // Try to use saved default directory; otherwise use sensible
-            // fallback
-            let config = CliConfig::load()?;
-            match config.get_default_receive_dir() {
-                Some(default_dir) => PathBuf::from(default_dir),
-                None => default_receive_dir_fallback(),
-            }
-        }
-    };
+    if save_out {
+        let mut config = AppConfig::load()?;
+        config.set_out_dir(out_dir.clone()).with_context(
+            || "Failed to save default output receive directory",
+        )?;
+        println!(
+            "💾 Saved '{}' as default output receive directory",
+            out_dir.display()
+        );
+    }
 
     let receiver = FileReceiver::new(profile);
     receiver
-        .receive_files(final_output_dir, ticket, confirmation_code, verbose)
+        .receive_files(out_dir, ticket, confirmation_code, verbose)
         .await
 }
 
-/// Returns the saved default receive directory path, if any.
-///
-/// This reads the TOML config file from the user's config directory.
-///
-/// Errors:
-/// - If the configuration file cannot be read or parsed.
-pub fn get_default_receive_dir() -> Result<Option<String>> {
-    let config = CliConfig::load()?;
-    Ok(config.get_default_receive_dir().cloned())
-}
+pub fn build_profile(matches: &ArgMatches) -> Result<Profile> {
+    let name = match matches.get_one::<String>("name") {
+        Some(name) => name.clone(),
+        None => String::from("Unknown"),
+    };
+    let mut profile = Profile::new(name, None);
 
-/// Returns a suggested default receive directory when no saved default exists:
-/// - Linux/macOS: $HOME/Downloads/Drop
-/// - Windows: %USERPROFILE%\Downloads\Drop
-pub fn suggested_default_receive_dir() -> PathBuf {
-    default_receive_dir_fallback()
-}
-
-/// Internal: resolve a sensible fallback for receive directory.
-fn default_receive_dir_fallback() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(userprofile) = env::var("USERPROFILE") {
-            return PathBuf::from(userprofile)
-                .join("Downloads")
-                .join("Drop");
+    // Handle avatar from file
+    if let Some(avatar_path) = matches.get_one::<PathBuf>("avatar") {
+        if !avatar_path.exists() {
+            return Err(anyhow!(
+                "Avatar file does not exist: {}",
+                avatar_path.display()
+            ));
         }
-        // Last resort: current directory
-        return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        profile = profile
+            .with_avatar_file(&avatar_path.to_string_lossy())
+            .with_context(|| "Failed to load avatar file")?;
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join("Downloads").join("Drop");
+    // Handle avatar from base64 string
+    if let Some(avatar_b64) = matches.get_one::<String>("avatar-b64") {
+        profile = profile.with_avatar_b64(avatar_b64.clone());
+    }
+
+    Ok(profile)
+}
+
+pub async fn run_cli() -> Result<()> {
+    let cli = build_cli();
+    let matches = cli.get_matches();
+    run_cli_subcommand(matches).await
+}
+
+async fn run_cli_subcommand(
+    matches: ArgMatches,
+) -> std::result::Result<(), anyhow::Error> {
+    match matches.subcommand() {
+        Some(("send", sub_matches)) => handle_send_command(sub_matches).await,
+        Some(("receive", sub_matches)) => {
+            handle_receive_command(sub_matches).await
         }
-        // Last resort: current directory
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        Some(("config", sub_matches)) => {
+            handle_config_command(sub_matches).await
+        }
+        _ => {
+            eprintln!("❌ Invalid command. Use --help for usage information.");
+            std::process::exit(1);
+        }
     }
 }
 
-/// Sets the default receive directory and persists it to disk.
-///
-/// Errors:
-/// - If the configuration cannot be written to the user's config directory.
-pub fn set_default_receive_dir(dir: String) -> Result<()> {
-    let mut config = CliConfig::load()?;
-    config.set_default_receive_dir(dir)
+pub fn build_cli() -> Command {
+    Command::new("arkdrop")
+        .about("ARK Drop tool for sending and receiving files")
+        .version("1.0.0")
+        .author("ARK Builders")
+        .arg(
+            Arg::new("verbose")
+                .long("verbose")
+                .short('v')
+                .help("Enable verbose logging")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+        )
+        .subcommand(
+            Command::new("send")
+                .about("Send files to another user")
+                .arg(
+                    Arg::new("files")
+                        .help("Files to send")
+                        .required(true)
+                        .num_args(1..)
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .short('n')
+                        .help("Your display name")
+                        .default_value("arkdrop-sender")
+                )
+                .arg(
+                    Arg::new("avatar")
+                        .long("avatar")
+                        .short('a')
+                        .help("Path to avatar image file")
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("avatar-b64")
+                        .long("avatar-b64")
+                        .help("Base64 encoded avatar image (alternative to --avatar)")
+                        .conflicts_with("avatar")
+                )
+        )
+        .subcommand(
+            Command::new("receive")
+                .about("Receive files from another user")
+                .arg(
+                    Arg::new("ticket")
+                        .help("Transfer ticket")
+                        .required(true)
+                        .index(1)
+                )
+                .arg(
+                    Arg::new("confirmation")
+                        .help("Confirmation code")
+                        .required(true)
+                        .index(2)
+                )
+                .arg(
+                    Arg::new("output")
+                        .help("Output directory for received files (optional if default is set)")
+                        .long("output")
+                        .short('o')
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("save-output")
+                        .long("save-output")
+                        .short('u')
+                        .help("Save the specified output directory as default for future use")
+                        .action(clap::ArgAction::SetTrue)
+                        .requires("output")
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .short('n')
+                        .help("Your display name")
+                        .default_value("arkdrop-receiver")
+                )
+                .arg(
+                    Arg::new("avatar")
+                        .long("avatar")
+                        .short('a')
+                        .help("Path to avatar image file")
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("avatar-b64")
+                        .long("avatar-b64")
+                        .short('b')
+                        .help("Base64 encoded avatar image (alternative to --avatar)")
+                        .conflicts_with("avatar")
+                )
+        )
+        .subcommand(
+            Command::new("config")
+                .about("Manage ARK Drop CLI configuration")
+                .subcommand(
+                    Command::new("show")
+                        .about("Show current configuration")
+                )
+                .subcommand(
+                    Command::new("set-output")
+                        .about("Set default receive output directory")
+                        .arg(
+                            Arg::new("output")
+                                .help("Output directory path to set as default")
+                                .required(true)
+                                .value_parser(clap::value_parser!(PathBuf))
+                        )
+                )
+                .subcommand(
+                    Command::new("clear-output")
+                        .about("Clear default receive directory")
+                )
+        )
 }
 
-/// Clears the saved default receive directory.
-///
-/// Errors:
-/// - If the configuration cannot be written to the user's config directory.
-pub fn clear_default_receive_dir() -> Result<()> {
-    let mut config = CliConfig::load()?;
-    config.default_receive_dir = None;
-    config.save()
+async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
+    let files: Vec<PathBuf> = matches
+        .get_many::<PathBuf>("files")
+        .unwrap()
+        .cloned()
+        .collect();
+
+    let verbose: bool = matches.get_flag("verbose");
+
+    let profile = build_profile(matches)?;
+
+    println!("📤 Preparing to send {} file(s)...", files.len());
+    for file in &files {
+        println!("   📄 {}", file.display());
+    }
+
+    println!("👤 Sender name: {}", profile.name);
+
+    if profile.avatar_b64.is_some() {
+        println!("🖼️  Avatar: Set");
+    }
+
+    let file_strings: Vec<String> = files
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    run_send_files(file_strings, profile, verbose).await
+}
+
+async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
+    let out_dir = matches
+        .get_one::<String>("output")
+        .map(|p| PathBuf::from(p));
+    let ticket = matches.get_one::<String>("ticket").unwrap();
+    let confirmation = matches.get_one::<String>("confirmation").unwrap();
+    let verbose = matches.get_flag("verbose");
+    let save_output = matches.get_flag("save-output");
+
+    let profile = build_profile(matches)?;
+
+    println!("📥 Preparing to receive files...");
+
+    let out_dir = match out_dir {
+        Some(o) => o,
+        None => get_default_out_dir(),
+    };
+
+    println!("👤 Receiver name: {}", profile.name);
+
+    if profile.avatar_b64.is_some() {
+        println!("🖼️  Avatar: Set");
+    }
+
+    run_receive_files(
+        out_dir,
+        ticket.clone(),
+        confirmation.clone(),
+        profile,
+        verbose,
+        save_output,
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
+    match matches.subcommand() {
+        Some(("show", _)) => {
+            let out_dir = get_default_out_dir();
+            println!(
+                "📁 Default receive output directory: {}",
+                out_dir.display()
+            );
+        }
+
+        Some(("set-output", sub_matches)) => {
+            let out_dir = sub_matches.get_one::<PathBuf>("output").unwrap();
+            let out_dir_str = out_dir.display();
+
+            // Validate output exists or can be created
+            if !out_dir.exists() {
+                match std::fs::create_dir_all(out_dir) {
+                    Ok(_) => {
+                        println!("📁 Created output directory: {out_dir_str}")
+                    }
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "Failed to create output directory '{}': {}",
+                            out_dir_str,
+                            e
+                        ));
+                    }
+                }
+            }
+
+            set_default_out_dir(out_dir.clone())?;
+            println!(
+                "✅ Set default receive output directory to: {out_dir_str}"
+            );
+        }
+
+        Some(("clear-output", _)) => {
+            clear_default_out_dir()?;
+            println!("✅ Cleared default receive output directory");
+        }
+        _ => {
+            eprintln!(
+                "❌ Invalid config command. Use --help for usage information."
+            );
+            std::process::exit(1);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_profile_creation() {
+        let profile = Profile::new("test-user".to_string(), None);
+        assert_eq!(profile.name, "test-user");
+        assert!(profile.avatar_b64.is_none());
+    }
+
+    #[test]
+    fn test_profile_with_avatar() {
+        let profile = Profile::new("test-user".to_string(), None)
+            .with_avatar_b64("dGVzdA==".to_string());
+        assert_eq!(profile.name, "test-user");
+        assert_eq!(profile.avatar_b64, Some("dGVzdA==".to_string()));
+    }
 }

@@ -1,9 +1,12 @@
-name: Drop Android Bindings Release
+name: ARK Drop Android Bindings Release
 
 on:
   push:
     paths:
-      - "drop-core/**"
+      - "drop-core/entities/**"
+      - "drop-core/exchanges/**"
+      - "drop-core/uniffi/**"
+      - ".github/workflows/arkdrop-bindings-release.yml"
   workflow_dispatch:
 
 jobs:
@@ -47,11 +50,8 @@ jobs:
           link-to-sdk: true
           ndk-version: r29-beta2
 
-      - name: Set RELEASE_VERSION
-        run: echo "RELEASE_VERSION=$GITHUB_RUN_ID" >> $GITHUB_ENV
-
       - name: Publish Bindings Android
         run: ./gradlew publish -Pandroid.useAndroidX=true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+          RELEASE_VERSION: ${{ github.run_id }}

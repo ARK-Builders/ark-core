@@ -1,10 +1,10 @@
 [package]
-name = "drop-uniffi"
+name = "arkdrop-uniffi"
 version = "1.1.0"
 edition = "2024"
 
 [lib]
-name = "drop_uniffi"
+name = "arkdrop_uniffi"
 crate-type = ["cdylib"]
 bench = false
 
@@ -14,8 +14,8 @@ path = "uniffi-bindgen.rs"
 bench = false
 
 [dependencies]
-dropx-sender = { path = "../exchanges/sender" }
-dropx-receiver = { path = "../exchanges/receiver" }
+arkdropx-sender = { path = "../exchanges/sender" }
+arkdropx-receiver = { path = "../exchanges/receiver" }
 
 tokio = "1.44.2"
 thiserror = "2.0.12"

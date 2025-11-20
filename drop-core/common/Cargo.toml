@@ -1,0 +1,17 @@
+[package]
+name = "arkdrop-common"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+bench = false
+name = "arkdrop_common"
+
+[dependencies]
+arkdropx-sender = { path = "../exchanges/sender" }
+
+image = "0.25"
+toml = "0.9.5"
+anyhow = "1.0.99"
+serde = "1.0.219"
+base64 = "0.22.1"

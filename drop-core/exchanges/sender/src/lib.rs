@@ -19,7 +19,7 @@
 
 mod send_files;
 
-use drop_entities::Data;
+use arkdrop_entities::Data;
 use std::sync::Arc;
 
 pub use send_files::*;
@@ -64,6 +64,9 @@ pub trait SenderFileData: Send + Sync {
     /// Total length in bytes.
     fn len(&self) -> u64;
 
+    /// Checks if the data is empty (length is 0).
+    fn is_empty(&self) -> bool;
+
     /// Read a single byte if available.
     fn read(&self) -> Option<u8>;
 
@@ -80,15 +83,19 @@ struct SenderFileDataAdapter {
 }
 impl Data for SenderFileDataAdapter {
     fn len(&self) -> u64 {
-        return self.inner.len();
+        self.inner.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn read(&self) -> Option<u8> {
-        return self.inner.read();
+        self.inner.read()
     }
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
-        return self.inner.read_chunk(size);
+        self.inner.read_chunk(size)
     }
 }
 
