@@ -1,29 +1,31 @@
 [package]
-name = "drop-cli"
+name = "arkdrop-cli"
 version = "1.0.0"
 edition = "2024"
 description = "A CLI tool for sending and receiving files"
-authors = ["@oluiscabral"]
+authors = ["ARK Builders"]
 license = "MIT"
-repository = "https://github.com/Ark-Builders/ark-core"
 readme = "README.md"
-keywords = ["cli", "file-transfer", "p2p"]
+repository = "https://github.com/Ark-Builders/ark-core"
 categories = ["command-line-utilities"]
+keywords = ["cli", "file-transfer", "data-transfer", "p2p"]
 
 [lib]
-name = "drop_cli"
 bench = false
+name = "arkdrop_cli"
 
 [[bin]]
-name = "drop-cli"
-path = "src/main.rs"
 bench = false
+name = "arkdrop-cli"
+path = "src/main.rs"
 
 [dependencies]
+arkdrop-common = { path = "../common" }  
+arkdropx-sender = { path = "../exchanges/sender" }
+arkdropx-receiver = { path = "../exchanges/receiver" }  
+
+toml = "0.8"
 anyhow = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-uuid = { version = "1.0", features = ["v4"] }
-clap = { version = "4.0", features = ["derive"] }
 base64 = "0.21"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
@@ -31,8 +33,16 @@ qrcode = "0.14"
 
 dropx-receiver = { path = "../exchanges/receiver" }
 dropx-sender = { path = "../exchanges/sender" }
+clap = "4.5.47"
+uuid = "1.18.1"
+tokio = "1.47.1"
+qrcode = "0.14.1"
+serde = "1.0.219"
 indicatif = "0.18.0"
+
 
 [dev-dependencies]
 tempfile = "3.0"
 tokio-test = "0.4"
+assert_cmd = "2.1.1"
+predicates = "3.1.3"

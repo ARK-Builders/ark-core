@@ -1,15 +1,15 @@
 [package]
-name = "dropx-receiver"
+name = "arkdropx-receiver"
 version = "1.0.0"
 edition = "2024"
 
 [lib]
-name = "dropx_receiver"
+name = "arkdropx_receiver"
 bench = false
 
 [dependencies]
-drop-entities = { path = "../../entities" }
-dropx-common = { path = "../common" }
+arkdrop-entities = { path = "../../entities" }
+arkdropx-common = { path = "../common" }
 
 uuid = "1.16.0"
 iroh = "0.91.1"

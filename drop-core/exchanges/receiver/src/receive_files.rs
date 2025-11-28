@@ -1,6 +1,6 @@
 use anyhow::Result;
-use drop_entities::Profile;
-use dropx_common::{
+use arkdrop_entities::Profile;
+use arkdropx_common::{
     handshake::{
         HandshakeConfig, HandshakeProfile, NegotiatedConfig, ReceiverHandshake,
         SenderHandshake,
@@ -104,8 +104,7 @@ impl ReceiveFilesBubble {
             .load(std::sync::atomic::Ordering::Acquire);
 
         if is_consumed {
-            self.log(format!("start: Cannot start transfer, it has already started - consumed: {}", 
-                is_consumed));
+            self.log(format!("start: Cannot start transfer, it has already started - consumed: {is_consumed}"));
             return Err(anyhow::Error::msg(
                 "Already running or has run or finished.",
             ));
@@ -134,13 +133,13 @@ impl ReceiveFilesBubble {
         tokio::spawn(async move {
             let mut carrier = carrier;
             if let Err(e) = carrier.greet().await {
-                carrier.log(format!("start: Handshake failed: {}", e));
+                carrier.log(format!("start: Handshake failed: {e}"));
                 return;
             }
 
             let result = carrier.receive_files().await;
             if let Err(e) = result {
-                carrier.log(format!("start: File reception failed: {}", e));
+                carrier.log(format!("start: File reception failed: {e}"));
             } else {
                 carrier.log(
                     "start: File reception completed successfully".to_string(),
@@ -185,7 +184,7 @@ impl ReceiveFilesBubble {
         let running = self
             .is_running
             .load(std::sync::atomic::Ordering::Relaxed);
-        self.log(format!("is_running check: {}", running));
+        self.log(format!("is_running check: {running}"));
         running
     }
 
@@ -195,7 +194,7 @@ impl ReceiveFilesBubble {
         let finished = self
             .is_finished
             .load(std::sync::atomic::Ordering::Relaxed);
-        self.log(format!("is_finished check: {}", finished));
+        self.log(format!("is_finished check: {finished}"));
         finished
     }
 
@@ -204,7 +203,7 @@ impl ReceiveFilesBubble {
         let cancelled = self
             .is_cancelled
             .load(std::sync::atomic::Ordering::Relaxed);
-        self.log(format!("is_cancelled check: {}", cancelled));
+        self.log(format!("is_cancelled check: {cancelled}"));
         cancelled
     }
 
@@ -215,8 +214,7 @@ impl ReceiveFilesBubble {
     pub fn subscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.log(format!(
-            "subscribe: Subscribing new subscriber with ID: {}",
-            subscriber_id
+            "subscribe: Subscribing new subscriber with ID: {subscriber_id}"
         ));
 
         self.subscribers
@@ -224,16 +222,14 @@ impl ReceiveFilesBubble {
             .unwrap()
             .insert(subscriber_id.clone(), subscriber);
 
-        self.log(format!("subscribe: Subscriber {} successfully subscribed. Total subscribers: {}", 
-            subscriber_id, self.subscribers.read().unwrap().len()));
+        self.log(format!("subscribe: Subscriber {subscriber_id} successfully subscribed. Total subscribers: {}", self.subscribers.read().unwrap().len()));
     }
 
     /// Remove a previously registered subscriber.
     pub fn unsubscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.log(format!(
-            "unsubscribe: Unsubscribing subscriber with ID: {}",
-            subscriber_id
+            "unsubscribe: Unsubscribing subscriber with ID: {subscriber_id}"
         ));
 
         let removed = self
@@ -243,21 +239,18 @@ impl ReceiveFilesBubble {
             .remove(&subscriber_id);
 
         if removed.is_some() {
-            self.log(format!("unsubscribe: Subscriber {} successfully unsubscribed. Remaining subscribers: {}", 
-                subscriber_id, self.subscribers.read().unwrap().len()));
+            self.log(format!("unsubscribe: Subscriber {subscriber_id} successfully unsubscribed. Remaining subscribers: {}", self.subscribers.read().unwrap().len()));
         } else {
-            self.log(format!("unsubscribe: Subscriber {} was not found during unsubscribe operation", subscriber_id));
+            self.log(format!("unsubscribe: Subscriber {subscriber_id} was not found during unsubscribe operation"));
         }
     }
 
     fn log(&self, message: String) {
-        self.subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(id, subscriber)| {
-                subscriber.log(format!("[{}] {}", id, message));
-            });
+        self.subscribers.read().unwrap().iter().for_each(
+            |(_id, subscriber)| {
+                subscriber.log(message.clone());
+            },
+        );
     }
 }
 
@@ -448,6 +441,7 @@ impl Carrier {
                 }
                 return Err(err);
             }
+            return Err(err);
         }
 
         Ok(())
@@ -508,7 +502,7 @@ impl Carrier {
         let cancelled = self
             .is_cancelled
             .load(std::sync::atomic::Ordering::Relaxed);
-        self.log(format!("is_cancelled check: {}", cancelled));
+        self.log(format!("is_cancelled check: {cancelled}"));
         cancelled
     }
 
@@ -517,8 +511,8 @@ impl Carrier {
             .read()
             .unwrap()
             .iter()
-            .for_each(|(id, subscriber)| {
-                subscriber.log(format!("[{}] {}", id, message));
+            .for_each(|(_, subscriber)| {
+                subscriber.log(message.clone());
             });
     }
 
@@ -637,7 +631,7 @@ pub struct ReceiveFilesFile {
 /// Example:
 /// ```rust no_run
 /// use std::sync::Arc;
-/// use dropx_receiver::{
+/// use arkdropx_receiver::{
 ///     receive_files, ReceiveFilesRequest, ReceiverProfile, ReceiverConfig,
 ///     ReceiveFilesSubscriber, ReceiveFilesReceivingEvent, ReceiveFilesConnectingEvent,
 /// };
