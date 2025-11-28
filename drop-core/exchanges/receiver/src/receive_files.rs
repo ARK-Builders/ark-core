@@ -415,18 +415,19 @@ impl Carrier {
             });
 
             // Clean up completed tasks periodically
-            if join_set.len() >= parallel_streams as usize
-                && let Some(result) = join_set.join_next().await
-                && let Err(err) = result?
-            {
-                // Downcast anyhow::Error to ConnectionError
-                if let Some(connection_err) =
-                    err.downcast_ref::<ConnectionError>()
-                    && connection_err == &expected_close
+            while join_set.len() >= parallel_streams as usize {
+                if let Some(result) = join_set.join_next().await
+                    && let Err(err) = result?
                 {
-                    break 'files_iterator;
+                    // Downcast anyhow::Error to ConnectionError
+                    if let Some(connection_err) =
+                        err.downcast_ref::<ConnectionError>()
+                        && connection_err == &expected_close
+                    {
+                        break 'files_iterator;
+                    }
+                    return Err(err);
                 }
-                return Err(err);
             }
         }
 

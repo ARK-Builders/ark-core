@@ -162,11 +162,11 @@ impl FileSender {
                 println!("Cancelling file transfer...");
                 let _ = bubble.cancel().await;
                 println!("Transfer cancelled");
-                std::process::exit(0);
+                Ok(())
             }
             _ = wait_for_send_completion(&bubble) => {
                 println!("All files sent successfully!");
-                std::process::exit(0);
+                Ok(())
             }
         }
     }
@@ -334,11 +334,11 @@ impl FileReceiver {
                 println!("Cancelling file transfer...");
                 bubble.cancel();
                 println!("Transfer cancelled");
-                std::process::exit(0);
+                Ok(())
             }
             _ = wait_for_receive_completion(&bubble) => {
                 println!("All files received successfully!");
-                std::process::exit(0);
+                Ok(())
             }
         }
     }
@@ -1772,11 +1772,11 @@ pub async fn run_send_files_to(
         _ = tokio::signal::ctrl_c() => {
             println!("Cancelling file transfer...");
             println!("Transfer cancelled");
-            std::process::exit(0);
+            Ok(())
         }
         _ = wait_for_send_files_to_completion(&bubble) => {
             println!("All files sent successfully!");
-            std::process::exit(0);
+            Ok(())
         }
     }
 }
