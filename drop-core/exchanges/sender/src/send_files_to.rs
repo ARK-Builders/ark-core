@@ -6,8 +6,8 @@
 
 use crate::{SenderConfig, SenderFile, SenderFileDataAdapter, SenderProfile};
 use anyhow::Result;
-use drop_entities::{File, Profile};
-use dropx_common::{
+use arkdrop_entities::{File, Profile};
+use arkdropx_common::{
     handshake::{
         HandshakeConfig, HandshakeFile, HandshakeProfile, NegotiatedConfig,
         ReceiverHandshake, SenderHandshake,
@@ -493,7 +493,7 @@ impl Carrier {
 /// Example:
 /// ```rust no_run
 /// use std::sync::Arc;
-/// use dropx_sender::{
+/// use arkdropx_sender::{
 ///     send_files_to::*, SenderProfile, SenderConfig, SenderFile,
 /// };
 ///

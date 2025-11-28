@@ -7,8 +7,8 @@
 //! chunk arrivals.
 
 use anyhow::Result;
-use drop_entities::Profile;
-use dropx_common::{
+use arkdrop_entities::Profile;
+use arkdropx_common::{
     handshake::{
         HandshakeConfig, HandshakeProfile, NegotiatedConfig, ReceiverHandshake,
         SenderHandshake,

@@ -430,16 +430,14 @@ impl Carrier {
             }
         }
 
-        while let Some(result) = join_set.join_next().await {
-            if let Err(err) = result? {
-                // Downcast anyhow::Error to ConnectionError
-                if let Some(connection_err) =
-                    err.downcast_ref::<ConnectionError>()
-                    && connection_err == &expected_close
-                {
-                    continue;
-                }
-                return Err(err);
+        while let Some(result) = join_set.join_next().await
+            && let Err(err) = result?
+        {
+            // Downcast anyhow::Error to ConnectionError
+            if let Some(connection_err) = err.downcast_ref::<ConnectionError>()
+                && connection_err == &expected_close
+            {
+                continue;
             }
             return Err(err);
         }

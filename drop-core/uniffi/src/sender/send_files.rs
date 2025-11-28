@@ -129,7 +129,7 @@ impl arkdropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
     }
 
     fn notify_sending(&self, event: arkdropx_sender::SendFilesSendingEvent) {
-        return self.inner.notify_sending(SendFilesSendingEvent {
+        self.inner.notify_sending(SendFilesSendingEvent {
             id: event.id,
             name: event.name,
             sent: event.sent,
@@ -141,8 +141,7 @@ impl arkdropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
         &self,
         event: arkdropx_sender::SendFilesConnectingEvent,
     ) {
-        return self
-            .inner
+        self.inner
             .notify_connecting(SendFilesConnectingEvent {
                 receiver: SendFilesProfile {
                     id: event.receiver.id,
@@ -166,7 +165,7 @@ pub async fn send_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return arkdropx_sender::send_files(adapted_request).await;
+            arkdropx_sender::send_files(adapted_request).await
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
     Ok(Arc::new(SendFilesBubble {
@@ -192,7 +191,7 @@ fn create_adapted_request(
         .into_iter()
         .map(|f| {
             let data = SenderFileDataAdapter { inner: f.data };
-            return arkdropx_sender::SenderFile {
+            arkdropx_sender::SenderFile {
                 name: f.name,
                 data: Arc::new(data),
             }
@@ -205,7 +204,7 @@ fn create_adapted_request(
         },
         None => arkdropx_sender::SenderConfig::default(),
     };
-    return arkdropx_sender::SendFilesRequest {
+    arkdropx_sender::SendFilesRequest {
         profile,
         files,
         config,

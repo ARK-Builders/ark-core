@@ -174,7 +174,7 @@ pub async fn receive_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return arkdropx_receiver::receive_files(adapted_request).await;
+            arkdropx_receiver::receive_files(adapted_request).await
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
     Ok(Arc::new(ReceiveFilesBubble {
@@ -200,7 +200,7 @@ fn create_adapted_request(
             chunk_size: c.chunk_size,
             parallel_streams: c.parallel_streams,
         });
-    return arkdropx_receiver::ReceiveFilesRequest {
+    arkdropx_receiver::ReceiveFilesRequest {
         profile,
         ticket: request.ticket,
         confirmation: request.confirmation,

@@ -80,10 +80,10 @@ use arkdropx_receiver::{
     },
     receive_files,
 };
-use dropx_sender::{
-    SendFilesConnectingEvent, SendFilesRequest, SendFilesSendingEvent,
-    SendFilesSubscriber, SenderConfig, SenderFile, SenderFileData,
-    SenderProfile, send_files,
+use arkdropx_sender::{
+    SendFilesBubble, SendFilesConnectingEvent, SendFilesRequest,
+    SendFilesSendingEvent, SendFilesSubscriber, SenderConfig, SenderFile,
+    SenderFileData, SenderProfile, send_files,
     send_files_to::{
         SendFilesToBubble, SendFilesToConnectingEvent, SendFilesToRequest,
         SendFilesToSendingEvent, SendFilesToSubscriber, send_files_to,
@@ -153,12 +153,9 @@ impl FileSender {
         let subscriber = FileSendSubscriber::new(verbose);
         bubble.subscribe(Arc::new(subscriber));
 
-        // Display QR code and session info
-        display_session_info(
-            &bubble.get_ticket(),
-            bubble.get_confirmation(),
-            "Sender",
-        );
+        println!("📦 Ready to send files!");
+        print_qr_to_console(&bubble)?;
+        println!("⏳ Waiting for receiver... (Press Ctrl+C to cancel)");
 
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
@@ -205,6 +202,25 @@ fn print_qr_to_console(bubble: &SendFilesBubble) -> Result<()> {
     let confirmation = bubble.get_confirmation();
     let data =
         format!("drop://receive?ticket={ticket}&confirmation={confirmation}");
+
+    let code = QrCode::new(&data)?;
+    let image = code
+        .render::<char>()
+        .quiet_zone(false)
+        .module_dimensions(2, 1)
+        .build();
+
+    println!("\nQR Code for Transfer:");
+    println!("{}", image);
+    println!("🎫 Ticket: {ticket}");
+    println!("🔒 Confirmation: {confirmation}\n");
+
+    Ok(())
+}
+
+fn print_ready_to_receive_qr(ticket: &str, confirmation: u8) -> Result<()> {
+    let data =
+        format!("drop://send?ticket={ticket}&confirmation={confirmation}");
 
     let code = QrCode::new(&data)?;
     let image = code
@@ -967,34 +983,16 @@ pub async fn run_receive_files(
         format!("Invalid confirmation code: {confirmation}")
     })?;
 
-    // Determine the output directory
-    let final_output_dir = match output_dir {
-        Some(dir) => {
-            let path = PathBuf::from(&dir);
-
-            // Save this directory as default if requested
-            if save_dir {
-                let mut config = CliConfig::load()?;
-                config
-                    .set_default_receive_dir(dir.clone())
-                    .with_context(
-                        || "Failed to save default receive directory",
-                    )?;
-                println!("Saved '{}' as default receive directory", dir);
-            }
-
-            path
-        }
-        None => {
-            // Try to use saved default directory; otherwise use sensible
-            // fallback
-            let config = CliConfig::load()?;
-            match config.get_default_receive_dir() {
-                Some(default_dir) => PathBuf::from(default_dir),
-                None => default_receive_dir_fallback(),
-            }
-        }
-    };
+    if save_out {
+        let mut config = AppConfig::load()?;
+        config.set_out_dir(out_dir.clone()).with_context(
+            || "Failed to save default output receive directory",
+        )?;
+        println!(
+            "💾 Saved '{}' as default output receive directory",
+            out_dir.display()
+        );
+    }
 
     let receiver = FileReceiver::new(profile);
     receiver
@@ -1618,23 +1616,12 @@ pub async fn run_ready_to_receive(
         Some(dir) => {
             let path = PathBuf::from(&dir);
             if save_dir {
-                let mut config = CliConfig::load()?;
-                config
-                    .set_default_receive_dir(dir.clone())
-                    .with_context(
-                        || "Failed to save default receive directory",
-                    )?;
-                println!("Saved '{}' as default receive directory", dir);
+                set_default_out_dir(path.clone())?;
+                println!("💾 Saved '{}' as default receive directory", dir);
             }
             path
         }
-        None => {
-            let config = CliConfig::load()?;
-            match config.get_default_receive_dir() {
-                Some(default_dir) => PathBuf::from(default_dir),
-                None => default_receive_dir_fallback(),
-            }
-        }
+        None => get_default_out_dir(),
     };
 
     // Create output directory if it doesn't exist
@@ -1672,9 +1659,10 @@ pub async fn run_ready_to_receive(
     let confirmation = bubble.get_confirmation();
 
     // Display QR code and session info
-    display_session_info(&ticket, confirmation, "Receiver");
-
-    println!("Files will be saved to: {}", receiving_path.display());
+    println!("📦 Ready to receive files!");
+    print_ready_to_receive_qr(&ticket, confirmation)?;
+    println!("📁 Files will be saved to: {}", receiving_path.display());
+    println!("⏳ Waiting for sender... (Press Ctrl+C to cancel)");
 
     let subscriber =
         ReadyToReceiveSubscriberImpl::new(receiving_path.clone(), verbose);
@@ -1682,16 +1670,16 @@ pub async fn run_ready_to_receive(
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
-            println!("Cancelling file transfer...");
+            println!("🚫 Cancelling file transfer...");
             let _ = bubble.cancel().await;
-            println!("Transfer cancelled");
-            std::process::exit(0);
+            println!("✅ Transfer cancelled");
         }
         _ = wait_for_ready_to_receive_completion(&bubble) => {
-            println!("All files received successfully!");
-            std::process::exit(0);
+            println!("✅ All files received successfully!");
         }
     }
+
+    Ok(())
 }
 
 /// Run send-files-to operation (sender connects to waiting receiver).

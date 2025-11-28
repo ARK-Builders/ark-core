@@ -8,8 +8,8 @@
 mod handler;
 
 use anyhow::Result;
+use arkdrop_entities::Profile;
 use chrono::{DateTime, Utc};
-use drop_entities::Profile;
 use handler::ReadyToReceiveHandler;
 use iroh::{Endpoint, Watcher, protocol::Router};
 use iroh_base::ticket::NodeTicket;
@@ -236,7 +236,7 @@ impl ReadyToReceiveBubble {
 /// Example:
 /// ```rust no_run
 /// use std::sync::Arc;
-/// use dropx_receiver::{
+/// use arkdropx_receiver::{
 ///     ready_to_receive::*, ReceiverProfile,
 /// };
 ///

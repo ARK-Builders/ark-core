@@ -68,7 +68,7 @@ pub struct SenderFile {
 /// - `read_chunk(size)` returns the next chunk up to `size` bytes; an empty
 ///   vector signals EOF.
 /// - `read` is a single-byte variant primarily to satisfy the
-///   `drop_entities::Data` trait; it can be implemented in terms of your
+///   `arkdrop_entities::Data` trait; it can be implemented in terms of your
 ///   internal reader if needed.
 pub trait SenderFileData: Send + Sync {
     /// Total length in bytes.
@@ -86,10 +86,10 @@ pub trait SenderFileData: Send + Sync {
     fn read_chunk(&self, size: u64) -> Vec<u8>;
 }
 
-/// Internal adapter to bridge `SenderFileData` with `drop_entities::Data`.
+/// Internal adapter to bridge `SenderFileData` with `arkdrop_entities::Data`.
 ///
 /// This type is not exposed publicly; it allows the rest of the pipeline to
-/// operate on the generic `drop_entities::File` type.
+/// operate on the generic `arkdrop_entities::File` type.
 struct SenderFileDataAdapter {
     inner: Arc<dyn SenderFileData>,
 }

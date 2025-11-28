@@ -54,7 +54,7 @@ impl arkdropx_sender::SenderFileData for SenderFileDataAdapter {
     }
 
     fn is_empty(&self) -> bool {
-        return self.inner.is_empty();
+        self.inner.is_empty()
     }
 
     fn read(&self) -> Option<u8> {

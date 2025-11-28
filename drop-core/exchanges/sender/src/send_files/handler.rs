@@ -445,7 +445,7 @@ impl Carrier {
 
         let mut uni = connection.open_uni().await?;
 
-        Self::notify_progress(&file, sent, remaining, subscribers.clone());
+        Self::notify_progress(file, sent, remaining, subscribers.clone());
 
         loop {
             chunk_buffer.clear();
@@ -470,7 +470,7 @@ impl Carrier {
             sent += data_len;
             remaining = remaining.saturating_sub(data_len);
 
-            Self::notify_progress(&file, sent, remaining, subscribers.clone());
+            Self::notify_progress(file, sent, remaining, subscribers.clone());
         }
 
         uni.finish()?;
