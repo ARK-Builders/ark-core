@@ -50,19 +50,19 @@ struct SenderFileDataAdapter {
 }
 impl arkdropx_sender::SenderFileData for SenderFileDataAdapter {
     fn len(&self) -> u64 {
-        return self.inner.len();
+        self.inner.len()
     }
 
     fn is_empty(&self) -> bool {
-        return self.inner.is_empty();
+        self.inner.is_empty()
     }
 
     fn read(&self) -> Option<u8> {
-        return self.inner.read();
+        self.inner.read()
     }
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
-        return self.inner.read_chunk(size.try_into().unwrap());
+        self.inner.read_chunk(size.try_into().unwrap())
     }
 }
 

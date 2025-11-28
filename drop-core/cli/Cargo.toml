@@ -20,9 +20,9 @@ name = "arkdrop-cli"
 path = "src/main.rs"
 
 [dependencies]
-arkdrop-common = { path = "../common" }  
+arkdrop-common = { path = "../common" }
 arkdropx-sender = { path = "../exchanges/sender" }
-arkdropx-receiver = { path = "../exchanges/receiver" }  
+arkdropx-receiver = { path = "../exchanges/receiver" }
 
 toml = "0.8"
 anyhow = "1.0"
