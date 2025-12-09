@@ -86,20 +86,22 @@ impl SendFilesToBubble {
     pub fn start(&self) -> Result<()> {
         self.log("start: Checking if transfer can be started".to_string());
 
-        let is_running = self
+        // Use compare_exchange to atomically check and set is_running
+        if self
             .is_running
-            .load(std::sync::atomic::Ordering::Acquire);
-
-        if is_running {
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
             self.log(
                 "start: Cannot start transfer, already running".to_string(),
             );
             return Err(anyhow::Error::msg("Already running."));
         }
-
-        self.log("start: Setting running flag".to_string());
-        self.is_running
-            .store(true, std::sync::atomic::Ordering::Release);
 
         self.log("start: Creating carrier for file sending".to_string());
         let carrier = Carrier {
@@ -144,6 +146,20 @@ impl SendFilesToBubble {
             .load(std::sync::atomic::Ordering::Relaxed);
         self.log(format!("is_finished check: {finished}"));
         finished
+    }
+
+    /// Cancel the send-to transfer.
+    ///
+    /// Closes the connection and marks the session as finished.
+    pub async fn cancel(&self) -> Result<()> {
+        self.log("cancel: Initiating send-to cancellation".to_string());
+        self.is_finished
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.connection
+            .close(VarInt::from_u32(0), b"cancelled");
+        self.endpoint.close().await;
+        self.log("cancel: Send-to cancelled successfully".to_string());
+        Ok(())
     }
 
     /// Register a subscriber to receive log and progress events.

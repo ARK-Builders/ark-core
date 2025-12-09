@@ -249,11 +249,13 @@ impl ProtocolHandler for ReadyToReceiveHandler {
 
         async move {
             let mut carrier = carrier;
-            if (carrier.greet().await).is_err() {
+            if let Err(e) = carrier.greet().await {
+                carrier.log(format!("accept: Handshake failed: {:?}", e));
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
-            if (carrier.receive_files().await).is_err() {
+            if let Err(e) = carrier.receive_files().await {
+                carrier.log(format!("accept: File reception failed: {:?}", e));
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 

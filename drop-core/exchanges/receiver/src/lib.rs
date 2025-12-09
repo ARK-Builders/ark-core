@@ -148,15 +148,11 @@ impl ReceiverFileData {
         }
     }
 
-    /// Return the file length in bytes by counting the iterator.
-    ///
-    /// Note: This reads the entire file to count bytes and is therefore O(n).
-    /// If possible, prefer using `std::fs::metadata(&path)?.len()` in your own
-    /// code where you have direct access to the path.
+    /// Return the file length in bytes using file metadata (O(1)).
     pub fn len(&self) -> u64 {
-        use std::io::BufReader;
-        let file = std::fs::File::open(&self.path).unwrap();
-        BufReader::new(file).bytes().count() as u64
+        std::fs::metadata(&self.path)
+            .map(|m| m.len())
+            .unwrap_or(0)
     }
 
     /// Returns true if the data has zero length.

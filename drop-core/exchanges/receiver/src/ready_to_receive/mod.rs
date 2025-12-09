@@ -169,7 +169,9 @@ impl ReadyToReceiveBubble {
             );
 
             tokio::spawn(async move {
-                let _ = router.shutdown().await;
+                if let Err(e) = router.shutdown().await {
+                    eprintln!("[ERROR] Failed to shutdown router: {}", e);
+                }
             });
         }
 

@@ -405,7 +405,7 @@ impl SendFilesSubscriber for FileSendSubscriber {
         let mut bars = match self.bars.write() {
             Ok(bars) => bars,
             Err(e) => {
-                eprintln!("Error accessing progress bars: {}", e);
+                eprintln!("[ERROR] Error accessing progress bars: {}", e);
                 return;
             }
         };
@@ -577,21 +577,41 @@ impl ReceiveFilesSubscriber for FileReceiveSubscriber {
                 return;
             }
         };
-        let file_handle = file_handles
-            .entry(event.id.clone())
-            .or_insert_with(|| {
-                fs::File::options()
+        let file_handle = match file_handles.entry(event.id.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                entry.into_mut()
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                // Create parent directories if they don't exist
+                if let Some(parent) = file_path.parent() {
+                    if !parent.exists() {
+                        if let Err(e) = fs::create_dir_all(parent) {
+                            eprintln!(
+                                "[ERROR] Failed to create directory {}: {}",
+                                parent.display(),
+                                e
+                            );
+                            return;
+                        }
+                    }
+                }
+                match fs::File::options()
                     .create(true)
                     .append(true)
                     .open(&file_path)
-                    .unwrap_or_else(|e| {
-                        panic!(
-                            "Failed to open file {}: {}",
+                {
+                    Ok(f) => entry.insert(f),
+                    Err(e) => {
+                        eprintln!(
+                            "[ERROR] Failed to open file {}: {}",
                             file_path.display(),
                             e
-                        )
-                    })
-            });
+                        );
+                        return;
+                    }
+                }
+            }
+        };
 
         // Write to the cached file handle
         if let Err(e) = file_handle.write_all(&event.data) {
@@ -1295,7 +1315,7 @@ async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
 async fn handle_receive_command(matches: &ArgMatches) -> Result<()> {
     let out_dir = matches
         .get_one::<String>("output")
-        .map(|p| PathBuf::from(p));
+        .map(PathBuf::from);
     let ticket = matches.get_one::<String>("ticket").unwrap();
     let confirmation = matches.get_one::<String>("confirmation").unwrap();
     let verbose = matches.get_flag("verbose");
@@ -1543,7 +1563,7 @@ impl ReadyToReceiveSubscriber for ReadyToReceiveSubscriberImpl {
         let mut bars = match self.bars.write() {
             Ok(bars) => bars,
             Err(e) => {
-                eprintln!("Error accessing progress bars: {}", e);
+                eprintln!("[ERROR] Error accessing progress bars: {}", e);
                 return;
             }
         };
@@ -1564,13 +1584,28 @@ impl ReadyToReceiveSubscriber for ReadyToReceiveSubscriberImpl {
             let mut recvd = match self.received.write() {
                 Ok(recvd) => recvd,
                 Err(e) => {
-                    eprintln!("Error accessing received bytes tracker: {}", e);
+                    eprintln!(
+                        "[ERROR] Error accessing received bytes tracker: {}",
+                        e
+                    );
                     return;
                 }
             };
             let entry = recvd.entry(event.id.clone()).or_insert(0);
             *entry += event.data.len() as u64;
-            pb.inc(event.data.len() as u64);
+
+            // If we have a length bar, update position and maybe finish
+            if let Some(len) = pb.length() {
+                pb.set_position(*entry);
+                if *entry >= len {
+                    pb.finish_with_message(format!(
+                        "[DONE] Received {}",
+                        file.name
+                    ));
+                }
+            } else {
+                pb.inc(event.data.len() as u64);
+            }
         }
 
         let file_path = self.receiving_path.join(&file.name);
@@ -1579,25 +1614,45 @@ impl ReadyToReceiveSubscriber for ReadyToReceiveSubscriberImpl {
         let mut file_handles = match self.file_handles.write() {
             Ok(handles) => handles,
             Err(e) => {
-                eprintln!("Error accessing file handles: {}", e);
+                eprintln!("[ERROR] Error accessing file handles: {}", e);
                 return;
             }
         };
-        let file_handle = file_handles
-            .entry(event.id.clone())
-            .or_insert_with(|| {
-                fs::File::options()
+        let file_handle = match file_handles.entry(event.id.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                entry.into_mut()
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                // Create parent directories if they don't exist
+                if let Some(parent) = file_path.parent() {
+                    if !parent.exists() {
+                        if let Err(e) = fs::create_dir_all(parent) {
+                            eprintln!(
+                                "[ERROR] Failed to create directory {}: {}",
+                                parent.display(),
+                                e
+                            );
+                            return;
+                        }
+                    }
+                }
+                match fs::File::options()
                     .create(true)
                     .append(true)
                     .open(&file_path)
-                    .unwrap_or_else(|e| {
-                        panic!(
-                            "Failed to open file {}: {}",
+                {
+                    Ok(f) => entry.insert(f),
+                    Err(e) => {
+                        eprintln!(
+                            "[ERROR] Failed to open file {}: {}",
                             file_path.display(),
                             e
-                        )
-                    })
-            });
+                        );
+                        return;
+                    }
+                }
+            }
+        };
 
         // Write to the cached file handle
         if let Err(e) = file_handle.write_all(&event.data) {
@@ -1632,7 +1687,10 @@ impl ReadyToReceiveSubscriber for ReadyToReceiveSubscriberImpl {
                 let mut bars = match self.bars.write() {
                     Ok(bars) => bars,
                     Err(e) => {
-                        eprintln!("Error accessing progress bars: {}", e);
+                        eprintln!(
+                            "[ERROR] Error accessing progress bars: {}",
+                            e
+                        );
                         return;
                     }
                 };
@@ -1691,7 +1749,7 @@ impl SendFilesToSubscriber for SendFilesToSubscriberImpl {
         let mut bars = match self.bars.write() {
             Ok(bars) => bars,
             Err(e) => {
-                eprintln!("Error accessing progress bars: {}", e);
+                eprintln!("[ERROR] Error accessing progress bars: {}", e);
                 return;
             }
         };
@@ -1919,12 +1977,13 @@ pub async fn run_send_files_to(
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
-            println!("Cancelling file transfer...");
-            println!("Transfer cancelled");
+            println!("🚫 Cancelling file transfer...");
+            let _ = bubble.cancel().await;
+            println!("✅ Transfer cancelled");
             Ok(())
         }
         _ = wait_for_send_files_to_completion(&bubble) => {
-            println!("All files sent successfully!");
+            println!("✅ All files sent successfully!");
             Ok(())
         }
     }
