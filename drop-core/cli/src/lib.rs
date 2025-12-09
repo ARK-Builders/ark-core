@@ -1045,6 +1045,12 @@ async fn run_cli_subcommand(
         Some(("config", sub_matches)) => {
             handle_config_command(sub_matches).await
         }
+        Some(("wait-to-receive", sub_matches)) => {
+            handle_wait_to_receive_command(sub_matches).await
+        }
+        Some(("send-to", sub_matches)) => {
+            handle_send_to_command(sub_matches).await
+        }
         _ => {
             eprintln!("❌ Invalid command. Use --help for usage information.");
             std::process::exit(1);
@@ -1170,6 +1176,90 @@ pub fn build_cli() -> Command {
                         .about("Clear default receive directory")
                 )
         )
+        .subcommand(
+            Command::new("wait-to-receive")
+                .about("Wait for files from a sender (generates QR code for sender to scan)")
+                .arg(
+                    Arg::new("output")
+                        .help("Output directory for received files (optional if default is set)")
+                        .long("output")
+                        .short('o')
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("save-output")
+                        .long("save-output")
+                        .short('u')
+                        .help("Save the specified output directory as default for future use")
+                        .action(clap::ArgAction::SetTrue)
+                        .requires("output")
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .short('n')
+                        .help("Your display name")
+                        .default_value("arkdrop-receiver")
+                )
+                .arg(
+                    Arg::new("avatar")
+                        .long("avatar")
+                        .short('a')
+                        .help("Path to avatar image file")
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("avatar-b64")
+                        .long("avatar-b64")
+                        .short('b')
+                        .help("Base64 encoded avatar image (alternative to --avatar)")
+                        .conflicts_with("avatar")
+                )
+        )
+        .subcommand(
+            Command::new("send-to")
+                .about("Send files to a waiting receiver (scan receiver's QR code)")
+                .arg(
+                    Arg::new("ticket")
+                        .help("Transfer ticket from receiver's QR code")
+                        .required(true)
+                        .index(1)
+                )
+                .arg(
+                    Arg::new("confirmation")
+                        .help("Confirmation code from receiver")
+                        .required(true)
+                        .index(2)
+                )
+                .arg(
+                    Arg::new("files")
+                        .help("Files to send")
+                        .required(true)
+                        .index(3)
+                        .num_args(1..)
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .short('n')
+                        .help("Your display name")
+                        .default_value("arkdrop-sender")
+                )
+                .arg(
+                    Arg::new("avatar")
+                        .long("avatar")
+                        .short('a')
+                        .help("Path to avatar image file")
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("avatar-b64")
+                        .long("avatar-b64")
+                        .help("Base64 encoded avatar image (alternative to --avatar)")
+                        .conflicts_with("avatar")
+                )
+        )
 }
 
 async fn handle_send_command(matches: &ArgMatches) -> Result<()> {
@@ -1287,6 +1377,65 @@ async fn handle_config_command(matches: &ArgMatches) -> Result<()> {
         }
     }
     Ok(())
+}
+
+async fn handle_wait_to_receive_command(matches: &ArgMatches) -> Result<()> {
+    let out_dir = matches
+        .get_one::<PathBuf>("output")
+        .map(|p| p.to_string_lossy().to_string());
+    let verbose = matches.get_flag("verbose");
+    let save_output = matches.get_flag("save-output");
+
+    let profile = build_profile(matches)?;
+
+    println!("📥 Preparing to wait for files...");
+    println!("👤 Receiver name: {}", profile.name);
+
+    if profile.avatar_b64.is_some() {
+        println!("🖼️  Avatar: Set");
+    }
+
+    run_ready_to_receive(out_dir, profile, verbose, save_output).await
+}
+
+async fn handle_send_to_command(matches: &ArgMatches) -> Result<()> {
+    let ticket = matches.get_one::<String>("ticket").unwrap();
+    let confirmation = matches.get_one::<String>("confirmation").unwrap();
+    let files: Vec<PathBuf> = matches
+        .get_many::<PathBuf>("files")
+        .unwrap()
+        .cloned()
+        .collect();
+    let verbose = matches.get_flag("verbose");
+
+    let profile = build_profile(matches)?;
+
+    println!(
+        "📤 Preparing to send {} file(s) to waiting receiver...",
+        files.len()
+    );
+    for file in &files {
+        println!("   📄 {}", file.display());
+    }
+    println!("👤 Sender name: {}", profile.name);
+
+    if profile.avatar_b64.is_some() {
+        println!("🖼️  Avatar: Set");
+    }
+
+    let file_strings: Vec<String> = files
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    run_send_files_to(
+        file_strings,
+        ticket.clone(),
+        confirmation.clone(),
+        profile,
+        verbose,
+    )
+    .await
 }
 
 #[cfg(test)]
