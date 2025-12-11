@@ -1,16 +1,24 @@
 mod apps;
 mod backend;
 mod layout;
+mod ready_to_receive_manager;
 mod receive_files_manager;
 mod send_files_manager;
+mod send_files_to_manager;
 mod utilities;
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use arkdrop_common::AppConfig;
-use arkdropx_receiver::{ReceiveFilesBubble, ReceiveFilesRequest};
-use arkdropx_sender::{SendFilesBubble, SendFilesRequest};
+use arkdropx_receiver::{
+    ReceiveFilesBubble, ReceiveFilesRequest,
+    ready_to_receive::{ReadyToReceiveBubble, ReadyToReceiveRequest},
+};
+use arkdropx_sender::{
+    SendFilesBubble, SendFilesRequest,
+    send_files_to::{SendFilesToBubble, SendFilesToRequest},
+};
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -28,14 +36,19 @@ use ratatui::{
 use crate::{
     apps::{
         config::ConfigApp, file_browser::FileBrowserApp, help::HelpApp,
-        home::HomeApp, receive_files::ReceiveFilesApp,
+        home::HomeApp, ready_to_receive_progress::ReadyToReceiveProgressApp,
+        receive_files::ReceiveFilesApp,
         receive_files_progress::ReceiveFilesProgressApp,
         send_files::SendFilesApp, send_files_progress::SendFilesProgressApp,
+        send_files_to::SendFilesToApp,
+        send_files_to_progress::SendFilesToProgressApp,
     },
     backend::MainAppBackend,
     layout::{LayoutApp, LayoutChild},
+    ready_to_receive_manager::MainAppReadyToReceiveManager,
     receive_files_manager::MainAppReceiveFilesManager,
     send_files_manager::MainAppSendFilesManager,
+    send_files_to_manager::MainAppSendFilesToManager,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -48,6 +61,9 @@ pub enum Page {
     ReceiveFiles,
     SendFilesProgress,
     ReceiveFilesProgress,
+    SendFilesTo,
+    SendFilesToProgress,
+    ReadyToReceiveProgress,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,10 +130,25 @@ pub trait AppFileBrowserManager: Send + Sync {
     fn open_file_browser(&self, req: OpenFileBrowserRequest);
 }
 
+pub trait AppSendFilesToManager: Send + Sync {
+    fn cancel(&self);
+    fn send_files_to(&self, req: SendFilesToRequest);
+    fn get_send_files_to_bubble(&self) -> Option<Arc<SendFilesToBubble>>;
+}
+
+pub trait AppReadyToReceiveManager: Send + Sync {
+    fn cancel(&self);
+    fn ready_to_receive(&self, req: ReadyToReceiveRequest);
+    fn get_ready_to_receive_bubble(&self) -> Option<Arc<ReadyToReceiveBubble>>;
+}
+
 pub trait AppBackend: Send + Sync {
     fn get_send_files_manager(&self) -> Arc<dyn AppSendFilesManager>;
     fn get_receive_files_manager(&self) -> Arc<dyn AppReceiveFilesManager>;
     fn get_file_browser_manager(&self) -> Arc<dyn AppFileBrowserManager>;
+    fn get_send_files_to_manager(&self) -> Arc<dyn AppSendFilesToManager>;
+    fn get_ready_to_receive_manager(&self)
+    -> Arc<dyn AppReadyToReceiveManager>;
 
     fn get_config(&self) -> AppConfig;
     fn get_navigation(&self) -> Arc<dyn AppNavigation>;
@@ -161,27 +192,42 @@ pub fn run_tui() -> Result<()> {
 
     let send_files = Arc::new(SendFilesApp::new(backend.clone()));
     let receive_files = Arc::new(ReceiveFilesApp::new(backend.clone()));
+    let send_files_to = Arc::new(SendFilesToApp::new(backend.clone()));
 
     let send_files_progress =
         Arc::new(SendFilesProgressApp::new(backend.clone()));
     let receive_files_progress =
         Arc::new(ReceiveFilesProgressApp::new(backend.clone()));
+    let send_files_to_progress =
+        Arc::new(SendFilesToProgressApp::new(backend.clone()));
+    let ready_to_receive_progress =
+        Arc::new(ReadyToReceiveProgressApp::new(backend.clone()));
 
     let send_files_manager = Arc::new(MainAppSendFilesManager::new());
     let receive_files_manager = Arc::new(MainAppReceiveFilesManager::new());
+    let send_files_to_manager = Arc::new(MainAppSendFilesToManager::new());
+    let ready_to_receive_manager =
+        Arc::new(MainAppReadyToReceiveManager::new());
 
     layout.set_file_browser(file_browser.clone());
     layout.file_browser_subscribe(Page::SendFiles, send_files.clone());
+    layout.file_browser_subscribe(Page::SendFilesTo, send_files_to.clone());
     layout.file_browser_subscribe(Page::Config, config.clone());
 
     backend.set_navigation(layout.clone());
     backend.set_file_browser_manager(layout.clone());
     backend.set_send_files_manager(send_files_manager.clone());
     backend.set_receive_files_manager(receive_files_manager.clone());
+    backend.set_send_files_to_manager(send_files_to_manager.clone());
+    backend.set_ready_to_receive_manager(ready_to_receive_manager.clone());
 
     send_files_manager.set_send_files_subscriber(send_files_progress.clone());
     receive_files_manager
         .set_receive_files_subscriber(receive_files_progress.clone());
+    send_files_to_manager
+        .set_send_files_to_subscriber(send_files_to_progress.clone());
+    ready_to_receive_manager
+        .set_ready_to_receive_subscriber(ready_to_receive_progress.clone());
 
     layout.add_child(LayoutChild {
         page: Some(Page::Home),
@@ -242,6 +288,30 @@ pub fn run_tui() -> Result<()> {
     layout.add_child(LayoutChild {
         page: Some(Page::Config),
         app: config,
+        is_active: false,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::SendFilesTo),
+        app: send_files_to,
+        is_active: false,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::SendFilesToProgress),
+        app: send_files_to_progress,
+        is_active: false,
+        z_index: 0,
+        control_index: 0,
+    });
+
+    layout.add_child(LayoutChild {
+        page: Some(Page::ReadyToReceiveProgress),
+        app: ready_to_receive_progress,
         is_active: false,
         z_index: 0,
         control_index: 0,

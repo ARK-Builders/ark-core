@@ -360,6 +360,23 @@ impl LayoutApp {
                 HelperFooterControl::new("CTRL-C", "Cancel"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
             ])),
+            Page::SendFilesTo => Some(create_helper_footer(vec![
+                HelperFooterControl::new("↑/↓/Tab", "Navigate"),
+                HelperFooterControl::new("Enter", "Edit/Send"),
+                HelperFooterControl::new("CTRL-O", "Browse"),
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
+            Page::SendFilesToProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-C", "Cancel"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
+            Page::ReadyToReceiveProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-C", "Cancel"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
             Page::FileBrowser => None,
         };
 
