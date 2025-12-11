@@ -478,7 +478,7 @@ impl ReadyToReceiveProgressApp {
             .constraints([
                 Constraint::Length(3), // Title
                 Constraint::Min(15),   // QR Code
-                Constraint::Length(5), // Connection info
+                Constraint::Length(6), // Connection info
                 Constraint::Length(4), // Footer
             ])
             .split(area);

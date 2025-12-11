@@ -83,7 +83,7 @@ impl App for SendFilesProgressApp {
                 Constraint::Length(3), // Title
                 Constraint::Length(6), // Overall progress
                 Constraint::Min(8),    // Individual files list
-                Constraint::Length(4), // Footer
+                Constraint::Length(5), // Footer
             ])
             .split(area);
 
