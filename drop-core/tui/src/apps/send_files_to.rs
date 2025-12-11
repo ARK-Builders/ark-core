@@ -64,9 +64,9 @@ impl App for SendFilesToApp {
         let is_editing = self.is_editing_field();
 
         if is_editing {
-            return self.handle_text_input_controls(ev);
+            self.handle_text_input_controls(ev)
         } else {
-            return self.handle_navigation_controls(ev);
+            self.handle_navigation_controls(ev)
         }
     }
 }
@@ -417,7 +417,7 @@ impl SendFilesToApp {
         while new_pos < last_pos
             && chars
                 .get(new_pos)
-                .map_or(false, |c| c.is_whitespace())
+                .is_some_and(|c| c.is_whitespace())
         {
             new_pos += 1;
         }
@@ -425,7 +425,7 @@ impl SendFilesToApp {
         while new_pos < last_pos
             && chars
                 .get(new_pos)
-                .map_or(false, |c| !c.is_whitespace())
+                .is_some_and(|c| !c.is_whitespace())
         {
             new_pos += 1;
         }
@@ -608,14 +608,14 @@ impl SendFilesToApp {
         selected_files_in
             .iter()
             .filter_map(|f| {
-                if let Some(name) = f.file_name() {
-                    if let Ok(data) = FileData::new(f.clone()) {
-                        let name = name.to_string_lossy().to_string();
-                        return Some(SenderFile {
-                            name,
-                            data: Arc::new(data),
-                        });
-                    }
+                if let Some(name) = f.file_name()
+                    && let Ok(data) = FileData::new(f.clone())
+                {
+                    let name = name.to_string_lossy().to_string();
+                    return Some(SenderFile {
+                        name,
+                        data: Arc::new(data),
+                    });
                 }
                 None
             })

@@ -234,7 +234,7 @@ impl FileBrowserApp {
                         SortMode::Type => {
                             let a_ext = a.path.extension().unwrap_or_default();
                             let b_ext = b.path.extension().unwrap_or_default();
-                            a_ext.cmp(&b_ext)
+                            a_ext.cmp(b_ext)
                         }
                     }
                 }
@@ -305,12 +305,11 @@ impl FileBrowserApp {
         let menu = self.get_menu();
         let items = self.get_items();
 
-        if let Some(current_index) = menu.selected() {
-            if let Some(item) = items.get(current_index) {
-                if item.is_directory {
-                    self.enter_item_path(item);
-                }
-            }
+        if let Some(current_index) = menu.selected()
+            && let Some(item) = items.get(current_index)
+            && item.is_directory
+        {
+            self.enter_item_path(item);
         }
     }
 
@@ -324,20 +323,20 @@ impl FileBrowserApp {
         let mode = self.get_mode();
         let menu = self.get_menu();
 
-        if let Some(item_idx) = menu.selected() {
-            if let Some(item) = self.items.write().unwrap().get_mut(item_idx) {
-                match mode {
-                    BrowserMode::SelectFile => {
-                        self.select_file(item);
-                        self.on_save();
-                    }
-                    BrowserMode::SelectDirectory => {
-                        self.select_dir(item);
-                        self.on_save();
-                    }
-                    BrowserMode::SelectMultiFiles => {
-                        self.select_file(item);
-                    }
+        if let Some(item_idx) = menu.selected()
+            && let Some(item) = self.items.write().unwrap().get_mut(item_idx)
+        {
+            match mode {
+                BrowserMode::SelectFile => {
+                    self.select_file(item);
+                    self.on_save();
+                }
+                BrowserMode::SelectDirectory => {
+                    self.select_dir(item);
+                    self.on_save();
+                }
+                BrowserMode::SelectMultiFiles => {
+                    self.select_file(item);
                 }
             }
         }
@@ -361,9 +360,9 @@ impl FileBrowserApp {
         if enforced_extensions.is_empty() {
             return true;
         }
-        return enforced_extensions
+        enforced_extensions
             .iter()
-            .any(|ee| name.ends_with(&format!(".{ee}")));
+            .any(|ee| name.ends_with(&format!(".{ee}")))
     }
 
     fn is_hidden_valid(&self, is_hidden: bool) -> bool {
@@ -396,12 +395,10 @@ impl FileBrowserApp {
             let mut dir_items: Vec<FileItem> = entries
                 .filter_map(|entry| {
                     match entry {
-                        Ok(entry) => {
-                            return self.transform_to_item(entry);
-                        }
+                        Ok(entry) => self.transform_to_item(entry),
                         Err(_) => {
                             // TODO: info | log exception on TUI
-                            return None;
+                            None
                         }
                     }
                 })
@@ -659,16 +656,14 @@ impl FileBrowserApp {
     }
 
     fn get_layout_blocks(&self, area: Rect) -> Rc<[Rect]> {
-        let blocks = Layout::default()
+        Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(4), // Header with path and controls
                 Constraint::Min(0),    // File list
                 Constraint::Length(3), // Footer with help
             ])
-            .split(area);
-
-        blocks
+            .split(area)
     }
 
     fn get_sub(&self) -> Option<Arc<dyn AppFileBrowserSubscriber>> {

@@ -13,10 +13,10 @@ pub struct HelperFooterControl {
 
 impl HelperFooterControl {
     pub fn new(title: &str, description: &str) -> Self {
-        return Self {
+        Self {
             title: title.to_string(),
             description: description.to_string(),
-        };
+        }
     }
 }
 
@@ -40,11 +40,9 @@ pub fn create_helper_footer(
         .title(" Controls ")
         .title_style(Style::default().fg(Color::White).bold());
 
-    let footer = Paragraph::new(footer_content)
+    Paragraph::new(footer_content)
         .block(footer_block)
-        .alignment(Alignment::Center);
-
-    return footer;
+        .alignment(Alignment::Center)
 }
 
 fn create_controls_text(controls: Vec<HelperFooterControl>) -> String {
@@ -55,7 +53,7 @@ fn create_controls_text(controls: Vec<HelperFooterControl>) -> String {
             controls_text.push_str(" • ");
         }
         controls_text.push_str(&c.title);
-        controls_text.push_str(" ");
+        controls_text.push(' ');
         controls_text.push_str(&c.description);
     }
 

@@ -154,7 +154,7 @@ impl ReceiveFilesSubscriber for ReceiveFilesProgressApp {
         self.set_status_text(
             format!("Receiving Files from {}", &event.sender.name).as_str(),
         );
-        self.set_sender_name(&event.sender.name.as_str());
+        self.set_sender_name(event.sender.name.as_str());
     }
 }
 
@@ -242,11 +242,11 @@ impl ReceiveFilesProgressApp {
         let v = self
             .progress_pct
             .load(std::sync::atomic::Ordering::Relaxed);
-        return f64::from(v);
+        f64::from(v)
     }
 
     fn get_operation_start_time(&self) -> Option<Instant> {
-        self.operation_start_time.read().unwrap().clone()
+        *self.operation_start_time.read().unwrap()
     }
 
     fn get_files(&self) -> Vec<ProgressFile> {
@@ -505,8 +505,7 @@ impl ReceiveFilesProgressApp {
 
                 // Create a mini progress bar using Unicode blocks
                 let progress_width = 20.0;
-                let filled_width =
-                    ((progress_pct / 100.0) * progress_width as f64) as f64;
+                let filled_width = (progress_pct / 100.0) * progress_width;
                 let progress_bar = format!(
                     "{}{}",
                     "█".repeat(filled_width as usize),

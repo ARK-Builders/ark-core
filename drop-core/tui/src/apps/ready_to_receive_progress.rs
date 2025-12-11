@@ -7,7 +7,8 @@ use std::{
 };
 
 use crate::{
-    App, AppBackend, ControlCapture, utilities::qr_renderer::QrCodeRenderer,
+    App, AppBackend, ControlCapture,
+    utilities::{clipboard::copy_to_clipboard, qr_renderer::QrCodeRenderer},
 };
 use arkdropx_receiver::ready_to_receive::{
     ReadyToReceiveConnectingEvent, ReadyToReceiveReceivingEvent,
@@ -81,6 +82,9 @@ pub struct ReadyToReceiveProgressApp {
     total_transfer_speed: RwLock<f64>,
     sender_name: RwLock<String>,
     total_chunks_received: RwLock<u64>,
+
+    // Copy feedback for T/Y clipboard shortcuts
+    copy_feedback: RwLock<Option<(String, Instant)>>,
 }
 
 impl App for ReadyToReceiveProgressApp {
@@ -112,6 +116,17 @@ impl App for ReadyToReceiveProgressApp {
                 match key.code {
                     KeyCode::Esc => {
                         self.b.get_navigation().go_back();
+                    }
+                    // T/Y copy shortcuts - only in waiting mode
+                    KeyCode::Char('t') | KeyCode::Char('T')
+                        if !self.has_transfer_started() =>
+                    {
+                        self.copy_ticket_to_clipboard();
+                    }
+                    KeyCode::Char('y') | KeyCode::Char('Y')
+                        if !self.has_transfer_started() =>
+                    {
+                        self.copy_confirmation_to_clipboard();
                     }
                     _ => return None,
                 }
@@ -174,6 +189,7 @@ impl ReadyToReceiveProgressApp {
             total_transfer_speed: RwLock::new(0.0),
             sender_name: RwLock::new(String::new()),
             total_chunks_received: RwLock::new(0),
+            copy_feedback: RwLock::new(None),
         }
     }
 
@@ -192,6 +208,7 @@ impl ReadyToReceiveProgressApp {
         *self.total_transfer_speed.write().unwrap() = 0.0;
         *self.sender_name.write().unwrap() = String::new();
         *self.total_chunks_received.write().unwrap() = 0;
+        *self.copy_feedback.write().unwrap() = None;
     }
 
     fn has_transfer_started(&self) -> bool {
@@ -337,14 +354,14 @@ impl ReadyToReceiveProgressApp {
             let file_path = out_dir.join(&name);
 
             // Create parent directories if needed
-            if let Some(parent) = file_path.parent() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    self.set_file_error(
-                        &event.id,
-                        format!("Failed to create directory: {}", e),
-                    );
-                    return;
-                }
+            if let Some(parent) = file_path.parent()
+                && let Err(e) = fs::create_dir_all(parent)
+            {
+                self.set_file_error(
+                    &event.id,
+                    format!("Failed to create directory: {}", e),
+                );
+                return;
             }
 
             let mut options = fs::OpenOptions::new();
@@ -405,6 +422,51 @@ impl ReadyToReceiveProgressApp {
             return "--".to_string();
         }
         format!("{}/s", self.format_bytes(bytes_per_sec as u64))
+    }
+
+    // ── Clipboard Copy Methods ───────────────────────────────────────────────
+
+    fn copy_ticket_to_clipboard(&self) {
+        if let Some(bubble) = self
+            .b
+            .get_ready_to_receive_manager()
+            .get_ready_to_receive_bubble()
+        {
+            match copy_to_clipboard(&bubble.get_ticket()) {
+                Ok(_) => self.set_copy_feedback("✓ Ticket copied!"),
+                Err(e) => self.set_copy_feedback(&format!("✗ {}", e)),
+            }
+        }
+    }
+
+    fn copy_confirmation_to_clipboard(&self) {
+        if let Some(bubble) = self
+            .b
+            .get_ready_to_receive_manager()
+            .get_ready_to_receive_bubble()
+        {
+            let conf = format!("{:02}", bubble.get_confirmation());
+            match copy_to_clipboard(&conf) {
+                Ok(_) => self.set_copy_feedback("✓ Code copied!"),
+                Err(e) => self.set_copy_feedback(&format!("✗ {}", e)),
+            }
+        }
+    }
+
+    fn set_copy_feedback(&self, message: &str) {
+        *self.copy_feedback.write().unwrap() =
+            Some((message.to_string(), Instant::now()));
+    }
+
+    fn get_copy_feedback(&self) -> Option<String> {
+        let feedback = self.copy_feedback.read().unwrap();
+        if let Some((msg, time)) = feedback.as_ref() {
+            // Show feedback for 2 seconds
+            if time.elapsed().as_secs() < 2 {
+                return Some(msg.clone());
+            }
+        }
+        None
     }
 
     // ── Waiting Mode (QR Code Display) ───────────────────────────────────────
@@ -492,12 +554,14 @@ impl ReadyToReceiveProgressApp {
             .title(" Connection Details ")
             .title_style(Style::default().fg(Color::White).bold());
 
+        let copy_feedback = self.get_copy_feedback();
+
         let info_content = if let Some(bubble) = self
             .b
             .get_ready_to_receive_manager()
             .get_ready_to_receive_bubble()
         {
-            vec![
+            let mut lines = vec![
                 Line::from(vec![
                     Span::styled("🔑 ", Style::default().fg(Color::Yellow)),
                     Span::styled(
@@ -508,16 +572,39 @@ impl ReadyToReceiveProgressApp {
                         format!("{:02}", bubble.get_confirmation()),
                         Style::default().fg(Color::White).bold(),
                     ),
+                    Span::styled(
+                        "  [Y to copy]",
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("🎫 ", Style::default().fg(Color::Blue)),
                     Span::styled("Ticket: ", Style::default().fg(Color::Gray)),
                     Span::styled(
-                        truncate_string(&bubble.get_ticket(), 40),
+                        truncate_string(&bubble.get_ticket(), 30),
                         Style::default().fg(Color::White),
                     ),
+                    Span::styled(
+                        "  [T to copy]",
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]),
-            ]
+            ];
+
+            // Show copy feedback if available
+            if let Some(feedback) = copy_feedback {
+                let color = if feedback.starts_with('✓') {
+                    Color::Green
+                } else {
+                    Color::Red
+                };
+                lines.push(Line::from(vec![Span::styled(
+                    feedback,
+                    Style::default().fg(color).bold(),
+                )]));
+            }
+
+            lines
         } else {
             vec![Line::from(vec![Span::styled(
                 "Generating connection details...",

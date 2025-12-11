@@ -98,7 +98,7 @@ pub struct ControlCapture {
 
 impl ControlCapture {
     pub fn new(ev: &Event) -> Self {
-        return Self { ev: ev.clone() };
+        Self { ev: ev.clone() }
     }
 }
 

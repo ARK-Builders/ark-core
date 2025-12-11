@@ -61,7 +61,7 @@ impl AppBackend for MainAppBackend {
     }
 
     fn get_config(&self) -> AppConfig {
-        AppConfig::load().unwrap_or(AppConfig::default())
+        AppConfig::load().unwrap_or_default()
     }
 
     fn get_navigation(&self) -> Arc<dyn AppNavigation> {
