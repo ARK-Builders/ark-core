@@ -4,10 +4,12 @@
 //! file data is provided by the embedding app via the `SenderFileData` trait.
 
 mod send_files;
+mod send_files_to;
 
 use std::sync::Arc;
 
 pub use send_files::*;
+pub use send_files_to::*;
 
 /// Describes the sender's identity, shown to the receiver during handshake.
 pub struct SenderProfile {
@@ -45,8 +47,8 @@ pub trait SenderFileData: Send + Sync {
 
 /// Adapter that bridges this crate's `SenderFileData` trait to the
 /// `arkdropx_sender::SenderFileData` trait expected by the lower-level crate.
-struct SenderFileDataAdapter {
-    inner: Arc<dyn SenderFileData>,
+pub(crate) struct SenderFileDataAdapter {
+    pub(crate) inner: Arc<dyn SenderFileData>,
 }
 impl arkdropx_sender::SenderFileData for SenderFileDataAdapter {
     fn len(&self) -> u64 {
