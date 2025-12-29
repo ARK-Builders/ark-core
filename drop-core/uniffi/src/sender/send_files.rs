@@ -123,9 +123,9 @@ impl arkdropx_sender::SendFilesSubscriber for SendFilesSubscriberAdapter {
         self.inner.get_id()
     }
 
-    fn log(&self, message: String) {
+    fn log(&self, _message: String) {
         #[cfg(debug_assertions)]
-        return self.inner.log(message.clone());
+        return self.inner.log(_message.clone());
     }
 
     fn notify_sending(&self, event: arkdropx_sender::SendFilesSendingEvent) {

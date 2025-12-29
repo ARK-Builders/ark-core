@@ -121,9 +121,9 @@ impl arkdropx_receiver::ReceiveFilesSubscriber
         self.inner.get_id()
     }
 
-    fn log(&self, message: String) {
+    fn log(&self, _message: String) {
         #[cfg(debug_assertions)]
-        return self.inner.log(message.clone());
+        return self.inner.log(_message.clone());
     }
 
     fn notify_receiving(

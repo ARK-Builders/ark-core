@@ -253,9 +253,9 @@ impl HomeApp {
     }
 
     fn start_ready_to_receive(&self) {
-        use arkdropx_receiver::ReceiverProfile;
-        use arkdropx_receiver::ready_to_receive::{
-            ReadyToReceiveConfig, ReadyToReceiveRequest,
+        use arkdropx_receiver::{
+            ReceiverProfile,
+            ready_to_receive::{ReadyToReceiveConfig, ReadyToReceiveRequest},
         };
 
         let config = self.b.get_config();

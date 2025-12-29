@@ -78,7 +78,8 @@ impl ReadyToReceiveBubble {
     pub fn unsubscribe(&self, subscriber: Arc<dyn ReadyToReceiveSubscriber>) {
         let adapted_subscriber =
             ReadyToReceiveSubscriberAdapter { inner: subscriber };
-        self.inner.unsubscribe(Arc::new(adapted_subscriber))
+        self.inner
+            .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
 
@@ -135,9 +136,9 @@ impl arkdropx_receiver::ready_to_receive::ReadyToReceiveSubscriber
         self.inner.get_id()
     }
 
-    fn log(&self, message: String) {
+    fn log(&self, _message: String) {
         #[cfg(debug_assertions)]
-        return self.inner.log(message.clone());
+        return self.inner.log(_message.clone());
     }
 
     fn notify_receiving(
@@ -210,11 +211,18 @@ fn create_adapted_request(
         avatar_b64: request.profile.avatar_b64,
     };
     let config = match request.config {
-        Some(config) => arkdropx_receiver::ready_to_receive::ReadyToReceiveConfig {
-            chunk_size: config.chunk_size,
-            parallel_streams: config.parallel_streams,
-        },
-        None => arkdropx_receiver::ready_to_receive::ReadyToReceiveConfig::default(),
+        Some(config) => {
+            arkdropx_receiver::ready_to_receive::ReadyToReceiveConfig {
+                chunk_size: config.chunk_size,
+                parallel_streams: config.parallel_streams,
+            }
+        }
+        None => {
+            arkdropx_receiver::ready_to_receive::ReadyToReceiveConfig::default()
+        }
     };
-    arkdropx_receiver::ready_to_receive::ReadyToReceiveRequest { profile, config }
+    arkdropx_receiver::ready_to_receive::ReadyToReceiveRequest {
+        profile,
+        config,
+    }
 }

@@ -38,7 +38,8 @@ impl AppReadyToReceiveManager for MainAppReadyToReceiveManager {
                         bub.subscribe(sub);
                     }
 
-                    // No explicit start needed - the bubble starts waiting immediately
+                    // No explicit start needed - the bubble starts waiting
+                    // immediately
                     curr_bubble.write().unwrap().replace(bub);
                 }
                 Err(e) => {

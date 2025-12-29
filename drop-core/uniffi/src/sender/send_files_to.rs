@@ -68,7 +68,8 @@ impl SendFilesToBubble {
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesToSubscriber>) {
         let adapted_subscriber =
             SendFilesToSubscriberAdapter { inner: subscriber };
-        self.inner.unsubscribe(Arc::new(adapted_subscriber))
+        self.inner
+            .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
 
@@ -117,21 +118,22 @@ impl arkdropx_sender::send_files_to::SendFilesToSubscriber
         self.inner.get_id()
     }
 
-    fn log(&self, message: String) {
+    fn log(&self, _message: String) {
         #[cfg(debug_assertions)]
-        return self.inner.log(message.clone());
+        return self.inner.log(_message.clone());
     }
 
     fn notify_sending(
         &self,
         event: arkdropx_sender::send_files_to::SendFilesToSendingEvent,
     ) {
-        self.inner.notify_sending(SendFilesToSendingEvent {
-            id: event.id,
-            name: event.name,
-            sent: event.sent,
-            remaining: event.remaining,
-        })
+        self.inner
+            .notify_sending(SendFilesToSendingEvent {
+                id: event.id,
+                name: event.name,
+                sent: event.sent,
+                remaining: event.remaining,
+            })
     }
 
     fn notify_connecting(

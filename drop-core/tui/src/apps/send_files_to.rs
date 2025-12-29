@@ -3,8 +3,9 @@ use crate::{
     BrowserMode, ControlCapture, OpenFileBrowserRequest, Page, SortMode,
 };
 use arkdrop_common::FileData;
-use arkdropx_sender::send_files_to::SendFilesToRequest;
-use arkdropx_sender::{SenderConfig, SenderFile, SenderProfile};
+use arkdropx_sender::{
+    SenderConfig, SenderFile, SenderProfile, send_files_to::SendFilesToRequest,
+};
 use ratatui::{
     Frame,
     crossterm::event::{Event, KeyCode, KeyModifiers},
@@ -658,8 +659,10 @@ impl SendFilesToApp {
             .direction(Direction::Horizontal)
             .margin(1)
             .constraints([
-                Constraint::Percentage(55), // Left side - connection + files input
-                Constraint::Percentage(45), // Right side - file list + send button
+                Constraint::Percentage(55), /* Left side - connection +
+                                             * files input */
+                Constraint::Percentage(45), /* Right side - file list + send
+                                             * button */
             ])
             .split(area);
 

@@ -114,7 +114,8 @@ impl App for SendFilesProgressApp {
                     KeyCode::Esc => {
                         self.b.get_navigation().go_back();
                     }
-                    // T/Y copy shortcuts - only in waiting mode (before transfer starts)
+                    // T/Y copy shortcuts - only in waiting mode (before
+                    // transfer starts)
                     KeyCode::Char('t') | KeyCode::Char('T')
                         if !self.has_transfer_started() =>
                     {
