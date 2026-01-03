@@ -47,8 +47,8 @@ pub trait SenderFileData: Send + Sync {
 
 /// Adapter that bridges this crate's `SenderFileData` trait to the
 /// `arkdropx_sender::SenderFileData` trait expected by the lower-level crate.
-pub(crate) struct SenderFileDataAdapter {
-    pub(crate) inner: Arc<dyn SenderFileData>,
+struct SenderFileDataAdapter {
+    inner: Arc<dyn SenderFileData>,
 }
 impl arkdropx_sender::SenderFileData for SenderFileDataAdapter {
     fn len(&self) -> u64 {
