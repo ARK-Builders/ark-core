@@ -35,9 +35,7 @@ pub trait Data: Send + Sync {
     /// the known total length at creation time.
     fn len(&self) -> u64;
 
-    /// Checks if the data is empty (length is 0).
-    ///
-    /// Default implementation returns `true` if `len() == 0`.
+    /// Returns true if the data has zero length.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

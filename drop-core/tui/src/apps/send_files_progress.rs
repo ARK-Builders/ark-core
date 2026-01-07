@@ -3,7 +3,9 @@ use std::{
     time::Instant,
 };
 
-use crate::{App, AppBackend, ControlCapture};
+use crate::{
+    App, AppBackend, ControlCapture, utilities::clipboard::copy_to_clipboard,
+};
 use arkdropx_sender::SendFilesSubscriber;
 use crossterm::event::KeyModifiers;
 use qrcode::QrCode;
@@ -67,6 +69,9 @@ pub struct SendFilesProgressApp {
 
     files: RwLock<Vec<ProgressFile>>,
     total_transfer_speed: RwLock<f64>,
+
+    // Copy feedback for T/Y clipboard shortcuts
+    copy_feedback: RwLock<Option<(String, Instant)>>,
 }
 
 impl App for SendFilesProgressApp {
@@ -78,7 +83,7 @@ impl App for SendFilesProgressApp {
                 Constraint::Length(3), // Title
                 Constraint::Length(6), // Overall progress
                 Constraint::Min(8),    // Individual files list
-                Constraint::Length(4), // Footer
+                Constraint::Length(5), // Footer
             ])
             .split(area);
 
@@ -108,6 +113,18 @@ impl App for SendFilesProgressApp {
                 match key.code {
                     KeyCode::Esc => {
                         self.b.get_navigation().go_back();
+                    }
+                    // T/Y copy shortcuts - only in waiting mode (before
+                    // transfer starts)
+                    KeyCode::Char('t') | KeyCode::Char('T')
+                        if !self.has_transfer_started() =>
+                    {
+                        self.copy_ticket_to_clipboard();
+                    }
+                    KeyCode::Char('y') | KeyCode::Char('Y')
+                        if !self.has_transfer_started() =>
+                    {
+                        self.copy_confirmation_to_clipboard();
                     }
                     _ => return None,
                 }
@@ -225,6 +242,8 @@ impl SendFilesProgressApp {
 
             files: RwLock::new(Vec::new()),
             total_transfer_speed: RwLock::new(0.0),
+
+            copy_feedback: RwLock::new(None),
         }
     }
 
@@ -267,11 +286,11 @@ impl SendFilesProgressApp {
         let v = self
             .progress_pct
             .load(std::sync::atomic::Ordering::Relaxed);
-        return f64::from(v);
+        f64::from(v)
     }
 
     fn get_operation_start_time(&self) -> Option<Instant> {
-        self.operation_start_time.read().unwrap().clone()
+        *self.operation_start_time.read().unwrap()
     }
 
     fn get_files(&self) -> Vec<ProgressFile> {
@@ -280,6 +299,48 @@ impl SendFilesProgressApp {
 
     fn get_total_transfer_speed(&self) -> f64 {
         *self.total_transfer_speed.read().unwrap()
+    }
+
+    fn copy_ticket_to_clipboard(&self) {
+        if let Some(bubble) = self
+            .b
+            .get_send_files_manager()
+            .get_send_files_bubble()
+        {
+            match copy_to_clipboard(&bubble.get_ticket()) {
+                Ok(_) => self.set_copy_feedback("✓ Ticket copied!"),
+                Err(e) => self.set_copy_feedback(&format!("✗ {}", e)),
+            }
+        }
+    }
+
+    fn copy_confirmation_to_clipboard(&self) {
+        if let Some(bubble) = self
+            .b
+            .get_send_files_manager()
+            .get_send_files_bubble()
+        {
+            let conf = format!("{:02}", bubble.get_confirmation());
+            match copy_to_clipboard(&conf) {
+                Ok(_) => self.set_copy_feedback("✓ Code copied!"),
+                Err(e) => self.set_copy_feedback(&format!("✗ {}", e)),
+            }
+        }
+    }
+
+    fn set_copy_feedback(&self, message: &str) {
+        *self.copy_feedback.write().unwrap() =
+            Some((message.to_string(), Instant::now()));
+    }
+
+    fn get_copy_feedback(&self) -> Option<String> {
+        let feedback = self.copy_feedback.read().unwrap();
+        if let Some((msg, time)) = feedback.as_ref()
+            && time.elapsed().as_secs() < 2
+        {
+            return Some(msg.clone());
+        }
+        None
     }
 
     fn format_bytes(&self, bytes: u64) -> String {
@@ -520,8 +581,7 @@ impl SendFilesProgressApp {
 
                 // Create a mini progress bar using Unicode blocks
                 let progress_width = 20.0;
-                let filled_width =
-                    ((progress_pct / 100.0) * progress_width as f64) as f64;
+                let filled_width = (progress_pct / 100.0) * progress_width;
                 let progress_bar = format!(
                     "{}{}",
                     "█".repeat(filled_width as usize),
@@ -711,47 +771,85 @@ impl SendFilesProgressApp {
 
     fn draw_footer(&self, f: &mut Frame, area: ratatui::prelude::Rect) {
         let progress_pct = self.get_progress_pct();
+        let copy_feedback = self.get_copy_feedback();
 
-        let (footer_text, footer_color, footer_icon) = if progress_pct >= 100.0
-        {
+        let (footer_lines, footer_color) = if progress_pct >= 100.0 {
             (
-                "All files transferred successfully! Press ESC to continue"
-                    .to_string(),
+                vec![
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("✅ ", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            "All files transferred successfully! Press ESC to continue",
+                            Style::default().fg(Color::White),
+                        ),
+                    ]),
+                ],
                 Color::Green,
-                "✅",
             )
         } else if let Some(bubble) = self
             .b
             .get_send_files_manager()
             .get_send_files_bubble()
         {
-            (
-                format!(
-                    "Ticket: {} • Confirmation: {}",
-                    bubble.get_ticket(),
-                    bubble.get_confirmation()
+            // Show ticket and confirmation with copy hints when in waiting mode
+            let mut lines = vec![Line::from(vec![
+                Span::styled("🔑 ", Style::default().fg(Color::Blue)),
+                Span::styled(
+                    "Confirmation: ",
+                    Style::default().fg(Color::Gray),
                 ),
-                Color::Blue,
-                "🔑",
-            )
+                Span::styled(
+                    format!("{:02}", bubble.get_confirmation()),
+                    Style::default().fg(Color::White).bold(),
+                ),
+                Span::styled(
+                    " [Y to copy]",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled("  •  ", Style::default().fg(Color::Gray)),
+                Span::styled("Ticket: ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    "(full)",
+                    Style::default().fg(Color::DarkGray).italic(),
+                ),
+                Span::styled(
+                    " [T to copy]",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])];
+
+            // Show copy feedback if available
+            if let Some(feedback) = copy_feedback {
+                let feedback_color = if feedback.starts_with('✓') {
+                    Color::Green
+                } else {
+                    Color::Red
+                };
+                lines.push(Line::from(vec![Span::styled(
+                    feedback,
+                    Style::default().fg(feedback_color).bold(),
+                )]));
+            } else {
+                lines.push(Line::from(""));
+            }
+
+            (lines, Color::Blue)
         } else {
             (
-                "Preparing transfer... Press ESC to cancel".to_string(),
+                vec![
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("⏳ ", Style::default().fg(Color::Yellow)),
+                        Span::styled(
+                            "Preparing transfer... Press ESC to cancel",
+                            Style::default().fg(Color::White),
+                        ),
+                    ]),
+                ],
                 Color::Yellow,
-                "⏳",
             )
         };
-
-        let footer_content = vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(
-                    format!("{} ", footer_icon),
-                    Style::default().fg(footer_color),
-                ),
-                Span::styled(footer_text, Style::default().fg(Color::White)),
-            ]),
-        ];
 
         let footer_block = Block::default()
             .borders(Borders::ALL)
@@ -760,7 +858,7 @@ impl SendFilesProgressApp {
             .title(" Status ")
             .title_style(Style::default().fg(Color::White).bold());
 
-        let footer = Paragraph::new(footer_content)
+        let footer = Paragraph::new(footer_lines)
             .block(footer_block)
             .alignment(Alignment::Center);
 
@@ -770,5 +868,6 @@ impl SendFilesProgressApp {
     fn reset(&self) {
         *self.operation_start_time.write().unwrap() = None;
         *self.files.write().unwrap() = Vec::new();
+        *self.copy_feedback.write().unwrap() = None;
     }
 }

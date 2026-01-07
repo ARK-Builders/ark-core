@@ -525,6 +525,6 @@ impl TransferFile {
     pub fn get_pct(&self) -> f64 {
         let raw_pct = self.len / self.expected_len;
         let pct: u32 = raw_pct.try_into().unwrap_or(0);
-        pct.try_into().unwrap_or(0.0)
+        pct.into()
     }
 }

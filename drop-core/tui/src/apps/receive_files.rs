@@ -75,15 +75,15 @@ impl App for ReceiveFilesApp {
         let transfer_state = self.transfer_state.read().unwrap().clone();
         match transfer_state {
             TransferState::OngoingTransfer => {
-                return self.handle_ongoing_transfer_controls(ev);
+                self.handle_ongoing_transfer_controls(ev)
             }
             _ => {
                 let is_editing = self.is_editing_field();
 
                 if is_editing {
-                    return self.handle_text_input_controls(ev);
+                    self.handle_text_input_controls(ev)
                 } else {
-                    return self.handle_navigation_controls(ev);
+                    self.handle_navigation_controls(ev)
                 }
             }
         }
@@ -580,7 +580,7 @@ impl ReceiveFilesApp {
 
         let config = self.b.get_config();
 
-        return Some(ReceiveFilesRequest {
+        Some(ReceiveFilesRequest {
             ticket: self.get_ticket_in(),
             confirmation: self.get_confirmation_in().parse().unwrap(),
             profile: ReceiverProfile {
@@ -588,7 +588,7 @@ impl ReceiveFilesApp {
                 avatar_b64: config.get_avatar_base64(),
             },
             config: None,
-        });
+        })
     }
 
     fn set_status_message(&self, message: &str) {

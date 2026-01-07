@@ -223,15 +223,189 @@ dictionary ReceiveFilesFile {
     u64 len;
 };
 
+// ============================================================================
+// SEND-FILES-TO FLOW (Sender connects to waiting Receiver)
+// ============================================================================
+
+/// Request to send files to a waiting receiver.
+/// The receiver has already created a session and shared their ticket/confirmation.
+dictionary SendFilesToRequest {
+    /// Ticket obtained from the receiver's QR code.
+    string ticket;
+    /// Short confirmation code from the receiver.
+    u8 confirmation;
+    /// Sender metadata.
+    SenderProfile profile;
+    /// Files to send. Order is preserved.
+    sequence<SenderFile> files;
+    /// Optional tuning parameters. If null, sensible defaults are used.
+    SenderConfig? config;
+};
+
+/// Represents a send-to session (sender connecting to a waiting receiver).
+/// Call start() to begin the transfer after connecting.
+interface SendFilesToBubble {
+    /// Begin the handshake and file transfer.
+    [Throws=DropError]
+    void start();
+    /// Cancel the session. No further progress will be made.
+    [Throws=DropError, Async]
+    void cancel();
+    /// True when the session has completed (successfully or not).
+    boolean is_finished();
+    /// Subscribe to log/progress/connection events.
+    void subscribe(SendFilesToSubscriber subscriber);
+    /// Unsubscribe a previously registered subscriber.
+    void unsubscribe(SendFilesToSubscriber subscriber);
+};
+
+/// Sender-side callbacks for send-to transfers.
+[Trait, WithForeign]
+interface SendFilesToSubscriber {
+    /// Stable unique id used for subscribe/unsubscribe identity.
+    string get_id();
+    /// Debug/diagnostic logs. Only emitted in debug builds.
+    void log(string message);
+    /// Emitted as bytes are sent for a given file.
+    void notify_sending(SendFilesToSendingEvent event);
+    /// Emitted when connecting to the receiver.
+    void notify_connecting(SendFilesToConnectingEvent event);
+};
+
+/// Progress information for a file being sent.
+dictionary SendFilesToSendingEvent {
+    string id;
+    /// File name being sent.
+    string name;
+    /// Bytes already sent.
+    u64 sent;
+    /// Bytes remaining.
+    u64 remaining;
+};
+
+/// Information about the receiver when connecting.
+dictionary SendFilesToConnectingEvent {
+    /// Receiver metadata preview.
+    SendFilesToReceiverProfile receiver;
+};
+
+/// Receiver identity preview available to the sender.
+dictionary SendFilesToReceiverProfile {
+    /// Receiver unique id (transport-specific).
+    string id;
+    /// Display name.
+    string name;
+    /// Optional base64 avatar.
+    string? avatar_b64;
+};
+
+// ============================================================================
+// READY-TO-RECEIVE FLOW (Receiver waits for Sender to connect)
+// ============================================================================
+
+/// Request to start waiting for a sender.
+/// The receiver creates a session and displays ticket/confirmation for the sender.
+dictionary ReadyToReceiveRequest {
+    /// Receiver metadata.
+    ReceiverProfile profile;
+    /// Optional tuning parameters. If null, sensible defaults are used.
+    ReceiverConfig? config;
+};
+
+/// Represents a ready-to-receive session.
+/// After creation, display the ticket/confirmation (e.g., as QR code) for sender.
+interface ReadyToReceiveBubble {
+    /// One-time ticket that the sender needs to connect.
+    string get_ticket();
+    /// Short confirmation code the sender must provide to prevent mispairing.
+    u8 get_confirmation();
+    /// Cancel the session. No further progress will be made.
+    [Throws=DropError, Async]
+    void cancel();
+    /// True when the session has completed (all files received or canceled).
+    boolean is_finished();
+    /// True once a sender has connected and handshake completed.
+    boolean is_connected();
+    /// ISO-8601 timestamp of when the session was created.
+    string get_created_at();
+    /// Subscribe to log/progress/connection events.
+    void subscribe(ReadyToReceiveSubscriber subscriber);
+    /// Unsubscribe a previously registered subscriber.
+    void unsubscribe(ReadyToReceiveSubscriber subscriber);
+};
+
+/// Receiver-side callbacks for ready-to-receive transfers.
+[Trait, WithForeign]
+interface ReadyToReceiveSubscriber {
+    /// Stable unique id used for subscribe/unsubscribe identity.
+    string get_id();
+    /// Debug/diagnostic logs. Only emitted in debug builds.
+    void log(string message);
+    /// Emitted with streamed bytes for a specific file id.
+    void notify_receiving(ReadyToReceiveReceivingEvent event);
+    /// Emitted when sender connects and file manifest is known.
+    void notify_connecting(ReadyToReceiveConnectingEvent event);
+};
+
+/// Chunk payload for a specific file.
+dictionary ReadyToReceiveReceivingEvent {
+    /// File id that this chunk belongs to.
+    string id;
+    /// Raw bytes of the chunk.
+    bytes data;
+};
+
+/// Connection info and file manifest received from the sender.
+dictionary ReadyToReceiveConnectingEvent {
+    /// Sender metadata preview.
+    ReadyToReceiveSenderProfile sender;
+    /// List of files that will be received.
+    sequence<ReadyToReceiveFile> files;
+};
+
+/// Sender identity preview available to the receiver.
+dictionary ReadyToReceiveSenderProfile {
+    /// Sender unique id (transport-specific).
+    string id;
+    /// Display name.
+    string name;
+    /// Optional base64 avatar.
+    string? avatar_b64;
+};
+
+/// Information about a single file to be received.
+dictionary ReadyToReceiveFile {
+    /// Transport/manifest id.
+    string id;
+    /// Original file name.
+    string name;
+    /// Total length in bytes.
+    u64 len;
+};
+
 /// Top-level namespace for starting send/receive flows.
 ///
-/// Both functions are async and return "bubbles" that control and observe
+/// All functions are async and return "bubbles" that control and observe
 /// the lifetime of the session via methods and subscriptions.
+///
+/// Standard flows:
+/// - `send_files`: Sender creates session, displays QR. Receiver joins.
+/// - `receive_files`: Receiver joins sender's session using ticket.
+///
+/// QR-to-receive flows (receiver-initiated):
+/// - `ready_to_receive`: Receiver creates session, displays QR. Sender joins.
+/// - `send_files_to`: Sender joins receiver's session using ticket.
 namespace drop {
-    /// Start a new send session.
+    /// Start a new send session (sender-initiated).
     [Throws=DropError, Async]
     SendFilesBubble send_files(SendFilesRequest request);
-    /// Start a new receive session.
+    /// Start a new receive session (join sender's session).
     [Throws=DropError, Async]
     ReceiveFilesBubble receive_files(ReceiveFilesRequest request);
+    /// Start a send-to session (join receiver's waiting session).
+    [Throws=DropError, Async]
+    SendFilesToBubble send_files_to(SendFilesToRequest request);
+    /// Start waiting for a sender (receiver-initiated).
+    [Throws=DropError, Async]
+    ReadyToReceiveBubble ready_to_receive(ReadyToReceiveRequest request);
 };

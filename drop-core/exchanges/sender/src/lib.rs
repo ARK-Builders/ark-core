@@ -8,16 +8,26 @@
 //! - A `SendFilesBubble` handle that lets you observe progress, subscribe to
 //!   events, and cancel or query the transfer.
 //!
-//! Typical usage:
+//! Two modes of operation:
+//!
+//! ## Standard Mode (Sender initiates, generates QR)
 //! - Implement `SenderFileData` for your source (bytes in memory, file on disk,
 //!   etc.).
 //! - Construct `SenderFile` values for each file.
 //! - Choose a `SenderConfig` (or the default).
 //! - Call `send_files` to start a transfer and get a `SendFilesBubble`.
+//! - Display ticket/confirmation for receiver to scan.
 //!
-//! See `send_files` module for the operational flow and events.
+//! ## QR-to-Receive Mode (Sender connects to waiting receiver)
+//! - Scan receiver's QR code to get ticket and confirmation.
+//! - Construct `SendFilesToRequest` with receiver's ticket, files, and profile.
+//! - Call `send_files_to` to connect and get a `SendFilesToBubble`.
+//! - Call `start()` to begin transfer.
+//!
+//! See `send_files` and `send_files_to` modules for the operational flows.
 
 mod send_files;
+pub mod send_files_to;
 
 use arkdrop_entities::Data;
 use std::sync::Arc;
@@ -58,14 +68,16 @@ pub struct SenderFile {
 /// - `read_chunk(size)` returns the next chunk up to `size` bytes; an empty
 ///   vector signals EOF.
 /// - `read` is a single-byte variant primarily to satisfy the
-///   `drop_entities::Data` trait; it can be implemented in terms of your
+///   `arkdrop_entities::Data` trait; it can be implemented in terms of your
 ///   internal reader if needed.
 pub trait SenderFileData: Send + Sync {
     /// Total length in bytes.
     fn len(&self) -> u64;
 
-    /// Checks if the data is empty (length is 0).
-    fn is_empty(&self) -> bool;
+    /// Returns true if the data has zero length.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Read a single byte if available.
     fn read(&self) -> Option<u8>;
@@ -74,20 +86,16 @@ pub trait SenderFileData: Send + Sync {
     fn read_chunk(&self, size: u64) -> Vec<u8>;
 }
 
-/// Internal adapter to bridge `SenderFileData` with `drop_entities::Data`.
+/// Internal adapter to bridge `SenderFileData` with `arkdrop_entities::Data`.
 ///
 /// This type is not exposed publicly; it allows the rest of the pipeline to
-/// operate on the generic `drop_entities::File` type.
+/// operate on the generic `arkdrop_entities::File` type.
 struct SenderFileDataAdapter {
     inner: Arc<dyn SenderFileData>,
 }
 impl Data for SenderFileDataAdapter {
     fn len(&self) -> u64 {
         self.inner.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     fn read(&self) -> Option<u8> {

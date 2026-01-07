@@ -3,8 +3,10 @@
 //! These are thin, typed wrappers around the lower-level `arkdropx_receiver`
 //! crate.
 
+mod ready_to_receive;
 mod receive_files;
 
+pub use ready_to_receive::*;
 pub use receive_files::*;
 
 /// Describes the receiver's identity, shown to the sender during handshake.

@@ -47,7 +47,7 @@ impl AppReceiveFilesManager for MainAppReceiveFilesManager {
         &self,
     ) -> Option<std::sync::Arc<arkdropx_receiver::ReceiveFilesBubble>> {
         let bubble = self.bubble.read().unwrap();
-        return bubble.clone();
+        bubble.clone()
     }
 }
 
