@@ -224,6 +224,10 @@ pub async fn send_files(request: SendFilesRequest) -> Result<SendFilesBubble> {
     let endpoint = endpoint_builder.bind().await?;
     handler.log("send_files: Endpoint bound successfully".to_string());
 
+    handler.log("send_files: Waiting for home relay connection".to_string());
+    let relay_url = endpoint.home_relay().initialized().await;
+    handler.log(format!("send_files: Home relay initialized: {relay_url:?}"));
+
     handler.log("send_files: Initializing node address".to_string());
     let node_addr = endpoint.node_addr().initialized().await;
     handler.log(format!(
