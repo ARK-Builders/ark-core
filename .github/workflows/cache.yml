@@ -45,27 +45,9 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --verbose --release
 
-  mac-intel:
-    name: MacOS Intel
-    runs-on: macos-13
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up Cargo Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Run tests
-        run: cargo test --workspace --verbose --release
-
-  mac-arm:
-    name: MacOS ARM
-    runs-on: macos-14
+  macos:
+    name: MacOS
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
