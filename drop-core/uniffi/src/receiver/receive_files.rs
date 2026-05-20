@@ -40,21 +40,25 @@ impl ReceiveFilesBubble {
 
     /// Cancel the session. No further progress will occur.
     pub fn cancel(&self) {
+        let _guard = self.runtime.enter();
         return self.inner.cancel();
     }
 
     /// True when the session has completed (successfully or not).
     pub fn is_finished(&self) -> bool {
+        let _guard = self.runtime.enter();
         return self.inner.is_finished();
     }
 
     /// True if the session has been explicitly canceled.
     pub fn is_cancelled(&self) -> bool {
+        let _guard = self.runtime.enter();
         return self.inner.is_cancelled();
     }
 
     /// Register an observer for logs, chunk payloads, and connection events.
     pub fn subscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
+        let _guard = self.runtime.enter();
         let adapted_subscriber =
             ReceiveFilesSubscriberAdapter { inner: subscriber };
         return self.inner.subscribe(Arc::new(adapted_subscriber));
@@ -64,6 +68,7 @@ impl ReceiveFilesBubble {
     ///
     /// Identity is determined by the subscriber's `get_id()`.
     pub fn unsubscribe(&self, subscriber: Arc<dyn ReceiveFilesSubscriber>) {
+        let _guard = self.runtime.enter();
         let adapted_subscriber =
             ReceiveFilesSubscriberAdapter { inner: subscriber };
         return self

@@ -20,16 +20,18 @@ pub struct SendFilesRequest {
 /// subscription hooks, and cancellation.
 pub struct SendFilesBubble {
     inner: arkdropx_sender::SendFilesBubble,
-    _runtime: tokio::runtime::Runtime,
+    runtime: tokio::runtime::Runtime,
 }
 impl SendFilesBubble {
     /// Returns the ticket that the receiver must provide to connect.
     pub fn get_ticket(&self) -> String {
+        let _guard = self.runtime.enter();
         return self.inner.get_ticket();
     }
 
     /// Returns the short confirmation code required during pairing.
     pub fn get_confirmation(&self) -> u8 {
+        let _guard = self.runtime.enter();
         return self.inner.get_confirmation();
     }
 
@@ -39,24 +41,28 @@ impl SendFilesBubble {
     /// will eventually become true.
     pub async fn cancel(&self) -> Result<(), DropError> {
         return self
-            .inner
-            .cancel()
-            .await
+            .runtime
+            .block_on(async {
+                return self.inner.cancel().await;
+            })
             .map_err(|e| DropError::TODO(e.to_string()));
     }
 
     /// True once all files are sent or the session has been canceled.
     pub fn is_finished(&self) -> bool {
+        let _guard = self.runtime.enter();
         return self.inner.is_finished();
     }
 
     /// True once a receiver has connected and handshake has completed.
     pub fn is_connected(&self) -> bool {
+        let _guard = self.runtime.enter();
         return self.inner.is_connected();
     }
 
     /// ISO-8601 timestamp for when the session was created.
     pub fn get_created_at(&self) -> String {
+        let _guard = self.runtime.enter();
         return self.inner.get_created_at();
     }
 
@@ -64,6 +70,7 @@ impl SendFilesBubble {
     ///
     /// The subscriber is adapted and passed to the underlying transport.
     pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
+        let _guard = self.runtime.enter();
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
         return self.inner.subscribe(Arc::new(adapted_subscriber));
@@ -73,6 +80,7 @@ impl SendFilesBubble {
     ///
     /// Identity is determined by the subscriber's `get_id()`.
     pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
+        let _guard = self.runtime.enter();
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
         return self
@@ -172,7 +180,7 @@ pub async fn send_files(
         .map_err(|e| DropError::TODO(e.to_string()))?;
     return Ok(Arc::new(SendFilesBubble {
         inner: bubble,
-        _runtime: runtime,
+        runtime,
     }));
 }
 
