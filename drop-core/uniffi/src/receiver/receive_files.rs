@@ -30,30 +30,27 @@ impl ReceiveFilesBubble {
     /// This method blocks on the internal runtime until setup finishes or an
     /// error is returned. On success, subscribers will receive chunks/events.
     pub fn start(&self) -> Result<(), DropError> {
-        return self
-            .runtime
-            .block_on(async {
-                return self.inner.start();
-            })
-            .map_err(|e| DropError::TODO(e.to_string()));
+        self.runtime
+            .block_on(async { self.inner.start() })
+            .map_err(|e| DropError::TODO(e.to_string()))
     }
 
     /// Cancel the session. No further progress will occur.
     pub fn cancel(&self) {
         let _guard = self.runtime.enter();
-        return self.inner.cancel();
+        self.inner.cancel()
     }
 
     /// True when the session has completed (successfully or not).
     pub fn is_finished(&self) -> bool {
         let _guard = self.runtime.enter();
-        return self.inner.is_finished();
+        self.inner.is_finished()
     }
 
     /// True if the session has been explicitly canceled.
     pub fn is_cancelled(&self) -> bool {
         let _guard = self.runtime.enter();
-        return self.inner.is_cancelled();
+        self.inner.is_cancelled()
     }
 
     /// Register an observer for logs, chunk payloads, and connection events.
@@ -61,7 +58,7 @@ impl ReceiveFilesBubble {
         let _guard = self.runtime.enter();
         let adapted_subscriber =
             ReceiveFilesSubscriberAdapter { inner: subscriber };
-        return self.inner.subscribe(Arc::new(adapted_subscriber));
+        self.inner.subscribe(Arc::new(adapted_subscriber))
     }
 
     /// Unregister a previously subscribed observer.
@@ -71,9 +68,8 @@ impl ReceiveFilesBubble {
         let _guard = self.runtime.enter();
         let adapted_subscriber =
             ReceiveFilesSubscriberAdapter { inner: subscriber };
-        return self
-            .inner
-            .unsubscribe(Arc::new(adapted_subscriber));
+        self.inner
+            .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
 

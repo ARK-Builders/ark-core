@@ -26,13 +26,13 @@ impl SendFilesBubble {
     /// Returns the ticket that the receiver must provide to connect.
     pub fn get_ticket(&self) -> String {
         let _guard = self.runtime.enter();
-        return self.inner.get_ticket();
+        self.inner.get_ticket()
     }
 
     /// Returns the short confirmation code required during pairing.
     pub fn get_confirmation(&self) -> u8 {
         let _guard = self.runtime.enter();
-        return self.inner.get_confirmation();
+        self.inner.get_confirmation()
     }
 
     /// Cancel the session asynchronously.
@@ -40,30 +40,27 @@ impl SendFilesBubble {
     /// Errors are mapped into `DropError`. After cancellation, `is_finished()`
     /// will eventually become true.
     pub async fn cancel(&self) -> Result<(), DropError> {
-        return self
-            .runtime
-            .block_on(async {
-                return self.inner.cancel().await;
-            })
-            .map_err(|e| DropError::TODO(e.to_string()));
+        self.runtime
+            .block_on(async { self.inner.cancel().await })
+            .map_err(|e| DropError::TODO(e.to_string()))
     }
 
     /// True once all files are sent or the session has been canceled.
     pub fn is_finished(&self) -> bool {
         let _guard = self.runtime.enter();
-        return self.inner.is_finished();
+        self.inner.is_finished()
     }
 
     /// True once a receiver has connected and handshake has completed.
     pub fn is_connected(&self) -> bool {
         let _guard = self.runtime.enter();
-        return self.inner.is_connected();
+        self.inner.is_connected()
     }
 
     /// ISO-8601 timestamp for when the session was created.
     pub fn get_created_at(&self) -> String {
         let _guard = self.runtime.enter();
-        return self.inner.get_created_at();
+        self.inner.get_created_at()
     }
 
     /// Register an observer for logs and progress/connect events.
@@ -73,7 +70,7 @@ impl SendFilesBubble {
         let _guard = self.runtime.enter();
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
-        return self.inner.subscribe(Arc::new(adapted_subscriber));
+        self.inner.subscribe(Arc::new(adapted_subscriber))
     }
 
     /// Unregister a previously subscribed observer.
@@ -83,9 +80,8 @@ impl SendFilesBubble {
         let _guard = self.runtime.enter();
         let adapted_subscriber =
             SendFilesSubscriberAdapter { inner: subscriber };
-        return self
-            .inner
-            .unsubscribe(Arc::new(adapted_subscriber));
+        self.inner
+            .unsubscribe(Arc::new(adapted_subscriber))
     }
 }
 
