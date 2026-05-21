@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+*.xcframework
+
+# Generated files from uniffi-bindgen
+ArkDrop.swift
+arkdrop_uniffiFFI.h
+module.modulemap
+arkdrop_uniffiFFI.modulemap
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode
+xcuserdata/
+*.xcworkspace
+DerivedData/
+
+# macOS
+.DS_Store
