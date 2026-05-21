@@ -176,7 +176,7 @@ pub async fn send_files(
     Ok(Arc::new(SendFilesBubble {
         inner: bubble,
         runtime,
-    }));
+    }))
 }
 
 /// Convert the high-level request into the arkdropx_sender request format.
