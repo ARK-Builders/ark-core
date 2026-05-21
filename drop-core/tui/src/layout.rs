@@ -159,26 +159,23 @@ impl AppNavigation for LayoutApp {
         let mut updated_previous_pages = false;
         let mut children = self.children.write().unwrap();
 
-        match last_page {
-            Some(page) => {
-                for child in children.iter_mut() {
-                    if let Some(child_page) = &child.page {
-                        if child_page == &page {
-                            child.is_active = true;
-                            *self.current_page.write().unwrap() = page.clone();
-                            updated_current_page = true;
-                        } else if child_page == &current_page {
-                            child.is_active = false;
-                            updated_previous_pages = true;
-                        }
-                    }
-
-                    if updated_current_page && updated_previous_pages {
-                        break;
+        if let Some(page) = last_page {
+            for child in children.iter_mut() {
+                if let Some(child_page) = &child.page {
+                    if child_page == &page {
+                        child.is_active = true;
+                        *self.current_page.write().unwrap() = page.clone();
+                        updated_current_page = true;
+                    } else if child_page == &current_page {
+                        child.is_active = false;
+                        updated_previous_pages = true;
                     }
                 }
+
+                if updated_current_page && updated_previous_pages {
+                    break;
+                }
             }
-            None => {}
         }
     }
 }
@@ -232,7 +229,7 @@ impl LayoutApp {
                 if p == page {
                     return Some(s.clone());
                 }
-                return None;
+                None
             })
     }
 
@@ -269,7 +266,7 @@ impl LayoutApp {
                 if c.is_active {
                     return Some(c);
                 }
-                return None;
+                None
             })
             .collect()
     }
@@ -277,13 +274,13 @@ impl LayoutApp {
     fn get_active_children_sort_by_z_index(&self) -> Vec<LayoutChild> {
         let mut children = self.get_active_children();
         children.sort_by(|a, b| a.z_index.cmp(&b.z_index));
-        return children;
+        children
     }
 
     fn get_active_children_sort_by_control_index(&self) -> Vec<LayoutChild> {
         let mut children = self.get_active_children();
         children.sort_by(|a, b| a.control_index.cmp(&b.z_index));
-        return children;
+        children
     }
 
     pub fn is_finished(&self) -> bool {
@@ -351,11 +348,32 @@ impl LayoutApp {
                 HelperFooterControl::new("CTRL-Q", "Quit"),
             ])),
             Page::SendFilesProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("T", "Copy Ticket"),
+                HelperFooterControl::new("Y", "Copy Code"),
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-C", "Cancel"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),
             ])),
             Page::ReceiveFilesProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-C", "Cancel"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
+            Page::SendFilesTo => Some(create_helper_footer(vec![
+                HelperFooterControl::new("↑/↓/Tab", "Navigate"),
+                HelperFooterControl::new("Enter", "Edit/Send"),
+                HelperFooterControl::new("CTRL-O", "Browse"),
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
+            Page::SendFilesToProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("ESC", "Back"),
+                HelperFooterControl::new("CTRL-C", "Cancel"),
+                HelperFooterControl::new("CTRL-Q", "Quit"),
+            ])),
+            Page::ReadyToReceiveProgress => Some(create_helper_footer(vec![
+                HelperFooterControl::new("T", "Copy Ticket"),
+                HelperFooterControl::new("Y", "Copy Code"),
                 HelperFooterControl::new("ESC", "Back"),
                 HelperFooterControl::new("CTRL-C", "Cancel"),
                 HelperFooterControl::new("CTRL-Q", "Quit"),

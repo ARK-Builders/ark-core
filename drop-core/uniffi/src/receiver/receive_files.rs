@@ -123,32 +123,30 @@ impl arkdropx_receiver::ReceiveFilesSubscriber
     for ReceiveFilesSubscriberAdapter
 {
     fn get_id(&self) -> String {
-        return self.inner.get_id();
+        self.inner.get_id()
     }
 
-    fn log(&self, message: String) {
+    fn log(&self, _message: String) {
         #[cfg(debug_assertions)]
-        return self.inner.log(message.clone());
+        return self.inner.log(_message.clone());
     }
 
     fn notify_receiving(
         &self,
         event: arkdropx_receiver::ReceiveFilesReceivingEvent,
     ) {
-        return self
-            .inner
+        self.inner
             .notify_receiving(ReceiveFilesReceivingEvent {
                 id: event.id,
                 data: event.data,
-            });
+            })
     }
 
     fn notify_connecting(
         &self,
         event: arkdropx_receiver::ReceiveFilesConnectingEvent,
     ) {
-        return self
-            .inner
+        self.inner
             .notify_connecting(ReceiveFilesConnectingEvent {
                 sender: ReceiveFilesProfile {
                     id: event.sender.id,
@@ -164,7 +162,7 @@ impl arkdropx_receiver::ReceiveFilesSubscriber
                         len: f.len,
                     })
                     .collect(),
-            });
+            })
     }
 }
 
@@ -181,13 +179,13 @@ pub async fn receive_files(
     let bubble = runtime
         .block_on(async {
             let adapted_request = create_adapted_request(request);
-            return arkdropx_receiver::receive_files(adapted_request).await;
+            arkdropx_receiver::receive_files(adapted_request).await
         })
         .map_err(|e| DropError::TODO(e.to_string()))?;
-    return Ok(Arc::new(ReceiveFilesBubble {
+    Ok(Arc::new(ReceiveFilesBubble {
         inner: bubble,
         runtime,
-    }));
+    }))
 }
 
 /// Convert the high-level request into the arkdropx_receiver request format.
@@ -207,10 +205,10 @@ fn create_adapted_request(
             chunk_size: c.chunk_size,
             parallel_streams: c.parallel_streams,
         });
-    return arkdropx_receiver::ReceiveFilesRequest {
+    arkdropx_receiver::ReceiveFilesRequest {
         profile,
         ticket: request.ticket,
         confirmation: request.confirmation,
         config,
-    };
+    }
 }

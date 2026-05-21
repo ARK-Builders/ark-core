@@ -103,9 +103,9 @@ impl App for ConfigApp {
         let is_editing_name = self.is_editing_name();
 
         if is_editing_name {
-            return self.handle_name_input_control(ev);
+            self.handle_name_input_control(ev)
         } else {
-            return self.handle_navigation_control(ev);
+            self.handle_navigation_control(ev)
         }
     }
 }
@@ -118,22 +118,22 @@ impl AppFileBrowserSubscriber for ConfigApp {
             .unwrap()
             .take();
 
-        if let Some(field) = awaiting_field {
-            if let Some(selected_path) = event.selected_files.first() {
-                match field {
-                    ConfigField::AvatarFile => {
-                        self.set_avatar_file(selected_path.clone());
-                        self.process_avatar_preview(selected_path.clone());
-                    }
-                    ConfigField::OutputDirectory => {
-                        self.set_out_dir(selected_path.clone());
-                        self.set_status_message(&format!(
-                            "Output directory set to: {}",
-                            selected_path.display()
-                        ));
-                    }
-                    _ => {}
+        if let Some(field) = awaiting_field
+            && let Some(selected_path) = event.selected_files.first()
+        {
+            match field {
+                ConfigField::AvatarFile => {
+                    self.set_avatar_file(selected_path.clone());
+                    self.process_avatar_preview(selected_path.clone());
                 }
+                ConfigField::OutputDirectory => {
+                    self.set_out_dir(selected_path.clone());
+                    self.set_status_message(&format!(
+                        "Output directory set to: {}",
+                        selected_path.display()
+                    ));
+                }
+                _ => {}
             }
         }
     }

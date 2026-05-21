@@ -16,6 +16,8 @@ use crate::{App, AppBackend, ControlCapture, Page};
 enum MenuItem {
     SendFiles,
     ReceiveFiles,
+    SendFilesTo,
+    ReadyToReceive,
     Config,
     Help,
 }
@@ -104,6 +106,14 @@ impl App for HomeApp {
                         self.select_item(3);
                         self.activate_current_item();
                     }
+                    KeyCode::Char('5') => {
+                        self.select_item(4);
+                        self.activate_current_item();
+                    }
+                    KeyCode::Char('6') => {
+                        self.select_item(5);
+                        self.activate_current_item();
+                    }
                     KeyCode::Esc => {
                         self.set_status_message(
                             "Press Ctrl+Q to quit application",
@@ -140,6 +150,8 @@ impl HomeApp {
         vec![
             MenuItem::SendFiles,
             MenuItem::ReceiveFiles,
+            MenuItem::SendFilesTo,
+            MenuItem::ReadyToReceive,
             MenuItem::Config,
             MenuItem::Help,
         ]
@@ -187,6 +199,12 @@ impl HomeApp {
                 Some(MenuItem::ReceiveFiles) => {
                     "Receive files from another device"
                 }
+                Some(MenuItem::SendFilesTo) => {
+                    "Scan QR to send files to a waiting receiver"
+                }
+                Some(MenuItem::ReadyToReceive) => {
+                    "Generate QR code and wait for sender"
+                }
                 Some(MenuItem::Config) => {
                     "Configure your profile and preferences"
                 }
@@ -209,6 +227,12 @@ impl HomeApp {
                 MenuItem::ReceiveFiles => {
                     self.navigate_to_page(Page::ReceiveFiles);
                 }
+                MenuItem::SendFilesTo => {
+                    self.start_send_files_to();
+                }
+                MenuItem::ReadyToReceive => {
+                    self.start_ready_to_receive();
+                }
                 MenuItem::Config => {
                     self.navigate_to_page(Page::Config);
                 }
@@ -222,6 +246,38 @@ impl HomeApp {
     fn navigate_to_page(&self, page: Page) {
         self.set_status_message(&format!("Navigating to {:?}...", page));
         self.b.get_navigation().navigate_to(page);
+    }
+
+    fn start_send_files_to(&self) {
+        self.navigate_to_page(Page::SendFilesTo);
+    }
+
+    fn start_ready_to_receive(&self) {
+        use arkdropx_receiver::{
+            ReceiverProfile,
+            ready_to_receive::{ReadyToReceiveConfig, ReadyToReceiveRequest},
+        };
+
+        let config = self.b.get_config();
+        let profile = ReceiverProfile {
+            name: config
+                .avatar_name
+                .unwrap_or("Receiver".to_string()),
+            avatar_b64: None,
+        };
+
+        let request = ReadyToReceiveRequest {
+            profile,
+            config: ReadyToReceiveConfig::balanced(),
+        };
+
+        self.b
+            .get_ready_to_receive_manager()
+            .ready_to_receive(request);
+        self.set_status_message("Starting Ready to Receive...");
+        self.b
+            .get_navigation()
+            .navigate_to(Page::ReadyToReceiveProgress);
     }
 
     fn set_status_message(&self, message: &str) {
@@ -277,6 +333,46 @@ impl HomeApp {
             ListItem::new(vec![
                 Line::from(vec![
                     Span::styled(
+                        "🔗 ",
+                        Style::default().fg(Color::Magenta).bold(),
+                    ),
+                    Span::styled(
+                        "Send to QR",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                    Span::styled(" (3)", Style::default().fg(Color::DarkGray)),
+                ]),
+                Line::from(vec![
+                    Span::styled("   ", Style::default()),
+                    Span::styled(
+                        "Scan QR to send to waiting receiver",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+            ]),
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        "📲 ",
+                        Style::default().fg(Color::Cyan).bold(),
+                    ),
+                    Span::styled(
+                        "Wait to Receive",
+                        Style::default().fg(Color::White).bold(),
+                    ),
+                    Span::styled(" (4)", Style::default().fg(Color::DarkGray)),
+                ]),
+                Line::from(vec![
+                    Span::styled("   ", Style::default()),
+                    Span::styled(
+                        "Show QR for sender to connect",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+            ]),
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(
                         "⚙️ ",
                         Style::default().fg(Color::Yellow).bold(),
                     ),
@@ -284,7 +380,7 @@ impl HomeApp {
                         "Configuration",
                         Style::default().fg(Color::White).bold(),
                     ),
-                    Span::styled(" (3)", Style::default().fg(Color::DarkGray)),
+                    Span::styled(" (5)", Style::default().fg(Color::DarkGray)),
                 ]),
                 Line::from(vec![
                     Span::styled("   ", Style::default()),
@@ -298,13 +394,13 @@ impl HomeApp {
                 Line::from(vec![
                     Span::styled(
                         "❓ ",
-                        Style::default().fg(Color::Magenta).bold(),
+                        Style::default().fg(Color::LightMagenta).bold(),
                     ),
                     Span::styled(
                         "Help",
                         Style::default().fg(Color::White).bold(),
                     ),
-                    Span::styled(" (4)", Style::default().fg(Color::DarkGray)),
+                    Span::styled(" (6)", Style::default().fg(Color::DarkGray)),
                 ]),
                 Line::from(vec![
                     Span::styled("   ", Style::default()),

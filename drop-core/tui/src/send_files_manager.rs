@@ -46,7 +46,7 @@ impl AppSendFilesManager for MainAppSendFilesManager {
         &self,
     ) -> Option<std::sync::Arc<arkdropx_sender::SendFilesBubble>> {
         let send_files_bubble = self.bubble.read().unwrap();
-        return send_files_bubble.clone();
+        send_files_bubble.clone()
     }
 }
 

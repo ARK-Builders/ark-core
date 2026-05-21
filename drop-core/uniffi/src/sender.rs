@@ -4,10 +4,12 @@
 //! file data is provided by the embedding app via the `SenderFileData` trait.
 
 mod send_files;
+mod send_files_to;
 
 use std::sync::Arc;
 
 pub use send_files::*;
+pub use send_files_to::*;
 
 /// Describes the sender's identity, shown to the receiver during handshake.
 pub struct SenderProfile {
@@ -50,19 +52,19 @@ struct SenderFileDataAdapter {
 }
 impl arkdropx_sender::SenderFileData for SenderFileDataAdapter {
     fn len(&self) -> u64 {
-        return self.inner.len();
+        self.inner.len()
     }
 
     fn is_empty(&self) -> bool {
-        return self.inner.is_empty();
+        self.inner.is_empty()
     }
 
     fn read(&self) -> Option<u8> {
-        return self.inner.read();
+        self.inner.read()
     }
 
     fn read_chunk(&self, size: u64) -> Vec<u8> {
-        return self.inner.read_chunk(size.try_into().unwrap());
+        self.inner.read_chunk(size.try_into().unwrap())
     }
 }
 

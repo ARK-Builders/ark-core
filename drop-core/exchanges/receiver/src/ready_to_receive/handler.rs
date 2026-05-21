@@ -1,17 +1,17 @@
-//! Internal protocol handler for sending files.
+//! Internal protocol handler for waiting to receive files.
 //!
 //! This module implements `iroh::protocol::ProtocolHandler` to accept a single
-//! receiver, exchange handshakes, negotiate configuration, and stream file data
-//! using unidirectional streams. It also provides an observer API via
-//! `SendFilesSubscriber` to report logs, connection metadata, and per-file
-//! progress updates.
+//! sender, exchange handshakes, negotiate configuration, and receive file data
+//! using unidirectional streams. It provides an observer API via
+//! `ReadyToReceiveSubscriber` to report logs, connection metadata, and per-file
+//! chunk arrivals.
 
 use anyhow::Result;
-use arkdrop_entities::{File, Profile};
+use arkdrop_entities::Profile;
 use arkdropx_common::{
     handshake::{
-        HandshakeConfig, HandshakeFile, HandshakeProfile, NegotiatedConfig,
-        ReceiverHandshake, SenderHandshake,
+        HandshakeConfig, HandshakeProfile, NegotiatedConfig, ReceiverHandshake,
+        SenderHandshake,
     },
     projection::FileProjection,
 };
@@ -27,96 +27,94 @@ use std::{
 };
 use tokio::task::JoinSet;
 
-use super::SenderConfig;
+use super::ReadyToReceiveConfig;
 
 /// Observer interface for transfer logs and progress.
 ///
 /// Implementors must be thread-safe (`Send + Sync`) since notifications are
 /// dispatched from async tasks.
-pub trait SendFilesSubscriber: Send + Sync {
+pub trait ReadyToReceiveSubscriber: Send + Sync {
     /// A stable unique identifier for this subscriber (used as a map key).
     fn get_id(&self) -> String;
 
     /// Receives diagnostic log lines from the transfer pipeline.
     fn log(&self, message: String);
 
-    /// Receives progress updates for each file being sent.
+    /// Receives chunk data for each file being received.
     ///
-    /// Multiple events can arrive out of order across files; within a file they
-    /// are monotonic in `sent` and `remaining`.
-    fn notify_sending(&self, event: SendFilesSendingEvent);
+    /// Multiple events can arrive out of order across files.
+    fn notify_receiving(&self, event: ReadyToReceiveReceivingEvent);
 
-    /// Notified when a receiver connects and completes the handshake.
-    fn notify_connecting(&self, event: SendFilesConnectingEvent);
+    /// Notified when a sender connects and completes the handshake.
+    fn notify_connecting(&self, event: ReadyToReceiveConnectingEvent);
 }
 
-/// Per-file progress event.
+/// Per-chunk receiving event.
 ///
-/// - `sent`: total bytes sent so far for this file.
-/// - `remaining`: bytes left until completion for this file.
+/// Contains the file ID and raw chunk data.
 #[derive(Clone)]
-pub struct SendFilesSendingEvent {
+pub struct ReadyToReceiveReceivingEvent {
     pub id: String,
-    pub name: String,
-    pub sent: u64,
-    pub remaining: u64,
+    pub data: Vec<u8>,
 }
 
-/// Connection event carrying the receiver's profile as reported during
-/// handshake.
-pub struct SendFilesConnectingEvent {
-    pub receiver: SendFilesProfile,
+/// Connection event carrying the sender's profile and files list as reported
+/// during handshake.
+pub struct ReadyToReceiveConnectingEvent {
+    pub sender: ReadyToReceiveSenderProfile,
+    pub files: Vec<ReadyToReceiveFile>,
 }
 
-/// Receiver profile details surfaced to subscribers.
+/// Sender profile details surfaced to subscribers.
 #[derive(Clone)]
-pub struct SendFilesProfile {
+pub struct ReadyToReceiveSenderProfile {
     pub id: String,
     pub name: String,
     pub avatar_b64: Option<String>,
 }
 
-/// Protocol handler responsible for accepting a single receiver and streaming
+/// File information provided by sender during handshake.
+#[derive(Clone)]
+pub struct ReadyToReceiveFile {
+    pub id: String,
+    pub name: String,
+    pub len: u64,
+}
+
+/// Protocol handler responsible for accepting a single sender and receiving
 /// data.
 ///
-/// A `SendFilesHandler`:
+/// A `ReadyToReceiveHandler`:
 /// - Enforces single-consumption of the incoming connection.
 /// - Performs JSON-based handshake exchange.
 /// - Negotiates chunking and concurrency parameters.
-/// - Streams files over unidirectional streams.
+/// - Receives files over unidirectional streams.
 /// - Emits events to registered subscribers.
-pub struct SendFilesHandler {
+pub struct ReadyToReceiveHandler {
     is_consumed: AtomicBool,
     is_finished: Arc<AtomicBool>,
     profile: Profile,
-    files: Vec<File>,
-    config: SenderConfig,
-    subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
+    config: ReadyToReceiveConfig,
+    subscribers:
+        Arc<RwLock<HashMap<String, Arc<dyn ReadyToReceiveSubscriber>>>>,
 }
-impl Debug for SendFilesHandler {
+impl Debug for ReadyToReceiveHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SendFilesHandler")
+        f.debug_struct("ReadyToReceiveHandler")
             .field("is_consumed", &self.is_consumed)
             .field("is_finished", &self.is_finished)
             .field("profile", &self.profile)
-            .field("files", &self.files)
             .field("config", &self.config)
             .finish()
     }
 }
-impl SendFilesHandler {
-    /// Constructs a new handler for the given profile, files, and
-    /// configuration.
-    pub fn new(
-        profile: Profile,
-        files: Vec<File>,
-        config: SenderConfig,
-    ) -> Self {
+impl ReadyToReceiveHandler {
+    /// Constructs a new handler for the given profile and configuration.
+    pub fn new(profile: Profile, config: ReadyToReceiveConfig) -> Self {
         Self {
             is_consumed: AtomicBool::new(false),
             is_finished: Arc::new(AtomicBool::new(false)),
             profile,
-            files: files.clone(),
             config,
             subscribers: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -124,7 +122,7 @@ impl SendFilesHandler {
 
     /// Returns true if a connection has already been accepted.
     ///
-    /// This handler accepts at most one receiver for a bubble.
+    /// This handler accepts at most one sender for a bubble.
     pub fn is_consumed(&self) -> bool {
         let consumed = self
             .is_consumed
@@ -154,8 +152,9 @@ impl SendFilesHandler {
             });
     }
 
-    /// Registers a new subscriber or replaces an existing one with the same ID.
-    pub fn subscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
+    /// Registers a new subscriber or replaces an existing one with the same
+    /// ID.
+    pub fn subscribe(&self, subscriber: Arc<dyn ReadyToReceiveSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.log(format!(
             "Subscribing new subscriber with ID: {subscriber_id}"
@@ -174,7 +173,7 @@ impl SendFilesHandler {
     }
 
     /// Unregisters a subscriber by its ID.
-    pub fn unsubscribe(&self, subscriber: Arc<dyn SendFilesSubscriber>) {
+    pub fn unsubscribe(&self, subscriber: Arc<dyn ReadyToReceiveSubscriber>) {
         let subscriber_id = subscriber.get_id();
         self.log(format!("Unsubscribing subscriber with ID: {subscriber_id}"));
 
@@ -193,7 +192,7 @@ impl SendFilesHandler {
         }
     }
 }
-impl ProtocolHandler for SendFilesHandler {
+impl ProtocolHandler for ReadyToReceiveHandler {
     fn on_connecting(
         &self,
         connecting: iroh::endpoint::Connecting,
@@ -237,7 +236,7 @@ impl ProtocolHandler for SendFilesHandler {
     ) -> impl Future<
         Output = std::result::Result<(), iroh::protocol::AcceptError>,
     > + Send {
-        self.log("accept: Creating carrier for file transfer".to_string());
+        self.log("accept: Creating carrier for file reception".to_string());
 
         let carrier = Carrier {
             is_finished: self.is_finished.clone(),
@@ -245,17 +244,18 @@ impl ProtocolHandler for SendFilesHandler {
             negotiated_config: None,
             profile: self.profile.clone(),
             connection,
-            files: self.files.clone(),
             subscribers: self.subscribers.clone(),
         };
 
         async move {
             let mut carrier = carrier;
-            if (carrier.greet().await).is_err() {
+            if let Err(e) = carrier.greet().await {
+                carrier.log(format!("accept: Handshake failed: {:?}", e));
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
-            if (carrier.send_files().await).is_err() {
+            if let Err(e) = carrier.receive_files().await {
+                carrier.log(format!("accept: File reception failed: {:?}", e));
                 return Err(iroh::protocol::AcceptError::NotAllowed {});
             }
 
@@ -267,24 +267,24 @@ impl ProtocolHandler for SendFilesHandler {
 
 /// Helper that performs handshake, configuration negotiation, and streaming.
 ///
-/// Not exposed publicly; used internally by `SendFilesHandler`.
+/// Not exposed publicly; used internally by `ReadyToReceiveHandler`.
 struct Carrier {
     is_finished: Arc<AtomicBool>,
-    config: SenderConfig,
+    config: ReadyToReceiveConfig,
     negotiated_config: Option<NegotiatedConfig>,
     profile: Profile,
     connection: Connection,
-    files: Vec<File>,
-    subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
+    subscribers:
+        Arc<RwLock<HashMap<String, Arc<dyn ReadyToReceiveSubscriber>>>>,
 }
 impl Carrier {
     /// Performs the bidirectional handshake exchange and notifies subscribers
-    /// about the receiver identity.
+    /// about the sender identity and files.
     async fn greet(&mut self) -> Result<()> {
         let mut bi = self.connection.accept_bi().await?;
 
-        self.send_handshake(&mut bi).await?;
         self.receive_handshake(&mut bi).await?;
+        self.send_handshake(&mut bi).await?;
 
         bi.0.stopped().await?;
 
@@ -292,26 +292,75 @@ impl Carrier {
         Ok(())
     }
 
-    /// Sends the sender's profile, file list, and preferred configuration.
+    /// Receives the sender handshake and computes the negotiated
+    /// configuration.
+    async fn receive_handshake(
+        &mut self,
+        bi: &mut (SendStream, RecvStream),
+    ) -> Result<()> {
+        let mut header = [0u8; 4];
+        bi.1.read_exact(&mut header).await?;
+        let len = u32::from_be_bytes(header);
+
+        let mut buffer = vec![0u8; len as usize];
+        bi.1.read_exact(&mut buffer).await?;
+
+        let handshake: SenderHandshake = serde_json::from_slice(&buffer)?;
+
+        // Negotiate configuration
+        let receiver_config = HandshakeConfig {
+            chunk_size: self.config.chunk_size,
+            parallel_streams: self.config.parallel_streams,
+        };
+
+        self.negotiated_config = Some(NegotiatedConfig::negotiate(
+            &handshake.config,
+            &receiver_config,
+        ));
+
+        // Prepare data structures
+        let profile = ReadyToReceiveSenderProfile {
+            id: handshake.profile.id,
+            name: handshake.profile.name,
+            avatar_b64: handshake.profile.avatar_b64,
+        };
+
+        let files: Vec<ReadyToReceiveFile> = handshake
+            .files
+            .into_iter()
+            .map(|f| ReadyToReceiveFile {
+                id: f.id,
+                name: f.name,
+                len: f.len,
+            })
+            .collect();
+
+        // Notify subscribers
+        self.subscribers
+            .read()
+            .unwrap()
+            .iter()
+            .for_each(|(_, s)| {
+                s.notify_connecting(ReadyToReceiveConnectingEvent {
+                    sender: profile.clone(),
+                    files: files.clone(),
+                });
+            });
+
+        Ok(())
+    }
+
+    /// Sends the receiver's profile and preferred configuration.
     async fn send_handshake(
         &self,
         bi: &mut (SendStream, RecvStream),
     ) -> Result<()> {
-        let handshake = SenderHandshake {
+        let handshake = ReceiverHandshake {
             profile: HandshakeProfile {
                 id: self.profile.id.clone(),
                 name: self.profile.name.clone(),
                 avatar_b64: self.profile.avatar_b64.clone(),
             },
-            files: self
-                .files
-                .iter()
-                .map(|f| HandshakeFile {
-                    id: f.id.clone(),
-                    name: f.name.clone(),
-                    len: f.data.len(),
-                })
-                .collect(),
             config: HandshakeConfig {
                 chunk_size: self.config.chunk_size,
                 parallel_streams: self.config.parallel_streams,
@@ -319,7 +368,7 @@ impl Carrier {
         };
 
         // Pre-allocate vector with estimated capacity
-        let mut buffer = Vec::with_capacity(512);
+        let mut buffer = Vec::with_capacity(256);
         serde_json::to_writer(&mut buffer, &handshake)?;
 
         let len_bytes = (buffer.len() as u32).to_be_bytes();
@@ -333,55 +382,9 @@ impl Carrier {
         Ok(())
     }
 
-    /// Receives the receiver handshake and computes the negotiated
-    /// configuration.
-    async fn receive_handshake(
-        &mut self,
-        bi: &mut (SendStream, RecvStream),
-    ) -> Result<()> {
-        let mut header = [0u8; 4];
-        bi.1.read_exact(&mut header).await?;
-        let len = u32::from_be_bytes(header);
-
-        let mut buffer = vec![0u8; len as usize];
-        bi.1.read_exact(&mut buffer).await?;
-
-        let handshake: ReceiverHandshake = serde_json::from_slice(&buffer)?;
-
-        // Negotiate configuration
-        let sender_config = HandshakeConfig {
-            chunk_size: self.config.chunk_size,
-            parallel_streams: self.config.parallel_streams,
-        };
-
-        self.negotiated_config = Some(NegotiatedConfig::negotiate(
-            &sender_config,
-            &handshake.config,
-        ));
-
-        // Notify subscribers
-        let profile = SendFilesProfile {
-            id: handshake.profile.id,
-            name: handshake.profile.name,
-            avatar_b64: handshake.profile.avatar_b64,
-        };
-
-        self.subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(_, s)| {
-                s.notify_connecting(SendFilesConnectingEvent {
-                    receiver: profile.clone(),
-                });
-            });
-
-        Ok(())
-    }
-
-    /// Streams all files using unidirectional streams and the negotiated
+    /// Receives all files using unidirectional streams and the negotiated
     /// settings.
-    async fn send_files(&self) -> Result<()> {
+    async fn receive_files(&self) -> Result<()> {
         let mut join_set = JoinSet::new();
 
         // Use negotiated configuration or fallback to defaults
@@ -392,91 +395,130 @@ impl Carrier {
                 (self.config.chunk_size, self.config.parallel_streams)
             };
 
-        for file in self.files.clone() {
+        let expected_close = iroh::endpoint::ConnectionError::ApplicationClosed(
+            iroh::endpoint::ApplicationClose {
+                error_code: VarInt::from_u32(200),
+                reason: "finished".into(),
+            },
+        );
+
+        'files_iterator: loop {
             let connection = self.connection.clone();
             let subscribers = self.subscribers.clone();
 
             join_set.spawn(async move {
-                Self::send_single_file(
-                    &file,
-                    chunk_size,
-                    connection,
-                    subscribers,
-                )
-                .await
+                Self::receive_single_file(chunk_size, connection, subscribers)
+                    .await
             });
 
             // Limit concurrent streams to negotiated number
-            if join_set.len() >= parallel_streams as usize
-                && let Some(result) = join_set.join_next().await
-                && let Err(err) = result?
-            {
-                self.log(format!("send_files: Stream failed: {err}"));
-                return Err(err);
+            while join_set.len() >= parallel_streams as usize {
+                if let Some(result) = join_set.join_next().await
+                    && let Err(err) = result?
+                {
+                    // Check for expected close
+                    if let Some(connection_err) =
+                        err.downcast_ref::<iroh::endpoint::ConnectionError>()
+                        && connection_err == &expected_close
+                    {
+                        break 'files_iterator;
+                    }
+                    self.log(format!("receive_files: Stream failed: {err}"));
+                    return Err(err);
+                }
             }
         }
 
-        // Wait for all remaining streams to complete and update final progress
+        // Wait for all remaining streams to complete
         while let Some(result) = join_set.join_next().await {
             if let Err(err) = result? {
-                self.log(format!("send_single_file: Stream failed: {err}"));
+                if let Some(connection_err) =
+                    err.downcast_ref::<iroh::endpoint::ConnectionError>()
+                    && connection_err == &expected_close
+                {
+                    continue;
+                }
+                self.log(format!("receive_single_file: Stream failed: {err}"));
                 return Err(err);
             }
         }
 
-        self.log("send_files: All files transferred successfully".to_string());
+        self.log("receive_files: All files received successfully".to_string());
         Ok(())
     }
 
-    /// Streams a single file in JSON-framed chunks:
+    /// Receives a single file in JSON-framed chunks:
     /// - 4-byte big-endian length header
     /// - JSON payload containing `FileProjection { id, data }`
-    async fn send_single_file(
-        file: &File,
+    async fn receive_single_file(
         chunk_size: u64,
         connection: Connection,
-        subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
+        subscribers: Arc<
+            RwLock<HashMap<String, Arc<dyn ReadyToReceiveSubscriber>>>,
+        >,
     ) -> Result<()> {
-        let total_len = file.data.len();
-        let mut sent = 0u64;
-        let mut remaining = total_len;
-        let mut chunk_buffer =
-            Vec::with_capacity((chunk_size + 1024).try_into().unwrap());
+        let mut uni = connection.accept_uni().await?;
 
-        let mut uni = connection.open_uni().await?;
-
-        Self::notify_progress(file, sent, remaining, subscribers.clone());
+        let mut buffer =
+            Vec::with_capacity((chunk_size + 256 * 1024).try_into().unwrap());
 
         loop {
-            chunk_buffer.clear();
+            buffer.clear();
 
-            let chunk_data = file.data.read_chunk(chunk_size);
-            if chunk_data.is_empty() {
-                break;
-            }
-            let projection = FileProjection {
-                id: file.id.clone(),
-                data: chunk_data,
+            let len =
+                match Self::read_serialized_projection_len(&mut uni).await? {
+                    Some(l) => l,
+                    None => break, // Stream finished
+                };
+
+            buffer.resize(len, 0);
+
+            uni.read_exact(&mut buffer).await?;
+
+            let projection: FileProjection = serde_json::from_slice(&buffer)?;
+
+            // Notify subscribers about received chunk
+            let event = ReadyToReceiveReceivingEvent {
+                id: projection.id,
+                data: projection.data,
             };
 
-            serde_json::to_writer(&mut chunk_buffer, &projection)?;
-            let len_bytes = (chunk_buffer.len() as u32).to_be_bytes();
-
-            // Write header + data
-            uni.write_all(&len_bytes).await?;
-            uni.write_all(&chunk_buffer).await?;
-
-            let data_len = projection.data.len() as u64;
-            sent += data_len;
-            remaining = remaining.saturating_sub(data_len);
-
-            Self::notify_progress(file, sent, remaining, subscribers.clone());
+            subscribers
+                .read()
+                .unwrap()
+                .iter()
+                .for_each(|(_, s)| {
+                    s.notify_receiving(event.clone());
+                });
         }
 
-        uni.finish()?;
-        uni.stopped().await?;
-
         Ok(())
+    }
+
+    /// Read a 4-byte big-endian length prefix from a unidirectional stream.
+    ///
+    /// Returns:
+    /// - `Ok(Some(len))` when a length was read,
+    /// - `Ok(None)` if the stream has finished normally,
+    /// - `Err(e)` for I/O errors.
+    async fn read_serialized_projection_len(
+        uni: &mut RecvStream,
+    ) -> Result<Option<usize>> {
+        let mut header = [0u8; 4];
+
+        match uni.read_exact(&mut header).await {
+            Ok(()) => {
+                let len = u32::from_be_bytes(header) as usize;
+                Ok(Some(len))
+            }
+            Err(e) => {
+                use iroh::endpoint::ReadExactError;
+                match e {
+                    ReadExactError::FinishedEarly(_) => Ok(None),
+                    ReadExactError::ReadError(io_error) => Err(io_error.into()),
+                }
+            }
+        }
     }
 
     /// Marks the handler as finished and closes the connection with a code and
@@ -502,28 +544,5 @@ impl Carrier {
                 subscriber.log(message.clone());
             },
         );
-    }
-
-    /// Notifies all subscribers about the current per-file progress.
-    fn notify_progress(
-        file: &File,
-        sent: u64,
-        remaining: u64,
-        subscribers: Arc<RwLock<HashMap<String, Arc<dyn SendFilesSubscriber>>>>,
-    ) {
-        let event = SendFilesSendingEvent {
-            id: file.id.clone(),
-            name: file.name.clone(),
-            sent,
-            remaining,
-        };
-
-        subscribers
-            .read()
-            .unwrap()
-            .iter()
-            .for_each(|(_, s)| {
-                s.notify_sending(event.clone());
-            });
     }
 }
