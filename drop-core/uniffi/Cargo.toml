@@ -5,12 +5,17 @@ edition = "2024"
 
 [lib]
 name = "arkdrop_uniffi"
-crate-type = ["cdylib"]
+crate-type = ["staticlib", "cdylib"]
 bench = false
 
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+bench = false
+
+[[bin]]
+name = "uniffi-bindgen-swift"
+path = "uniffi-bindgen-swift.rs"
 bench = false
 
 [dependencies]
